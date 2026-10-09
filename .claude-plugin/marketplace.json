@@ -1,0 +1,13 @@
+{
+  "name": "agent-skills-mods",
+  "description": "Readable agent-skills workflow in Claude Code: spec pane, task board, ETA range, stage in the footer, plan guard.",
+  "owner": {
+    "name": "lucksy"
+  },
+  "plugins": [
+    {
+      "name": "agent-skills-mods",
+      "source": "./"
+    }
+  ]
+}
