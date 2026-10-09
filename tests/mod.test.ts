@@ -8,17 +8,29 @@ const CWD = '/p'
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
 type Git = { log: string; cat: string } | 'no-repo'
 
-function world(on: On, files: Record<string, string>, git: Git = 'no-repo', stored: Record<string, unknown> = {}) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[] }
+function world(
+  on: On,
+  files: Record<string, string>,
+  git: Git = 'no-repo',
+  stored: Record<string, unknown> = {},
+  surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
+) {
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[] }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
     return { value: { isCopied: true } }
   })
+  on('session.surfaces', () => ({ value: surfaces }) as never)
   on('process.run', (_$, e) => {
-    seen.git.push(e.argv.slice(0, 2).join(' '))
     const out = (exitCode: number, stdout: string) => ({
       value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
     })
+    // macOS's `open`: what /progress report runs to show the page.
+    if (e.argv[0] === 'open') {
+      seen.launched.push(e.argv[1]!)
+      return out(0, '')
+    }
+    seen.git.push(e.argv.slice(0, 2).join(' '))
     if (git === 'no-repo') return out(128, '')
     return out(0, e.argv[1] === 'log' ? git.log : git.cat)
   })
@@ -382,9 +394,10 @@ test('/progress report writes one self-contained page next to the task list', as
   const many = Array.from({ length: 8 }, (_, i) => `## Task ${i + 1}: Step ${i + 1}\n- [${i < 5 ? 'x' : ' '}] work\n`).join('\n')
   const at = (n: number) => many.replace(/- \[x\]/g, (m, off) => (many.slice(0, off).split('- [x]').length - 1 < n ? m : '- [ ]'))
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: many, [`${CWD}/SPEC.md`]: SPEC }
-  world(on, files, gitOutput([['2026-10-08', at(5)], ['2026-10-05', at(3)], ['2026-10-01', at(1)], ['2026-09-28', at(0)]]))
+  const seen = world(on, files, gitOutput([['2026-10-08', at(5)], ['2026-10-05', at(3)], ['2026-10-01', at(1)], ['2026-09-28', at(0)]]))
   const reply = JSON.stringify(await $.command.run(run('report')))
-  expect(reply).toMatch(/Wrote tasks\/progress-report\.html \(\d+ KB\)/)
+  expect(reply).toMatch(/Wrote tasks\/progress-report\.html \(\d+ KB\) and opened it in your browser/)
+  expect(seen.launched).toEqual([`${CWD}/tasks/progress-report.html`])
   const html = files[`${CWD}/tasks/progress-report.html`]!
   expect(html).toMatch(/^<!doctype html>/)
   // Self-contained: nothing fetched, so it opens offline and survives an email.
@@ -399,8 +412,10 @@ test('/progress report writes one self-contained page next to the task list', as
 
 test('a report from one day of history says why it has no charts, and never claims a task took 0 days', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T2_DONE }
-  world(on, files)
-  await $.command.run(run('report'))
+  // Nobody at this machine (a print run): the report is written, not opened.
+  const seen = world(on, files, 'no-repo', {}, [])
+  expect(JSON.stringify(await $.command.run(run('report')))).toMatch(/Open \/p\/tasks\/progress-report\.html in a browser/)
+  expect(seen.launched).toEqual([])
   const html = files[`${CWD}/tasks/progress-report.html`]!
   expect(html).not.toMatch(/<svg /)
   expect(html).toMatch(/The burn-up and flow charts need two days of history; tracking began 9 Oct\./)

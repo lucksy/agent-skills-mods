@@ -116,6 +116,22 @@ async function pick($: $, file: string) {
   await load($)
 }
 
+/**
+ * Opens a file with the machine's default app (G1): macOS `open`, Linux
+ * `xdg-open`, Windows `start`. Only where someone sits at this machine: a
+ * terminal, VS Code or the desktop app, never a print run or a phone.
+ */
+async function openFile($: $, path: string): Promise<boolean> {
+  const surfaces = await $.session.surfaces().catch(() => [] as const)
+  if (!surfaces.some(s => s === 'terminal' || s === 'vscode' || s === 'desktop')) return false
+  for (const argv of [['open', path], ['xdg-open', path], ['cmd', '/c', 'start', '', path]]) {
+    try {
+      if ((await $.process.run(argv, { timeoutMs: 10_000 })).exitCode === 0) return true
+    } catch {}
+  }
+  return false
+}
+
 /** Projects whose backfill is running, so a second load does not start another. */
 const backfilling = new Set<string>()
 
@@ -265,7 +281,12 @@ export const register: Register = (on, options) => {
         charts: { burnup: burnupSvg(p.snapshots, p.forecast), flow: flowSvg(p.snapshots) },
       })
       await $.fs.write(path, html)
-      return reply(`Wrote ${REPORT_FILE} (${Math.round(html.length / 1024)} KB): one self-contained page that opens offline. Open it in a browser or attach it to an email.`)
+      const size = `${Math.round(html.length / 1024)} KB`
+      return reply(
+        (await openFile($, path))
+          ? `Wrote ${REPORT_FILE} (${size}) and opened it in your browser. It is one self-contained page, so it also opens offline or as an email attachment.`
+          : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`,
+      )
     }
     if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|allow-overwrite|refresh]`)
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
