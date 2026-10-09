@@ -8,7 +8,7 @@ const CWD = '/p'
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
 type Git = { log: string; cat: string } | 'no-repo'
 
-function world(on: On, files: Record<string, string>, git: Git = 'no-repo') {
+function world(on: On, files: Record<string, string>, git: Git = 'no-repo', stored: Record<string, unknown> = {}) {
   const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[] }
   on('process.run', (_$, e) => {
     seen.git.push(e.argv.slice(0, 2).join(' '))
@@ -19,7 +19,7 @@ function world(on: On, files: Record<string, string>, git: Git = 'no-repo') {
     return out(0, e.argv[1] === 'log' ? git.log : git.cat)
   })
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
-  mock.store(on)
+  mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
   on('fs.exists', (_$, e) => ({ value: e.path in files }))
   on('fs.read', (_$, e) => {
@@ -203,6 +203,53 @@ test('without git the history starts today and the board says so', async ($, on)
   const board = await mountBoard($)
   expect(await board.find({ text: /not enough history/ })).toBeDefined()
   expect(await board.find({ text: /History tracked from 9 Oct: not a git repository/ })).toBeDefined()
+})
+
+test('/progress charts draws a Raster per chart on the terminal, the numbers alone elsewhere', async ($, on) => {
+  const history = [
+    { day: '2026-10-01', done: 0, total: 4, doing: 1, blocked: 1 },
+    { day: '2026-10-05', done: 2, total: 4, doing: 0, blocked: 0 },
+  ]
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, 'no-repo', {
+    [`history:${CWD}`]: history,
+    [`backfill:${CWD}`]: { source: 'none', reason: 'test', since: '2026-10-01' },
+  })
+  const reply = await $.command.run(run('charts'))
+  expect(JSON.stringify(reply)).toMatch(/Charts opened: 3 days of history/)
+  const mount = (surface: 'terminal' | 'desktop', bodyColumns: number) =>
+    $.ui.mount({
+      plugin: 'agent-skills-mods',
+      surface,
+      component: 'Pane',
+      requestId: 'asm-charts',
+      props: { title: 'x', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+    })
+  const term = await mount('terminal', 70)
+  const up = await term.find({ type: 'Raster', key: 'burnup' })
+  expect(up?.props).toMatchObject({ columns: 70, rows: 10 })
+  expect((await term.find({ type: 'Raster', key: 'flow' }))?.props).toMatchObject({ columns: 70, rows: 8 })
+  expect(await term.find({ text: /^9 Oct: 3 done · 0 in progress/ })).toBeDefined()
+  // A resized pane draws charts to its new width.
+  await term.redraw({ title: 'x', isFocused: false, bodyColumns: 40, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never)
+  expect((await term.find({ type: 'Raster', key: 'burnup' }))?.props).toMatchObject({ columns: 40 })
+
+  const desk = await mount('desktop', 70)
+  expect(await desk.find({ type: 'Raster' })).toBeUndefined()
+  expect(await desk.find({ text: /^done 3 \(green\)/ })).toBeDefined()
+})
+
+test('charts wait for two days of history', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  const reply = await $.command.run(run('charts'))
+  expect(JSON.stringify(reply)).toMatch(/two days of history/)
+  const pane = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-charts',
+    props: { title: 'x', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+  expect(await pane.find({ text: /Charts need two days of history\. Tracking since 9 Oct/ })).toBeDefined()
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

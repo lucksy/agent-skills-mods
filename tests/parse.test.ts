@@ -4,6 +4,7 @@ import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
 import { mergeHistory, parseLog, snapshotsFromGit, splitBatch } from '../hooks/lib/history'
+import { burnup, COLOR, daily, flow, toBase64 } from '../hooks/lib/chart'
 import { bandText, blockChain, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
 import {
   CHECKLIST,
@@ -16,6 +17,7 @@ import {
   TODO_TEMPLATE,
   TODO_NONE_DONE,
   gitOutput,
+  decodeCells,
   WEAK_SPEC,
 } from './fixtures'
 
@@ -142,9 +144,9 @@ describe('history from git (F5)', () => {
     const commits = parseLog(log)
     expect(commits.length).toBe(6)
     expect(snapshotsFromGit(commits, splitBatch(cat), current)).toEqual([
-      { day: '2026-09-29', done: 0, total: 4 },
-      { day: '2026-10-03', done: 2, total: 4 },
-      { day: '2026-10-08', done: 3, total: 4 },
+      { day: '2026-09-29', done: 0, total: 4, doing: 0, blocked: 3 },
+      { day: '2026-10-03', done: 2, total: 4, doing: 0, blocked: 0 },
+      { day: '2026-10-08', done: 3, total: 4, doing: 0, blocked: 0 },
     ])
   })
 
@@ -156,12 +158,67 @@ describe('history from git (F5)', () => {
     ])
     expect(splitBatch(cat)).toEqual([TODO_T3_DONE, null, TODO_NONE_DONE])
     const fromGit = snapshotsFromGit(parseLog(log), splitBatch(cat), current)
-    expect(fromGit).toEqual([{ day: '2026-10-08', done: 3, total: 4 }])
+    expect(fromGit).toEqual([{ day: '2026-10-08', done: 3, total: 4, doing: 0, blocked: 0 }])
     const stored = [{ day: '2026-10-08', done: 4, total: 4 }]
     expect(mergeHistory(stored, [{ day: '2026-10-02', done: 1, total: 4 }, ...fromGit])).toEqual([
       { day: '2026-10-02', done: 1, total: 4 },
       { day: '2026-10-08', done: 4, total: 4 },
     ])
+  })
+})
+
+describe('charts (F2)', () => {
+  const history = [
+    { day: '2026-09-29', done: 0, total: 6, doing: 1, blocked: 2 },
+    { day: '2026-10-02', done: 2, total: 6, doing: 1, blocked: 1 },
+    { day: '2026-10-06', done: 3, total: 8, doing: 2, blocked: 1 },
+    { day: '2026-10-09', done: 5, total: 8, doing: 1, blocked: 0 },
+  ]
+
+  test('a quiet day carries the day before', async () => {
+    const d = daily(history)
+    expect(d.length).toBe(11)
+    expect(d[2]).toEqual({ ...history[0], day: '2026-10-01' })
+    expect(d[10]).toEqual(history[3])
+  })
+
+  test('burn-up: braille lines, axis labels and the numbers under it', async () => {
+    const fc = forecast(history, Date.parse('2026-10-09T10:00:00Z'))
+    expect(fc.kind).toBe('range')
+    const c = burnup(history, fc, 60, 10)!
+    const { glyphs, colors } = decodeCells(c.cells, 60)
+    expect(glyphs.length).toBe(10)
+    expect(glyphs.every(r => [...r].length === 60)).toBe(true)
+    expect(glyphs[0]).toMatch(/^ 8 ┤/)
+    expect(glyphs[7]).toMatch(/^ 0 ┤/)
+    expect(glyphs[8]).toMatch(/^   └─+$/)
+    expect(glyphs[9]).toMatch(/29 Sep.*9 Oct/)
+    const plot = glyphs.slice(0, 8).join('')
+    expect([...plot].some(ch => ch >= '\u2801' && ch <= '\u28ff')).toBe(true)
+    const fgs = new Set(colors.flat().map(([fg]) => fg))
+    expect(fgs.has(COLOR.done)).toBe(true)
+    expect(fgs.has(COLOR.scope)).toBe(true)
+    expect(c.legend).toMatch(/^done 5 \(green\) · scope 8 \(\+2\) \(grey\) · forecast ≈ \d+ \w{3}, \d+ \w{3}–\d+ \w{3} \(dotted\)$/)
+  })
+
+  test('flow: half-blocks stacked done, in progress, blocked, to do', async () => {
+    const c = flow(history, 30, 8)!
+    const { glyphs, colors } = decodeCells(c.cells, 30)
+    // Last day: 5 done of 8, so the bottom of the last column is done, the top to do.
+    const lastCol = colors.slice(0, 6).map(r => r[29]!)
+    expect(lastCol[5]).toEqual([COLOR.done, COLOR.done])
+    expect(lastCol[0]).toEqual([COLOR.todo, COLOR.todo])
+    // First day: nothing done, so the bottom row is in progress.
+    expect(colors[5]![4]![1]).toBe(COLOR.doing)
+    expect(glyphs[7]).toMatch(/29 Sep.*9 Oct/)
+    expect(c.legend).toBe('9 Oct: 5 done · 1 in progress · 0 blocked · 2 to do (bottom to top: green, amber, red, grey)')
+  })
+
+  test('no chart from under two days, and base64 as the Raster expects', async () => {
+    expect(burnup(history.slice(0, 1), null, 60, 10)).toBe(null)
+    expect(flow([], 60, 8)).toBe(null)
+    const bytes = Uint8Array.from([0x88, 0x25, 0, 0, 0, 0x88, 0xff, 0, 0, 0, 0, 1, 7])
+    expect(toBase64(bytes)).toBe(btoa(String.fromCharCode(...bytes)))
   })
 })
 

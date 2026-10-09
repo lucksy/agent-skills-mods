@@ -1,7 +1,7 @@
 // History from git (F5): the task list as it was committed, one snapshot per
 // day, so a mod installed mid-project has a pace to forecast from on day one.
 
-import { dayOf, type Snapshot } from './forecast'
+import { dayOf, snapshotOf, type Snapshot } from './forecast'
 import { parseTasks, type Task, type TaskList } from './parse'
 
 /** Newest commits read; a long project keeps its recent pace, which is what the forecast weighs. */
@@ -67,7 +67,7 @@ export function snapshotsFromGit(commits: Commit[], texts: (string | null)[], cu
     const shared = list.tasks.filter(t => known.has(key(t))).length
     if (shared * 2 < list.tasks.length) break
     const day = dayOf(commit.ms)
-    if (!byDay.has(day)) byDay.set(day, { day, done: list.done, total: list.total })
+    if (!byDay.has(day)) byDay.set(day, snapshotOf(day, list))
   }
   return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day))
 }

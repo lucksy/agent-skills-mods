@@ -182,3 +182,18 @@ export function gitOutput(copies: [string, string | null][]) {
     .join('')
   return { log, cat }
 }
+
+/** A Raster's packed cells as rows of glyphs and the matching rows of [fg, bg]. */
+export function decodeCells(cells: string, columns: number) {
+  const bin = atob(cells)
+  const view = new DataView(Uint8Array.from(bin, c => c.charCodeAt(0)).buffer)
+  const glyphs: string[] = []
+  const colors: [number, number][][] = []
+  for (let i = 0; i < bin.length / 12; i++) {
+    const [g, fg, bg] = [0, 4, 8].map(o => view.getUint32(i * 12 + o, true))
+    const r = Math.floor(i / columns)
+    glyphs[r] = (glyphs[r] ?? '') + String.fromCodePoint(g!)
+    ;(colors[r] ??= []).push([fg!, bg!])
+  }
+  return { glyphs, colors }
+}

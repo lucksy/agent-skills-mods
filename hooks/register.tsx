@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AsmProject } from '../types'
 import { parsePlan, parseSpec, parseTasks, type TaskList } from './lib/parse'
-import { dayOf, forecast, record, shortDay, type Snapshot } from './lib/forecast'
+import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './lib/forecast'
 import {
   CAT_ARGV,
   catInput,
@@ -14,6 +14,7 @@ import {
   splitBatch,
   type Backfill,
 } from './lib/history'
+import { burnup, flow } from './lib/chart'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import {
   bandText,
@@ -40,6 +41,7 @@ const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null 
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
+const CHARTS_PANE = 'asm-charts'
 const WATCHED = /(^|[\\/])(SPEC\.md|tasks[\\/](plan|todo)\.md)$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
@@ -96,6 +98,7 @@ async function load($: $): Promise<AsmProject> {
   const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
   let fc: AsmProject['forecast'] = null
   let backfilled: Backfill | null = null
+  let snapshots: Snapshot[] = []
   if (list && list.total > 0) {
     const now = await $.clock.now()
     const key = `history:${cwd}`
@@ -118,13 +121,14 @@ async function load($: $): Promise<AsmProject> {
         backfilling.delete(cwd)
       }
     }
-    const next = record(history, { day: dayOf(now), done: list.done, total: list.total })
+    const next = record(history, snapshotOf(dayOf(now), list))
     await $.store.set(key, next)
     fc = forecast(next, now)
     backfilled = note
+    snapshots = next
   }
 
-  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled }
+  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots }
   await update($, project, () => value)
   $.ui.status(statusText(spec, list))
   return value
@@ -144,8 +148,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills task board. Args: next | allow-overwrite | refresh',
-      argumentHint: '[next|allow-overwrite|refresh]',
+      description: 'agent-skills task board. Args: next | charts | allow-overwrite | refresh',
+      argumentHint: '[next|charts|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -172,7 +176,12 @@ export const register: Register = on => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|allow-overwrite|refresh]`)
+    if (arg === 'charts') {
+      await $.ui.open({ id: CHARTS_PANE, title: 'Charts' })
+      const days = new Set(p.snapshots.map(s => s.day)).size
+      return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
+    }
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|allow-overwrite|refresh]`)
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
   })
@@ -385,6 +394,45 @@ export const register: Register = on => {
           )}
         </Box>
         <Text dimColor>✓ done ● next ○ to do ◌ waits on a dependency ♦ needs you</Text>
+      </Box>
+    )
+  })
+
+  // ----------------------------------------------------------- charts (F2)
+
+  on('ui.render', { component: 'Pane', requestId: CHARTS_PANE }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const p = await read($, project)
+    const snaps = p?.snapshots ?? []
+    const columns = Math.max(24, Math.min(120, e.props.bodyColumns))
+    const up = burnup(snaps, p?.forecast ?? null, columns, 10)
+    const fl = flow(snaps, columns, 8)
+    if (!up || !fl) {
+      const since = snaps[0] ? ` Tracking since ${shortDay(snaps[0].day)}.` : ''
+      return <Text dimColor wrap="wrap">{`Charts need two days of history.${since}`}</Text>
+    }
+    // Rasters are terminal cells; other surfaces get the numbers until their SVG charts (F4).
+    const raster = (key: string, c: { columns: number; rows: number; cells: string }) => {
+      if (e.surface !== 'terminal') return null
+      const { Raster } = $.ui.resolve(e)
+      return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
+    }
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
+          <Text>
+            <Text bold>Burn-up</Text> <Text dimColor>scope vs done{p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}</Text>
+          </Text>
+          {raster('burnup', up)}
+          <Text dimColor wrap="wrap">{up.legend}</Text>
+        </Box>
+        <Box flexDirection="column">
+          <Text>
+            <Text bold>Flow</Text> <Text dimColor>tasks by state, per day</Text>
+          </Text>
+          {raster('flow', fl)}
+          <Text dimColor wrap="wrap">{fl.legend}</Text>
+        </Box>
       </Box>
     )
   })

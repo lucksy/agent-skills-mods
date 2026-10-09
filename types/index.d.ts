@@ -47,6 +47,8 @@ export type AsmProject = {
     | { source: 'git'; days: number; since: string }
     | { source: 'none'; reason: string; since: string }
     | null
+  /** One per day, oldest first: what the charts draw (F2). */
+  snapshots: { day: string; done: number; total: number; doing?: number; blocked?: number }[]
 }
 
 declare module 'claude-code' {

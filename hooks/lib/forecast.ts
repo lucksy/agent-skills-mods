@@ -1,7 +1,10 @@
 // Forecast from daily snapshots of the task list: a date range with its basis,
 // never a single date, and nothing at all until there is enough history.
 
-export type Snapshot = { day: string; done: number; total: number }
+import type { TaskList } from './parse'
+
+/** One day of a task list. `doing` and `blocked` are absent in snapshots stored before 0.5.0. */
+export type Snapshot = { day: string; done: number; total: number; doing?: number; blocked?: number }
 
 export type Forecast =
   | { kind: 'done' }
@@ -22,6 +25,18 @@ export const MIN_DONE = 3
 
 export const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 const parseDay = (day: string) => Date.parse(`${day}T00:00:00Z`)
+
+/** A list's counts on `day`: in progress is a task with some boxes ticked, not all. */
+export function snapshotOf(day: string, list: TaskList): Snapshot {
+  const open = list.tasks.filter(t => t.status !== 'done')
+  return {
+    day,
+    done: list.done,
+    total: list.total,
+    doing: open.filter(t => t.boxes.some(b => b.isDone)).length,
+    blocked: open.filter(t => t.status === 'blocked' && !t.boxes.some(b => b.isDone)).length,
+  }
+}
 
 /** Adds today's numbers, replacing an earlier snapshot of the same day. */
 export function record(history: Snapshot[], snap: Snapshot): Snapshot[] {
