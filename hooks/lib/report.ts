@@ -182,3 +182,42 @@ ${
 </main></body></html>
 `
 }
+
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * `/progress standup`: what was done since the last working day, what is in
+ * progress today, what is blocked and what needs a decision.
+ */
+export function standupText(p: ProgressInput & { dates: Record<string, { day: string; isEstimate: boolean }> }, today: string): string {
+  const list = p.list
+  const name = list?.meta?.plan ?? p.spec?.title ?? 'Plan'
+  const d = new Date(`${today}T00:00:00Z`)
+  const head = `Standup · ${name} · ${WEEKDAY[d.getUTCDay()]} ${shortDay(today)}`
+  if (!list || list.total === 0) return `${head}\nNo task list yet.`
+  // Since the last working day: Friday on a Monday.
+  const back = d.getUTCDay() === 1 ? 3 : d.getUTCDay() === 0 ? 2 : 1
+  const since = new Date(d.getTime() - back * 86_400_000).toISOString().slice(0, 10)
+  const done = list.tasks.filter(t => t.status === 'done' && p.dates[t.id] && !p.dates[t.id]!.isEstimate && p.dates[t.id]!.day >= since)
+  const doing = list.tasks.filter(t => t.status !== 'done' && (t.id === list.current?.id || t.state?.status === 'in progress'))
+  const blocked = list.tasks.filter(t => t.status === 'blocked')
+  const lines = [head]
+  lines.push(done.length ? `Done since ${shortDay(since)}: ${done.map(t => `${t.id} ${t.title}`).join('; ')}` : `Done since ${shortDay(since)}: nothing finished`)
+  lines.push(
+    doing.length
+      ? `Today: ${doing
+          .map(t => {
+            const left = t.boxes.filter(b => !b.isDone).length
+            return `${t.id} ${t.title} (${t.state?.step ? `${t.state.step}, ` : ''}${left} box${left === 1 ? '' : 'es'} left)`
+          })
+          .join('; ')}`
+      : list.done === list.total
+        ? 'Today: all tasks done, review and ship'
+        : 'Today: nothing under way',
+  )
+  if (blocked.length) lines.push(`Blocked: ${blocked.map(t => `${t.id} ${t.title}${t.blockedBy ? `, ${t.blockedBy.replace(/^[^:]+\.md: /, '')}` : ''}`).join('; ')}`)
+  const needs = decisions(p)
+  if (needs.length) lines.push(`Needs a decision: ${needs.join('; ')}`)
+  lines.push(`Progress: ${list.done}/${list.total} tasks${p.forecast?.kind === 'range' ? ` · ETA ${shortDay(p.forecast.median)}` : ''}`)
+  return lines.join('\n')
+}

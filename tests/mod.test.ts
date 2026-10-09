@@ -1011,3 +1011,16 @@ test('/progress start, done, block and unblock write the task state', async ($, 
   expect((await $.command.run(run('start T9'))).text).toBe('No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.')
   expect((await $.command.run(run('block T4'))).text).toMatch(/^Say why/)
 })
+
+test('/progress standup: done since the last working day, today, blocked, decisions; copied', async ($, on) => {
+  const todo = `---\nplan: api-keys\n---\n${TODO_T3_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** done · started 2026-10-07 · done 2026-10-08').replace('## Task 4: Rate limit per key', '## Task 4: Rate limit per key\n**Status:** in progress · started 2026-10-09 · step test').replace('## Task 1: Monorepo scaffold', '## Task 1: Monorepo scaffold\n**Status:** done · done 2026-10-01').replace('## Task 2: Prisma schema for keys', '## Task 2: Prisma schema for keys\n**Status:** done · done 2026-10-03')}`
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/plan.md`]: '# Plan\n## Open Questions\n- Q2 (T9): later?\n' })
+  const out = await $.command.run(run('standup'))
+  const lines = out.text!.split('\n')
+  expect(lines[0]).toBe('Standup · api-keys · Fri 9 Oct')
+  expect(lines[1]).toBe('Done since 8 Oct: T3 Issue and revoke keys')
+  expect(lines[2]).toBe('Today: T4 Rate limit per key (test, 1 box left)')
+  expect(out.text).toMatch(/\nNeeds a decision: Q2 \(T9\): later\?\n/)
+  expect(out.text).toMatch(/Progress: 3\/4 tasks/)
+  expect(seen.copied[0]).toBe(lines.slice(0, lines.indexOf('')).join('\n'))
+})

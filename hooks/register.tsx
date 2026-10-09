@@ -19,7 +19,7 @@ import { historyFromLogs, logsDir, mentions } from './lib/logs'
 import { burnup, chartLegends, flow, revealCells, throughput } from './lib/chart'
 import { timeline, type Seg } from './lib/timeline'
 import { TABS, type Tab } from './ui/tabs'
-import { digestText, reportHtml, sparkline } from './lib/report'
+import { digestText, reportHtml, sparkline, standupText } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
@@ -708,11 +708,16 @@ export const register: Register = (on, options) => {
       return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
     }
     if (arg === 'digest') return reply(await copyDigest($, p))
+    if (arg === 'standup') {
+      const text = standupText(p, dayOf(await $.clock.now()))
+      const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
+      return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
+    }
     if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|start T4|done T4|block T6 "why"|unblock T6|digest|report|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
