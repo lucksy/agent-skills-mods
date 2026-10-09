@@ -32,10 +32,12 @@ macbook@amila:aihqlk [Opus 5.5] · ✓spec ✓plan ●build 1/4 ○review ○shi
 At a Claude Code terminal prompt:
 
 ```
-/plugin install agent-skills-mods --marketplace lucksy/agent-skills-mods
+/plugin marketplace add lucksy/agent-skills-mods
+/plugin install agent-skills-mods@agent-skills-mods
+/reload-plugins
 ```
 
-Answer `y` to add the marketplace, then pick a scope. This needs Claude Code with mods (function hooks), and was built and tested on 2.1.295.
+Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && claude plugin install agent-skills-mods@agent-skills-mods`. This needs Claude Code with mods (function hooks), and was built and tested on 2.1.295.
 
 ## What you get
 
