@@ -448,8 +448,8 @@ describe('forecast', () => {
 describe('views', () => {
   test('status entry and band', async () => {
     const list = parseTasks(TODO_TEMPLATE)
-    expect(statusText(parseSpec(SPEC), list)).toBe('spec ♦ awaiting approval · plan 1/4')
-    expect(statusText(parseSpec(SPEC.replace('draft', 'approved')), list)).toBe('spec ✓ approved · plan 1/4')
+    expect(statusText(parseSpec(SPEC), list)).toBe('spec ♦ awaiting approval · plan ██░░░░░░░ 1/4')
+    expect(statusText(parseSpec(SPEC.replace('draft', 'approved')), list)).toBe('spec ✓ approved · plan ██░░░░░░░ 1/4')
     expect(statusText(null, null)).toBe(undefined)
     expect(bandText(list)).toBe('● T2 Prisma schema for keys · 2 criteria left · 1/4 done · checkpoint after this task')
     expect(bandText(null)).toBe(undefined)
@@ -467,7 +467,7 @@ describe('views', () => {
   test('completion toast: checkpoint first, one per edit, none for unticking (B4)', async () => {
     const [t0, t2, cp, t3] = [TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE].map(parseTasks)
     expect(completionToast(t0!, t2!)).toBe('♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human before proceeding')
-    expect(completionToast(cp!, t3!)).toBe('✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key')
+    expect(completionToast(cp!, t3!)).toBe('✓ T3 done · Issue and revoke keys\nNext: T4 Rate limit per key')
     // Ticking the checkpoint's own boxes finishes no task.
     expect(completionToast(t2!, cp!)).toBe(undefined)
     expect(completionToast(t3!, cp!)).toBe(undefined)
@@ -475,7 +475,7 @@ describe('views', () => {
     // A new plan that reuses T1..Tn is not progress on the old one.
     expect(completionToast(t0!, parseTasks(PLAN_INDEX))).toBe(undefined)
     const all = TODO_T3_DONE.replace(/- \[ \]/g, '- [x]')
-    expect(completionToast(t3!, parseTasks(all))).toBe('✓ T4 done Rate limit per key · all tasks done')
+    expect(completionToast(t3!, parseTasks(all))).toBe('✓ T4 done · Rate limit per key\nAll tasks done')
   })
 
   test('block chain follows undone dependencies (C1)', async () => {

@@ -204,11 +204,18 @@ test('a prompt about a task reloads the files and focuses the board on it', asyn
     requestId: 'asm-board',
     props: { title: 'x', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
   })
-  expect(await board.find({ text: /› ◌ T3/ })).toBeDefined()
+  const t3 = await board.findAll({ text: /^○ T3 Issue and revoke keys$/ })
+  expect(t3.some(x => (x.props as { inverse?: boolean }).inverse === true)).toBe(true)
 
   await $.prompt.submit({ text: 'run the linter', wait: false, origin: { kind: 'composer' } } as never)
   expect(seen.opened).toEqual(['asm-board'])
 })
+
+/** The plan pane on its timeline tab. */
+const mountTimeline = async ($: Parameters<TestBody>[0]) => {
+  await $.command.run(run('timeline'))
+  return mountBoard($)
+}
 
 const mountBoard = ($: Parameters<TestBody>[0]) =>
   $.ui.mount({
@@ -322,7 +329,8 @@ test('with planSpinner on, the spinner says the step and task; a failed test run
   expect(words).toEqual(['Working on T2', 'Building T2', 'Testing T2'])
 
   const board = await mountBoard($)
-  expect(await board.find({ text: /× T2 Prisma schema for keys · tests failed/ })).toBeDefined()
+  expect(await board.find({ text: /^× T2 Prisma schema for keys$/ })).toBeDefined()
+  expect(await board.find({ text: /^tests failed$/ })).toBeDefined()
   await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
   expect(await board.find({ text: /× T2/ })).toBeUndefined()
 
@@ -360,11 +368,11 @@ test('the timeline dates done tasks from git and expected ones with ≈', async 
   ])
   world(on, { [`${CWD}/tasks/todo.md`]: many }, git)
   await $.command.run(run('refresh'))
-  const board = await mountBoard($)
-  expect(await board.find({ text: /^1 Oct\s+ ✓ T1 Step 1/ })).toBeDefined()
-  expect(await board.find({ text: /^8 Oct\s+ ✓ T5 Step 5/ })).toBeDefined()
-  expect(await board.find({ text: /^≈\d+ Oct\s+ ● T6 Step 6/ })).toBeDefined()
-  expect(await board.find({ text: /≈ expected/ })).toBeDefined()
+  const board = await mountTimeline($)
+  expect(await board.find({ text: /├─ ✓ T1 Step 1 +▬▬▬ done 1 Oct$/ })).toBeDefined()
+  expect(await board.find({ text: /├─ ✓ T5 Step 5 +▬▬▬ done 8 Oct$/ })).toBeDefined()
+  expect(await board.find({ text: /├─ ● T6 Step 6 +▬▫▫ building · today  done ≈\d+ Oct$/ })).toBeDefined()
+  expect(await board.find({ text: /└─ ○ T8 Step 8 +▫▫▫ ≈\d+ Oct$/ })).toBeDefined()
 })
 
 test('module specs: a picker in the spec pane, /spec-view <id>, and the one the agent writes', async ($, on) => {
@@ -485,9 +493,9 @@ test('too little git history: the band asks about session logs, and a yes adds t
   const text = JSON.stringify(await $.command.run(run('history')))
   expect(text).toMatch(/History since 2 Oct: 3 days from session logs\./)
   expect(text).toMatch(/session logs: on, 3 days added/)
-  // The board dates T3 from the log, not from today.
-  const board = await mountBoard($)
-  expect(await board.find({ text: /^6 Oct\s+ ✓ T3/ })).toBeDefined()
+  // The timeline dates T3 from the log, not from today.
+  const board = await mountTimeline($)
+  expect(await board.find({ text: /✓ T3 .*done 6 Oct$/ })).toBeDefined()
 
   expect(JSON.stringify(await $.command.run(run('history logs off')))).toMatch(/Session logs are off/)
   expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/History tracked from 9 Oct\./)
@@ -538,17 +546,17 @@ test('commit messages date the tasks when the task list was never committed per 
   expect(seen.toasts[0]).toBe('History since 25 Sep: 1 day from commits of tasks/todo.md, 3 days from commit messages.')
   const text = JSON.stringify(await $.command.run(run('history')))
   expect(text).toMatch(/commit messages naming tasks \(T3, Task 3\): 3 days/)
-  const board = await mountBoard($)
-  expect(await board.find({ text: /^30 Sep\s+ ✓ T1/ })).toBeDefined()
-  expect(await board.find({ text: /^2 Oct\s+ ✓ T2/ })).toBeDefined()
-  expect(await board.find({ text: /^6 Oct\s+ ✓ T3/ })).toBeDefined()
+  const board = await mountTimeline($)
+  expect(await board.find({ text: /✓ T1 .*done 30 Sep$/ })).toBeDefined()
+  expect(await board.find({ text: /✓ T2 .*done 2 Oct$/ })).toBeDefined()
+  expect(await board.find({ text: /✓ T3 .*done 6 Oct$/ })).toBeDefined()
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
   const out = await $.command.run(run('next'))
   expect(out.text).toMatch(/^Next: T2 Prisma schema for keys/)
-  expect(JSON.stringify(seen.status)).toMatch(/spec ♦ awaiting approval · plan 1\/4/)
+  expect(JSON.stringify(seen.status)).toMatch(/spec ♦ awaiting approval · plan ██░░░░░░░ 1\/4/)
 })
 
 test('writing todo.md opens the board, writing SPEC.md opens the spec pane', async ($, on) => {
@@ -574,9 +582,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
       })
 
     const board = await pane('asm-board')
-    expect(await board.find({ text: /1\/4 done/ })).toBeDefined()
-    expect(await board.find({ text: /T2/ })).toBeDefined()
-    expect(await board.find({ text: /Checkpoint: After Tasks 1-2/ })).toBeDefined()
+    expect(await board.find({ text: /^tasks · Phase 1 of 2$/ })).toBeDefined()
+    expect(await board.find({ text: /^1\/4 · 25%$/ })).toBeDefined()
+    expect(await board.find({ text: /^◐ T2 Prisma schema for keys$/ })).toBeDefined()
+    expect(await board.find({ text: /^◆ Checkpoint 1$/ })).toBeDefined()
+    expect(await board.find({ text: /^after T2$/ })).toBeDefined()
     expect(await board.find({ text: /not enough history/ })).toBeDefined()
 
     const spec = await pane('asm-spec')
@@ -614,7 +624,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never,
     })
-    expect(await band.find({ text: /T2 Prisma schema for keys · 2 criteria left/ })).toBeDefined()
+    expect(await band.find({ text: /^T2 Prisma schema for keys$/ })).toBeDefined()
+    expect(await band.find({ text: /^1 criterion · 1 verification$/ })).toBeDefined()
+    expect(await band.find({ text: /^checkpoint after this task$/ })).toBeDefined()
   })
 }
 
@@ -760,39 +772,23 @@ test('chartStyle auto on a terminal that draws no pictures keeps the braille and
   expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
 })
 
-test('the band turns its marker while the agent works and holds it still between turns', async ($, on) => {
+test('the band shows ▸ between turns and a turning marker while the agent works', async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   await $.command.run(run('refresh'))
   const props = (isWorking: boolean) =>
     ({ hasSurvey: false, isWorking, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} }) as never
   const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: props(false) })
-  expect((await band.find({ type: 'Client', key: 'pulse' }))?.props).toMatchObject({ module: 'hooks/ui/pulse.tsx', props: { isActive: false } })
-  expect(await band.find({ text: /^●$/, in: 'pulse' })).toBeDefined()
-  await band.advance(600)
-  expect(await band.find({ text: /^●$/, in: 'pulse' })).toBeDefined()
+  expect(await band.find({ type: 'Client', key: 'pulse' })).toBeUndefined()
+  expect(await band.find({ text: /^▸$/ })).toBeDefined()
 
   await band.redraw(props(true))
-  await band.advance(150)
+  expect((await band.find({ type: 'Client', key: 'pulse' }))?.props).toMatchObject({ module: 'hooks/ui/pulse.tsx', props: { isActive: true } })
   const glyphs = new Set<string>()
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     await band.advance(140)
     for (const g of ['◐', '◓', '◑', '◒']) if (await band.find({ text: new RegExp(`^${g}$`), in: 'pulse' })) glyphs.add(g)
   }
   expect(glyphs.size).toBeGreaterThan(2)
-  expect((await band.find({ type: 'Client', key: 'band-meter' }))?.props).toMatchObject({ props: { done: 1, total: 4 } })
-  expect(await band.find({ text: /^1\/4 done$/ })).toBeDefined()
-})
-
-test('the board bar fills in smoothly to the share done', async ($, on) => {
-  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
-  await $.command.run(run('refresh'))
-  const board = await mountBoard($)
-  const meter = await board.find({ type: 'Client', key: 'meter' })
-  expect(meter?.props).toMatchObject({ module: 'hooks/ui/meter.tsx', props: { done: 1, total: 4 }, width: 30 })
-  await board.resize({ columns: 30, rows: 1, in: 'meter' })
-  await board.advance(2000)
-  expect(await board.find({ text: /^███████▌░{22}$/, in: 'meter' })).toBeDefined()
-  expect(await board.find({ text: /^25%$/ })).toBeDefined()
 })
 
 test('/progress charts sweeps the cell charts in from the left', async ($, on) => {
@@ -809,23 +805,45 @@ test('/progress charts sweeps the cell charts in from the left', async ($, on) =
   expect((await plot()).length).toBeGreaterThan(10)
 })
 
-test('the board and charts carry Report, Copy digest and a switch to the other pane', async ($, on) => {
+test('the plan pane: tabs switch by ←/→ or a click, with report and copy digest beside them', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }
   const seen = world(on, files, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
   await $.command.run(run(''))
-  const board = await mountBoard($)
-  await board.press({ key: 'digest' })
+  const pane = await mountBoard($)
+  expect((await pane.find({ type: 'Client', key: 'tabs' }))?.props).toMatchObject({ module: 'hooks/ui/tabs.tsx', props: { active: 'tasks' } })
+  expect(await pane.find({ text: /^\[ Tasks \]$/, in: 'tabs' })).toBeDefined()
+
+  await pane.key({ key: 'left', in: 'tabs' })
+  expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
+  await pane.key({ key: 'left', in: 'tabs' })
+  expect(await pane.find({ text: /^\/review → \/ship$|○ \/review → \/ship/ })).toBeDefined()
+  await pane.pointer({ type: 'down', x: 30, y: 0, button: 'left', in: 'tabs' })
+  expect(await pane.find({ text: /^tasks · / })).toBeDefined()
+
+  await pane.press({ key: 'digest' })
   expect(seen.copied).toHaveLength(1)
   expect(seen.toasts.at(-1)).toBe('Copied to the clipboard.')
-  await board.press({ key: 'report' })
+  await pane.press({ key: 'report' })
   expect(files[`${CWD}/tasks/progress-report.html`]).toMatch(/^<!doctype html>/i)
-  expect(seen.launched).toEqual([`${CWD}/tasks/progress-report.html`])
-  await board.press({ key: 'to-charts' })
-  expect(seen.opened.at(-1)).toBe('asm-charts')
-  const charts = await mountCharts($)
-  await charts.press({ key: 'to-board' })
-  expect(seen.opened.at(-1)).toBe('asm-board')
-  expect((await charts.find({ type: 'Button', key: 'report' }))?.props).toMatchObject({ hotkey: 'r' })
+  expect((await pane.find({ type: 'Button', key: 'report' }))?.props).toMatchObject({ hotkey: 'r', plain: true })
+})
+
+test('the timeline: header, milestones, a tree with step bars, and the legend', async ($, on) => {
+  const todo = `---\nplan: api-keys\ncreated: 2026-09-29\n---\n${TODO_T2_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · started 2026-10-08 · step test')}`
+  const spec = SPEC.replace('status: draft', 'status: approved\napproved: 2026-09-28')
+  world(on, { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/SPEC.md`]: spec, [`${CWD}/tasks/plan.md`]: '# Plan\n## Open Questions\n- Q2 (T4): Upstash or self-hosted?\n' })
+  const pane = await mountTimeline($)
+  expect(await pane.find({ text: /^api-keys  4 tasks · 2 phases · spec ✓ approved$/ })).toBeDefined()
+  expect(await pane.find({ text: /^10d in · no ETA yet/ })).toBeDefined()
+  expect(await pane.find({ text: /^28 Sep +✓ spec approved$/ })).toBeDefined()
+  expect(await pane.find({ text: /^29 Sep +✓ plan  4 tasks · 1 checkpoint$/ })).toBeDefined()
+  expect(await pane.find({ text: /├─ ✓ Phase 1 · Foundation  2 of 2 done$/ })).toBeDefined()
+  expect(await pane.find({ text: /│  ├─ ✓ T1 Monorepo scaffold +▬▬▬ done/ })).toBeDefined()
+  expect(await pane.find({ text: /├─ ♦ checkpoint 1   needs you: tests · review with you$/ })).toBeDefined()
+  expect(await pane.find({ text: /│  ├─ ● T3 Issue and revoke keys +▬▬▫ testing · 1d$/ })).toBeDefined()
+  expect(await pane.find({ text: /│  └─ ♦ T4 Rate limit per key +needs you: Q2, Upstash or self-hosted\?$/ })).toBeDefined()
+  expect(await pane.find({ text: /^ +○ \/review → \/ship$/ })).toBeDefined()
+  expect(await pane.find({ text: /^■ done  ■ running  ■ slow  × failed  ♦ needs you  ▫ to come  ◌ waits on another task$/ })).toBeDefined()
 })
 
 test('progress format: a task list the agent writes gets front matter and Status lines', async ($, on) => {

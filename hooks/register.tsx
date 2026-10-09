@@ -17,10 +17,12 @@ import {
 } from './lib/history'
 import { historyFromLogs, logsDir, mentions } from './lib/logs'
 import { burnup, flow, revealCells } from './lib/chart'
+import { timeline, type Seg } from './lib/timeline'
+import { TABS, type Tab } from './ui/tabs'
 import { digestText, reportHtml } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
-import { spinnerWord, stepOf, type Step } from './lib/steps'
+import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
@@ -28,6 +30,9 @@ import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFro
 import {
   bandText,
   bar,
+  boardRows,
+  openCounts,
+  phaseOf,
   completionToast,
   taskDates,
   progressBrief,
@@ -66,6 +71,8 @@ const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as 
 /** Whether this terminal draws pictures (F3), read from its environment at session start. */
 const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, false)
 /** How much of the cell charts is drawn (0 to 1): they sweep in left to right when the pane opens. */
+/** The plan pane's tab (mockup 12): timeline, charts or tasks. */
+const tab = atom({ plugin: 'agent-skills-mods', key: 'tab' } as const, 'tasks' as Tab)
 const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as const, 1)
 
 const SPEC_PANE = 'asm-spec'
@@ -142,12 +149,38 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
       const isFailed = result.isError === true
       await update($, failed, f => (isFailed ? task : f === task ? null : f))
     }
+    if (p && s === 'test') {
+      const counts = testCounts(String((result as { text?: unknown }).text ?? ''))
+      if (counts) await setFacts($, p.cwd, f => ({ ...f, tests: counts }))
+    }
+    if (p && s === 'commit' && p.list) await countCommits($, p.cwd, p.list.meta?.created ?? p.snapshots[0]?.day ?? dayOf(await $.clock.now()), true)
     // The progress format (E1): the current task is in progress, at this step.
     if (keepFormat && task && p?.listFile === 'tasks/todo.md') {
       const today = dayOf(await $.clock.now())
       const pending = await readPending($, p.cwd)
       await $.store.set(pendingKey(p.cwd), { ...pending, [task]: { ...pending[task], status: 'in progress', started: pending[task]?.started ?? today, step: s } })
     }
+  } catch {}
+}
+
+/** Facts the timeline's header shows (mockup 11): commits since the plan began, the last test run, the last review. */
+type Facts = { commits?: number; commitsDay?: string; tests?: { passed: number; failed: number }; reviewed?: string }
+const factsKey = (cwd: string) => `facts:${cwd}`
+async function setFacts($: $, cwd: string, fn: (f: Facts) => Facts) {
+  const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
+  await $.store.set(factsKey(cwd), fn(f))
+}
+
+/** Commits since `since`, once a day (and after each commit the agent makes). */
+async function countCommits($: $, cwd: string, since: string, force = false) {
+  const today = dayOf(await $.clock.now())
+  const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
+  if (!force && f.commitsDay === today) return
+  try {
+    const out = await $.process.run(['git', 'rev-list', '--count', `--since=${since}T00:00:00`, 'HEAD'], { timeoutMs: 10_000 })
+    const n = Number(out.stdout.trim())
+    if (out.exitCode === 0 && Number.isFinite(n)) await setFacts($, cwd, x => ({ ...x, commits: n, commitsDay: today }))
+    else await setFacts($, cwd, x => ({ ...x, commitsDay: today }))
   } catch {}
 }
 
@@ -474,8 +507,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills task board. Args: next | charts | digest | report | history | format | allow-overwrite | refresh',
-      argumentHint: '[next|charts|digest|report|history|format|allow-overwrite|refresh]',
+      description: 'agent-skills plan pane: tasks, or timeline | charts. Also next | digest | report | history | format | allow-overwrite | refresh',
+      argumentHint: '[timeline|charts|next|digest|report|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -529,9 +562,14 @@ export const register: Register = (on, options) => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    if (arg === 'timeline') {
+      await showTab($, 'timeline')
+      await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+      return reply(p.list ? `Timeline opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
+    }
     if (arg === 'charts') {
-      await sweepCharts($)
-      await $.ui.open({ id: CHARTS_PANE, title: 'Charts' })
+      await showTab($, 'charts')
+      await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
       const days = new Set(p.snapshots.map(s => s.day)).size
       return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
     }
@@ -540,7 +578,8 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|history|format|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|allow-overwrite|refresh]`)
+    await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
   })
@@ -653,6 +692,11 @@ export const register: Register = (on, options) => {
   on('skill.prompt', async ($, e, next) => {
     const s = stageOfSkill(e.skill)
     if (s) await update($, stage, () => s)
+    if (s === 'review') {
+      const cwd = await $.session.cwd()
+      const today = dayOf(await $.clock.now())
+      await setFacts($, cwd, f => ({ ...f, reviewed: today }))
+    }
     // agent-skills writes checkboxes only; its spec, plan and build skills get the format's rules (E1).
     if (keepFormat && (s === 'spec' || s === 'plan' || s === 'build' || s === 'test')) return next({ ...e, text: `${e.text}\n\n---\n\n${FORMAT_RULES}` })
     return next(e)
@@ -678,34 +722,23 @@ export const register: Register = (on, options) => {
     const ask = p?.history?.logs === 'ask'
     if ((!list || !t) && !ask) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    // A turning marker and a filling bar where the surface runs surface modules.
-    const animated = e.surface === 'terminal' || e.surface === 'desktop'
-    const Client = animated ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
-    const left = t ? t.boxes.filter(b => !b.isDone).length : 0
+    // ▸ between turns; a turning marker while the agent works, where surface modules run.
+    const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
+    const Client = working ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
     return (
       <Box flexDirection="column">
         {list && t && (
-          <Box flexDirection="row" gap={1}>
-            {Client ? (
-              <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: e.props.isWorking === true }} width={1} height={1} />
-            ) : (
-              <Text color="warning">●</Text>
-            )}
-            <Text wrap="truncate-end">
-              <Text bold color="warning">
-                {t.id}
-              </Text>{' '}
-              {t.title}
-              <Text dimColor>
-                {' '}
-                · {left} criteri{left === 1 ? 'on' : 'a'} left
+          <Box flexDirection="row" gap={3}>
+            <Box flexDirection="row" gap={1}>
+              {Client ? <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: true, color: 'claude' }} width={1} height={1} /> : <Text color="claude">▸</Text>}
+              <Text wrap="truncate-end">
+                <Text color="claude">{t.id}</Text> <Text bold>{t.title}</Text>
               </Text>
+            </Box>
+            <Text dimColor wrap="truncate-end">
+              {openCounts(t)}
             </Text>
-            {Client && <Client key="band-meter" module="./ui/meter.tsx" props={{ done: list.done, total: list.total }} width={10} height={1} />}
-            <Text dimColor>
-              {list.done}/{list.total} done
-            </Text>
-            {t.checkpoint && <Text color="permission">♦ checkpoint after this task</Text>}
+            {t.checkpoint && <Text dimColor>checkpoint after this task</Text>}
           </Box>
         )}
         {ask && (
@@ -860,102 +893,156 @@ export const register: Register = (on, options) => {
 
   // ----------------------------------------------------------- task board + run timeline (B1, F1, G3)
 
-  on('ui.render', { component: 'Pane', requestId: BOARD_PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const p = await read($, project)
+  // ----------------------------------------------------------- the plan pane: timeline, charts, tasks (B1, F1, F2, G3)
+
+  on('ui.message', async ($, e, next) => {
+    const t = (e.data as { tab?: unknown } | null)?.tab
+    if (e.element !== 'tabs' || !TABS.includes(t as Tab)) return next(e)
+    await showTab($, t as Tab)
+    return { props: { active: t } }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: BOARD_PANE }, async ($, e) => drawPlan($, e, null))
+  // A charts pane opened by 0.14 or earlier: the charts tab on its own.
+  on('ui.render', { component: 'Pane', requestId: CHARTS_PANE }, async ($, e) => drawPlan($, e, 'charts'))
+}
+
+// ------------------------------------------------------------------ plan pane views
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** A Pane's render event, as the plan pane's views take it. */
+type PaneEvent = any
+
+/**
+ * The plan pane (mockups 11, 12, 7): tabs on top, `r report · c copy digest`
+ * beside them, then the timeline, the charts or the task board. `forced`
+ * pins a tab, for the charts pane earlier versions opened.
+ */
+async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
+  const { Box, Button, Text } = $.ui.resolve(e) as any
+  const p = await read($, project)
+  const active: Tab = forced ?? (await read($, tab))
+  const view = active === 'timeline' ? await timelineView($, e, p) : active === 'charts' ? await chartsView($, e, p) : await tasksView($, e, p)
+  if (forced) return view
+  const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
+  const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        {Client ? (
+          <Client key="tabs" module="./ui/tabs.tsx" props={{ active }} />
+        ) : (
+          TABS.map(t => <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} dimColor={t !== active} onPress={() => void showTab($, t)} />)
+        )}
+        {Client && <Text dimColor>←/→ switch ·</Text>}
+        <Button key="report" label="report" hotkey="r" plain dimColor onPress={() => void paneAction($, 'report')} />
+        <Text dimColor>·</Text>
+        <Button key="digest" label="copy digest" hotkey="c" plain dimColor onPress={() => void paneAction($, 'digest')} />
+      </Box>
+      <Text color="subtle">{'─'.repeat(Math.max(10, e.props.bodyColumns))}</Text>
+      {view}
+    </Box>
+  )
+}
+
+/** The plan pane's tab, from a tab button, the tabs row or a command. The charts sweep in when shown. */
+async function showTab($: $, t: Tab) {
+  if (t === 'charts') await sweepCharts($)
+  await update($, tab, () => t)
+}
+
+async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
+    const { Box, Text } = $.ui.resolve(e)
     const list = p?.list
     if (!list || list.total === 0) {
       return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
     }
-    const width = e.props.bodyColumns
+    const width = Math.max(24, e.props.bodyColumns)
     const focused = await read($, focus)
-    const failedTask = await read($, failed)
-    const rows = timelineRows(list, { dates: p?.dates ?? {}, failed: failedTask })
-    const dated = rows.some(r => r.date)
-    const date = (d: string) => (dated ? <Text dimColor>{d.padEnd(8)}</Text> : '')
-    const tone = { done: 'success', next: 'warning', waiting: 'subtle', blocked: 'error', todo: 'subtle', failed: 'error' } as const
+    const rows = boardRows(list, { failed: await read($, failed) })
+    const color = { done: 'success', now: 'warning', muted: 'subtle', blocked: 'error', accent: 'claude', needsYou: 'permission', text: undefined } as const
+    const pct = Math.round((list.done / list.total) * 100)
+    const where = phaseOf(list)
+    // A row: what it is on the left, its state on the right.
+    const line = (key: string, left: unknown, right: unknown, opts: { isCurrent?: boolean } = {}) => (
+      <Box key={key} flexDirection="row" justifyContent="space-between" gap={1}>
+        <Text wrap="truncate-end" bold={opts.isCurrent}>
+          {left as never}
+        </Text>
+        <Box flexShrink={0}>
+          <Text>{right as never}</Text>
+        </Box>
+      </Box>
+    )
     return (
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="column">
-          <Box flexDirection="row" gap={1}>
-            <Text bold>
-              {list.done}/{list.total} done
+      <Box flexDirection="column">
+        {line(
+          'head',
+          <Text>
+            <Text bold color="claude">
+              tasks
             </Text>
-            {e.surface === 'terminal' || e.surface === 'desktop' ? (
-              (() => {
-                const { Client } = $.ui.resolve(e as typeof e & { surface: 'terminal' })
-                return <Client key="meter" module="./ui/meter.tsx" props={{ done: list.done, total: list.total }} width={Math.max(4, Math.min(30, width - 16))} height={1} />
-              })()
-            ) : (
-              <Text color="success">{bar(list.done, list.total, Math.max(4, Math.min(30, width - 16)))}</Text>
-            )}
-            <Text dimColor>{Math.round((list.done / list.total) * 100)}%</Text>
-          </Box>
+            {where && <Text color="claude"> · {where}</Text>}
+          </Text>,
+          <Text dimColor>
+            {list.done}/{list.total} · {pct}%
+          </Text>,
+        )}
+        <Text color="subtle">{'─'.repeat(width)}</Text>
+        {rows.map((row, i) =>
+          row.kind === 'phase' ? (
+            <Box key={`p${i}`} marginTop={i === 0 ? 0 : 1}>
+              <Text dimColor wrap="truncate-end">
+                {row.label}
+                {row.summary ? `  ${row.summary}` : ''}
+              </Text>
+            </Box>
+          ) : row.kind === 'checkpoint' ? (
+            line(
+              `c${i}`,
+              <Text color={color[row.tone]}>
+                {row.glyph} {row.label}
+              </Text>,
+              <Text color={color[row.rightTone]}>{row.right}</Text>,
+            )
+          ) : (
+            <Box key={row.id} flexDirection="column">
+              {line(
+                row.id,
+                <Text inverse={row.id === focused}>
+                  <Text color={color[row.tone]}>{row.glyph}</Text> <Text bold={row.isCurrent}>{row.id}</Text>{' '}
+                  <Text dimColor={row.tone === 'muted' && !row.isCurrent}>{row.title}</Text>
+                </Text>,
+                <Text color={color[row.rightTone]} bold={row.isCurrent}>
+                  {row.right}
+                </Text>,
+                { isCurrent: row.isCurrent },
+              )}
+              {row.under.map(u => (
+                <Text dimColor wrap="truncate-end">
+                  {'  '}
+                  {u.text}
+                </Text>
+              ))}
+            </Box>
+          ),
+        )}
+        {list.kind === 'checklist' && <Text dimColor>Plain checklist: no "## Task N:" headings found.</Text>}
+        {p?.plan?.trackedIn && <Text dimColor>Tasks tracked in {p.plan.trackedIn}</Text>}
+        <Box flexDirection="column" marginTop={1}>
           {p?.forecast && (
             <Text dimColor wrap="wrap">
               {forecastText(p.forecast)}
             </Text>
           )}
           {p?.history && <Text dimColor>{historyNote(p.history, p.listFile)}</Text>}
-          {list.kind === 'checklist' && <Text dimColor>Plain checklist: no "## Task N:" headings found.</Text>}
-          {p?.plan?.trackedIn && <Text dimColor>Tasks tracked in {p.plan.trackedIn}</Text>}
         </Box>
-        <Box flexDirection="column">
-          {rows.map(row =>
-            row.kind === 'phase' ? (
-              <Text wrap="truncate-end">
-                {date(row.date)}
-                <Text color="claude">── </Text>
-                <Text bold>{row.text}</Text>
-                <Text color="subtle"> {'─'.repeat(Math.max(2, width - row.text.length - (dated ? 12 : 4)))}</Text>
-              </Text>
-            ) : row.kind === 'checkpoint' ? (
-              <Text color={row.glyph === '♦' ? 'permission' : undefined} dimColor={row.glyph !== '♦'} wrap="truncate-end">
-                {date(row.date)}
-                {'  '}
-                {row.glyph} {row.text}
-              </Text>
-            ) : (
-              <Text wrap="truncate-end" inverse={row.id === focused}>
-                {date(row.date)}
-                {row.id === focused ? '› ' : '  '}
-                <Text color={tone[row.status]}>{row.glyph}</Text> <Text bold={row.status === 'next'}>{row.id}</Text>{' '}
-                <Text dimColor={row.status === 'done'}>{row.title}</Text>
-                {row.detail ? <Text dimColor> · {row.detail}</Text> : ''}
-              </Text>
-            ),
-          )}
-        </Box>
-        <Box flexDirection="row" gap={1}>
-          <Button key="to-charts" label="Charts" hotkey="g" dimColor onPress={() => void sweepCharts($).then(() => $.ui.open({ id: CHARTS_PANE, title: 'Charts' }))} />
-          <Button key="report" label="Report" hotkey="r" dimColor onPress={() => void paneAction($, 'report')} />
-          <Button key="digest" label="Copy digest" hotkey="c" dimColor onPress={() => void paneAction($, 'digest')} />
-        </Box>
-        <Text wrap="wrap">
-          <Text color="success">✓</Text>
-          <Text dimColor> done </Text>
-          <Text color="warning">●</Text>
-          <Text dimColor> next </Text>
-          <Text color="subtle">○</Text>
-          <Text dimColor> to do </Text>
-          <Text color="subtle">◌</Text>
-          <Text dimColor> waits on another task </Text>
-          <Text color="error">■</Text>
-          <Text dimColor> blocked by a question </Text>
-          <Text color="permission">♦</Text>
-          <Text dimColor> needs you </Text>
-          <Text color="error">×</Text>
-          <Text dimColor> tests failed{dated ? ' · ≈ expected' : ''}</Text>
-        </Text>
       </Box>
     )
-  })
+}
 
-  // ----------------------------------------------------------- charts (F2)
-
-  on('ui.render', { component: 'Pane', requestId: CHARTS_PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const p = await read($, project)
+async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
+    const { Box, Text } = $.ui.resolve(e)
     const snaps = p?.snapshots ?? []
     const columns = Math.max(24, Math.min(120, e.props.bodyColumns))
     const up = burnup(snaps, p?.forecast ?? null, columns, 10)
@@ -1026,14 +1113,36 @@ export const register: Register = (on, options) => {
           {chart('flow', fl)}
           <Text dimColor wrap="wrap">{fl.legend}</Text>
         </Box>
-        <Box flexDirection="row" gap={1}>
-          <Button key="to-board" label="Board" hotkey="b" dimColor onPress={() => void $.ui.open({ id: BOARD_PANE, title: 'Plan' })} />
-          <Button key="report" label="Report" hotkey="r" dimColor onPress={() => void paneAction($, 'report')} />
-          <Button key="digest" label="Copy digest" hotkey="c" dimColor onPress={() => void paneAction($, 'digest')} />
-        </Box>
       </Box>
     )
-  })
+}
+
+async function timelineView($: $, e: PaneEvent, p: AsmProject | null) {
+  const { Box, Text } = $.ui.resolve(e) as any
+  const list = p?.list
+  if (!p || !list || list.total === 0) return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
+  const today = dayOf(await $.clock.now())
+  await countCommits($, p.cwd, list.meta?.created ?? p.snapshots[0]?.day ?? today)
+  const facts = ((await $.store.get(factsKey(p.cwd))) as Facts | undefined) ?? undefined
+  const t = timeline({ spec: p.spec, list, plan: p.plan, forecast: p.forecast, dates: p.dates, today, since: p.snapshots[0]?.day, failed: await read($, failed), facts })
+  const color = { text: undefined, strong: undefined, muted: 'subtle', done: 'success', run: 'warning', bad: 'error', needsYou: 'permission', accent: 'claude' } as const
+  const line = (l: Seg[], i: number) => (
+    <Text key={i} wrap="truncate-end">
+      {l.map(seg => (
+        <Text color={color[seg.tone]} bold={seg.tone === 'strong'}>
+          {seg.text}
+        </Text>
+      ))}
+    </Text>
+  )
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column">{t.header.map(line)}</Box>
+      <Box flexDirection="column">{t.rows.map(line)}</Box>
+      <Box flexDirection="column">{t.legend.map(line)}</Box>
+      {p.history && <Text dimColor>{historyNote(p.history, p.listFile)}</Text>}
+    </Box>
+  )
 }
 
 function areaDetail(a: { key: string; body: string }, criteria: string[]): string {

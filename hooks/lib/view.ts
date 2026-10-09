@@ -53,7 +53,7 @@ export function statusText(spec: Spec | null, list: TaskList | null): string | u
   const parts: string[] = []
   if (approval === 'approved') parts.push('spec ✓ approved')
   else if (approval === 'awaiting') parts.push('spec ♦ awaiting approval')
-  if (list && list.total > 0) parts.push(`plan ${list.done}/${list.total}`)
+  if (list && list.total > 0) parts.push(`plan ${bar(list.done, list.total, 9)} ${list.done}/${list.total}`)
   return parts.length ? parts.join(' · ') : undefined
 }
 
@@ -283,8 +283,8 @@ export function completionToast(before: TaskList | null, after: TaskList | null)
   }
   const names = finished.map(t => t.id).join(', ')
   const title = finished.length === 1 ? ` ${finished[0]?.title ?? ''}` : ''
-  const next = after.current ? ` · Next: ${after.current.id} ${after.current.title}` : after.done === after.total ? ' · all tasks done' : ''
-  return `${GLYPH.done} ${names} done${title}${next}`
+  const next = after.current ? `\nNext: ${after.current.id} ${after.current.title}` : after.done === after.total ? '\nAll tasks done' : ''
+  return `${GLYPH.done} ${names} done${title ? ` ·${title}` : ''}${next}`
 }
 
 /** `T6 ← T5 ← T4`: from a waiting task down its undone dependencies to one that can start. */
@@ -376,4 +376,112 @@ export function taskInPrompt(text: string, list: TaskList | null): string | null
   }
   const isProgress = /\b(what'?s|what is) (left|next|remaining|blocked)\b|\bwhere are we\b|\bhow far\b|\bprogress\b|\bstatus\b/i.test(text)
   return isProgress ? (list.current?.id ?? null) : null
+}
+
+// ------------------------------------------------------------------ the task board (B1, mockups 7 and 9)
+
+/** A colour name the board uses, mapped to the surface's theme by the pane. */
+export type Tone = 'done' | 'now' | 'muted' | 'blocked' | 'accent' | 'needsYou' | 'text'
+
+export type BoardRow =
+  | { kind: 'phase'; label: string; summary: string | null }
+  | { kind: 'task'; id: string; title: string; glyph: string; tone: Tone; right: string; rightTone: Tone; isCurrent: boolean; under: { text: string; tone: Tone }[] }
+  | { kind: 'checkpoint'; label: string; glyph: string; tone: Tone; right: string; rightTone: Tone }
+
+/** `Phase 1: Foundation` → `Phase 1 · Foundation`, as the board writes a phase. */
+export const phaseLabel = (p: string) => p.replace(/^(Phase\s+\d+)\s*[:.\-–—]\s*/i, '$1 · ')
+
+/** A short criterion for the line under the current task: `✓ ApiKey model`. */
+const shortBox = (b: { text: string; isDone: boolean }) => `${b.isDone ? '✓' : '☐'} ${b.text.replace(/^Tests pass:.*/i, 'tests').replace(/^Build succeeds:.*/i, 'build').replace(/`/g, '')}`
+
+/**
+ * The board: phases with their tasks and checkpoints, a status column on the
+ * right (✓, now, 2/5, waits T3, blocked, after T4), the current task's boxes
+ * under it, and why a blocked task is blocked. Phases neither under way nor
+ * next fold to one line (`Phase 3 · console 0/2`).
+ */
+export function boardRows(list: TaskList, opts: { failed?: string | null } = {}): BoardRow[] {
+  const phases: { name: string | null; tasks: Task[] }[] = []
+  for (const t of list.tasks) {
+    const last = phases[phases.length - 1]
+    if (last && last.name === t.phase) last.tasks.push(t)
+    else phases.push({ name: t.phase, tasks: [t] })
+  }
+  const currentPhase = phases.findIndex(p => p.tasks.some(t => t.id === list.current?.id))
+  const firstOpen = phases.findIndex(p => p.tasks.some(t => t.status !== 'done'))
+  const focus = currentPhase >= 0 ? currentPhase : firstOpen
+  const rows: BoardRow[] = []
+  let checkpointNo = 0
+  phases.forEach((p, i) => {
+    const done = p.tasks.filter(t => t.status === 'done').length
+    const isOpen = i === focus || i === focus + 1 || p.tasks.some(t => t.status === 'blocked')
+    const fold = p.name !== null && !isOpen
+    if (p.name !== null) rows.push({ kind: 'phase', label: phaseLabel(p.name), summary: fold ? `${done}/${p.tasks.length}` : null })
+    for (const t of p.tasks) {
+      if (fold) {
+        if (t.checkpoint) checkpointNo++
+        continue
+      }
+      const isFailed = t.status !== 'done' && opts.failed === t.id
+      const ticked = t.boxes.filter(b => b.isDone).length
+      const isCurrent = t.id === list.current?.id
+      const waitOn = t.deps.find(d => list.tasks.some(x => x.id === d && x.status !== 'done'))
+      const [glyph, tone, right, rightTone]: [string, Tone, string, Tone] = isFailed
+        ? ['×', 'blocked', 'tests failed', 'blocked']
+        : t.status === 'done'
+          ? ['●', 'done', '✓', 'done']
+          : isCurrent
+            ? ['◐', 'now', ticked > 0 ? `${ticked}/${t.boxes.length}` : 'now', 'now']
+            : t.status === 'blocked'
+              ? ['■', 'blocked', 'blocked', 'blocked']
+              : t.status === 'waiting'
+                ? ['○', 'muted', waitOn ? `waits ${waitOn}` : 'waits', 'muted']
+                : ['○', 'muted', '', 'muted']
+      const under: { text: string; tone: Tone }[] = []
+      if (isCurrent && t.boxes.length > 0) {
+        const doneBoxes = t.boxes.filter(b => b.isDone).map(shortBox)
+        const open = t.boxes.filter(b => !b.isDone).map(shortBox)
+        if (doneBoxes.length) under.push({ text: doneBoxes.join(' · '), tone: 'muted' })
+        if (open.length) under.push({ text: open.join(' · '), tone: 'muted' })
+      }
+      if (t.status === 'blocked' && t.blockedBy) {
+        const m = /^(?:tasks\/)?([\w./-]+\.md): (.*)$/.exec(t.blockedBy)
+        under.push({ text: m ? `open question in ${m[1]}: ${m[2]}` : t.blockedBy, tone: 'muted' })
+      }
+      rows.push({ kind: 'task', id: t.id, title: t.title, glyph, tone, right, rightTone, isCurrent, under })
+      if (t.checkpoint) {
+        checkpointNo++
+        const items = t.checkpoint.items
+        const isDone = items.length > 0 && items.every(b => b.isDone)
+        const isDue = t.status === 'done' && !isDone
+        rows.push({
+          kind: 'checkpoint',
+          label: `Checkpoint ${checkpointNo}`,
+          glyph: isDone ? '✓' : isDue ? '♦' : '◆',
+          tone: isDone ? 'done' : isDue ? 'needsYou' : 'accent',
+          right: isDone ? '✓' : isDue ? 'review with you' : `after ${t.id}`,
+          rightTone: isDone ? 'done' : isDue ? 'needsYou' : 'muted',
+        })
+      }
+    }
+  })
+  return rows
+}
+
+/** `Phase 1 of 3`: where the work is, for the board's header. */
+export function phaseOf(list: TaskList): string | null {
+  const names = [...new Set(list.tasks.map(t => t.phase).filter((p): p is string => !!p))]
+  if (names.length === 0) return null
+  const at = list.current?.phase ?? list.tasks.find(t => t.status !== 'done')?.phase ?? names[names.length - 1]
+  return `Phase ${Math.max(1, names.indexOf(at ?? '') + 1)} of ${names.length}`
+}
+
+/** The band's counts (B2): open acceptance criteria and open verifications, apart. */
+export function openCounts(t: Task): string {
+  const open = t.boxes.map((b, i) => ({ b, kind: t.kinds?.[i] ?? 'criteria' })).filter(x => !x.b.isDone)
+  const c = open.filter(x => x.kind === 'criteria').length
+  const v = open.filter(x => x.kind === 'verification').length
+  const parts = [`${c} criteri${c === 1 ? 'on' : 'a'}`]
+  if (v) parts.push(`${v} verification${v === 1 ? '' : 's'}`)
+  return parts.join(' · ')
 }

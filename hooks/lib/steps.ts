@@ -31,3 +31,12 @@ export function spinnerWord(step: Step | null, task: string | null): string | nu
   if (step) return task ? `${VERB[step]} ${task}` : VERB[step]
   return task ? `Working on ${task}` : null
 }
+
+/** Passed and failed counts from a test runner's output: vitest, jest, pytest, go test, cargo, node:test. */
+export function testCounts(text: string): { passed: number; failed: number } | null {
+  const num = (re: RegExp) => [...text.matchAll(re)].map(m => Number(m[1])).at(-1)
+  const passed = num(/(\d+)\s+(?:passed|passing|pass)\b/gi) ?? num(/\bpass(?:ed)?[:=]?\s+(\d+)/gi)
+  const failed = num(/(\d+)\s+(?:failed|failing|fail)\b/gi) ?? num(/\bfail(?:ed)?[:=]?\s+(\d+)/gi) ?? 0
+  return passed === undefined && failed === 0 ? null : { passed: passed ?? 0, failed }
+}
+

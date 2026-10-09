@@ -78,6 +78,7 @@ declare module 'claude-code' {
       specSection: string | null
       pixels: boolean
       chartReveal: number
+      tab: 'timeline' | 'charts' | 'tasks'
     }
   }
 }
