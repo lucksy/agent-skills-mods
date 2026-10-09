@@ -159,6 +159,7 @@ Cursor, Gemini CLI, Codex or a CI job get the same summary from a script with no
 ```sh
 node scripts/agent-skills-progress.mjs [dir]          # the full summary, in colour on a terminal
 node scripts/agent-skills-progress.mjs --brief        # one line: ✓spec ✓plan ●build 1/4 ○review ○ship · T2 ...
+node scripts/agent-skills-progress.mjs --timeline     # the run timeline, as the plan pane draws it
 node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools
 node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
 ```
@@ -169,7 +170,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 112 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 117 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

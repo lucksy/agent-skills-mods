@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --json] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //
 // No dependencies: Node 22.6 or newer (it runs the plugin's TypeScript through
 // Node's type stripping), or Bun.
@@ -42,6 +42,7 @@ Usage: agent-skills-progress [dir] [options]
 
   dir             project folder (default: the current folder)
   --brief         one line: stages and the current task
+  --timeline      the run timeline: phases as a tree, a build · test · commit bar per task
   --json          the parsed state as JSON, for other tools
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
   --no-git        skip git history (no ETA until 3 tasks are done today)
@@ -56,6 +57,7 @@ function parseArgs(argv) {
     const a = argv[i]
     if (a === '-h' || a === '--help') o.mode = 'help'
     else if (a === '--brief') o.mode = 'brief'
+    else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
     else if (a === '--no-git') o.git = false
     else if (a === '--no-color') o.color = false
@@ -106,7 +108,7 @@ function spinner(text) {
 async function main() {
   const o = parseArgs(process.argv.slice(2))
   if (o.mode === 'help') return console.log(HELP)
-  const { gather, renderBrief, renderCli, renderJson } = await import('../hooks/lib/cli.ts')
+  const { gather, renderBrief, renderCli, renderJson, renderTimelineCli } = await import('../hooks/lib/cli.ts')
   const { specCandidates } = await import('../hooks/lib/view.ts')
   const cwd = resolve(o.dir)
   const io = {
@@ -126,7 +128,7 @@ async function main() {
     specFile = specCandidates(o.spec).find(f => names.includes(f))
     if (!specFile) throw new Error(`no ${specCandidates(o.spec).join(' or ')} in ${cwd}`)
   }
-  const stop = o.mode === 'full' ? spinner('Reading the plan and its git history') : () => {}
+  const stop = o.mode === 'full' || o.mode === 'timeline' ? spinner('Reading the plan and its git history') : () => {}
   const state = await gather(io, { specFile }).finally(stop)
 
   const env = process.env
@@ -134,7 +136,7 @@ async function main() {
   if (o.mode === 'json') return console.log(renderJson(state))
   if (o.mode === 'brief') return console.log(renderBrief(state, { color }))
   const width = o.width || Math.min(110, process.stdout.columns || 80)
-  console.log(renderCli(state, { color, width }))
+  console.log(o.mode === 'timeline' ? renderTimelineCli(state, { color, width }) : renderCli(state, { color, width }))
 }
 
 main().catch(err => {

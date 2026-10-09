@@ -5,7 +5,7 @@ import { checkOverwrite } from '../hooks/lib/guard'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
-import { gather, renderBrief, renderCli, renderJson, type CliIo } from '../hooks/lib/cli'
+import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
 import { ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
 import { applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
@@ -700,6 +700,15 @@ describe('the progress script for other agents (E2)', () => {
     expect(text).toContain('\u001b[1;33mT2\u001b[0m')
     // No spec but a plan: the spec gate is behind it, as the mod's status entry says.
     expect(renderBrief(s, { color: false })).toBe('✓spec ✓plan ●build 1/4 ○review ○ship · T2 Prisma schema for keys')
+  })
+
+  test('--timeline: the plan pane tree, plain or in colour', async () => {
+    const s = await gather(io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_TEMPLATE }))
+    const plain = renderTimelineCli(s, { color: false, width: 80 })
+    expect(plain).toMatch(/^ {2}api-keys {2}4 tasks · 2 phases · spec ♦ awaiting approval$/m)
+    expect(plain).toMatch(/│ {2}├─ ✓ T1 Monorepo scaffold +▬▬▬ done$/m)
+    expect(plain).toMatch(/│ {2}└─ ● T2 Prisma schema for keys +▬▫▫ building · today$/m)
+    expect(renderTimelineCli(s, { color: true, width: 80 })).toContain('\u001b[32m▬▬▬\u001b[0m')
   })
 
   test('JSON for other tools, and a friendly empty project', async () => {

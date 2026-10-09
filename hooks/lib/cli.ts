@@ -8,6 +8,7 @@ import { combine, earliestDays, gitSources, type Runner } from './history'
 import { parsePlan, parseSpec, parseTasks, withBlockers, type PlanDoc, type Spec, type TaskList } from './parse'
 import { decisions } from './report'
 import { forecastText, specApproval, specFiles, taskDates, timelineRows, type TaskDate } from './view'
+import { timeline, type SegTone } from './timeline'
 
 export type CliState = {
   cwd: string
@@ -22,6 +23,8 @@ export type CliState = {
   dates: Record<string, TaskDate>
   /** Where the history came from, in a few words. */
   history: string | null
+  /** Commits since the plan began, when git could say. */
+  commits?: number
 }
 
 export type CliIo = {
@@ -61,6 +64,12 @@ export async function gather(io: CliIo, opts: { specFile?: string } = {}): Promi
   state.dates = taskDates(list, earliestDays(src?.git.doneDays ?? {}, src?.messages.doneDays ?? {}), state.forecast, today)
   const since = combined.snaps[0]?.day ?? today
   const gitDays = (combined.added.files[0] ?? 0) + combined.added.messages
+  if (io.run) {
+    const began = list.meta?.created ?? since
+    const out = await io.run(['git', 'rev-list', '--count', `--since=${began}T00:00:00`, 'HEAD']).catch(() => null)
+    const n = out && out.exitCode === 0 ? Number(out.stdout.trim()) : NaN
+    if (Number.isFinite(n)) state.commits = n
+  }
   state.history = src?.gitNote
     ? `history from today: ${src.gitNote}`
     : !src
@@ -246,4 +255,23 @@ export function renderJson(s: CliState): string {
     null,
     2,
   )
+}
+
+/** The run timeline (mockup 11) for a terminal: the same rows the plan pane draws, in ANSI colour. */
+export function renderTimelineCli(s: CliState, o: CliOptions): string {
+  const p = painter(o.color)
+  if (!s.list || s.list.total === 0) return renderCli(s, o)
+  const tone: Record<SegTone, Style[]> = { text: [], strong: ['bold'], muted: ['grey'], done: ['green'], run: ['yellow'], bad: ['red'], needsYou: ['magenta'], accent: ['cyan'] }
+  const t = timeline({
+    spec: s.spec,
+    list: s.list,
+    plan: s.plan,
+    forecast: s.forecast,
+    dates: s.dates,
+    today: s.snapshots[s.snapshots.length - 1]?.day ?? new Date().toISOString().slice(0, 10),
+    since: s.snapshots[0]?.day,
+    facts: s.commits !== undefined ? { commits: s.commits } : undefined,
+  })
+  const line = (l: { text: string; tone: SegTone }[]) => `  ${l.map(x => p(x.text, ...tone[x.tone])).join('')}`
+  return [...t.header.map(line), '', ...t.rows.map(line), '', ...t.legend.map(line)].join('\n')
 }

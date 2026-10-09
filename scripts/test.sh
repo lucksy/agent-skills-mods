@@ -37,6 +37,7 @@ check no-git-history 'history from today: not a git repository' node "$script" "
 check json '"current": "T2"' node "$script" "$tmp/build" --json
 check colour $'\033[32m✓\033[0m T1' node "$script" "$tmp/build" --color --no-git
 check no-color-env 'T1 Scaffold' env NO_COLOR=1 node "$script" "$tmp/build" --no-git
+check timeline-tree '├─ ✓ T1 Scaffold                ▬▬▬ done' node "$script" "$tmp/build" --timeline --no-color --no-git
 check bad-option 'unknown option --nope' node "$script" --nope
 mkdir -p "$tmp/build/specs"; printf '# Spec: Auth\n## Objective\nx\n' > "$tmp/build/specs/auth.md"
 check module-spec 'Spec · specs/auth.md' node "$script" "$tmp/build" --spec auth --no-color --no-git
