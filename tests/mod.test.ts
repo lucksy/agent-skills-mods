@@ -995,3 +995,19 @@ test('/progress doctor lists the problems; doctor fix applies the fixable ones',
   expect(files[`${CWD}/tasks/todo.md`]).toMatch(/\*\*Status:\*\* todo/)
   expect(fixed.text).not.toMatch(/fixable/)
 })
+
+test('/progress start, done, block and unblock write the task state', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('start T3'))).text).toBe('T3 Issue and revoke keys is in progress (started 9 Oct).')
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 3: Issue and revoke keys\n\*\*Status:\*\* in progress · started 2026-10-09\n/)
+  expect((await $.command.run(run('done 2'))).text).toBe('T2 Prisma schema for keys is done: 2 box(es) ticked.')
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* done · started 2026-10-09 · done 2026-10-09\n/)
+  const blocked = await $.command.run(run('block T4 "Upstash or self-hosted?"'))
+  expect(blocked.text).toBe('T4 Rate limit per key is blocked. Added Q1 to tasks/plan.md: "Upstash or self-hosted?".')
+  expect(files[`${CWD}/tasks/plan.md`]).toMatch(/## Open Questions\n\n- Q1 \(T4\): Upstash or self-hosted\?\n$/)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 4: Rate limit per key\n\*\*Status:\*\* blocked\n/)
+  expect((await $.command.run(run('unblock T4'))).text).toMatch(/^T4 Rate limit per key is unblocked\./)
+  expect((await $.command.run(run('start T9'))).text).toBe('No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.')
+  expect((await $.command.run(run('block T4'))).text).toMatch(/^Say why/)
+})

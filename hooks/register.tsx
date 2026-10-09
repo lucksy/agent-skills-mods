@@ -28,7 +28,7 @@ import { archiveDir, archiveReadme } from './lib/archive'
 import { diagnose, doctorText } from './lib/doctor'
 import { gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
-import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from './lib/format'
+import { addQuestion, applyEdit, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, type TaskState } from './lib/format'
 import {
   bandText,
   bar,
@@ -582,6 +582,46 @@ async function doctor($: $, fix: boolean): Promise<string> {
   return doctorText(diagnose(input))
 }
 
+/**
+ * `/progress start|done|block|unblock T4 ["why"]`: the person sets a task's
+ * state, written into tasks/todo.md (and a blocking question into plan.md).
+ */
+async function setTask($: $, verb: string, rawId: string, why: string): Promise<string> {
+  const p = await load($)
+  const cwd = p.cwd
+  const path = `${cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text === null) return 'No tasks/todo.md here.'
+  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
+  const task = p.list?.tasks.find(t => t.id === id)
+  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
+  const today = dayOf(await $.clock.now())
+  const changes = await readPending($, cwd)
+  let next = text
+  let said = ''
+  if (verb === 'start') {
+    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'in progress', started: today } } })
+    said = `${id} ${task.title} is in progress (started ${shortDay(task.state?.started ?? today)}).`
+  } else if (verb === 'done') {
+    next = stampTodo(tickTask(text, id), today, { changes })
+    said = `${id} ${task.title} is done: ${task.boxes.filter(b => !b.isDone).length} box(es) ticked.`
+  } else if (verb === 'block') {
+    if (!why) return 'Say why: /progress block T6 "Upstash or self-hosted?"'
+    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'blocked' } } })
+    const planPath = `${cwd}/tasks/plan.md`
+    const added = addQuestion(await readText($, planPath), id, why)
+    await $.fs.write(planPath, added.text)
+    said = `${id} ${task.title} is blocked. Added ${added.q} to tasks/plan.md: "${why}".`
+  } else {
+    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'todo' } } })
+    said = `${id} ${task.title} is unblocked. Remove or answer its question in tasks/plan.md so it stays that way.`
+  }
+  if (next !== text) await $.fs.write(path, next)
+  await $.store.set(pendingKey(cwd), {})
+  await load($)
+  return said
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -652,6 +692,8 @@ export const register: Register = (on, options) => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    const taskVerb = /^(start|done|block|unblock)\s+#?(t?\d+)\s*(.*)$/i.exec(e.args.trim())
+    if (taskVerb) return reply(await setTask($, taskVerb[1]!.toLowerCase(), taskVerb[2]!, taskVerb[3]!.replace(/^["']|["']$/g, '').trim()))
     if (arg === 'doctor' || arg === 'doctor fix') return reply(await doctor($, arg.endsWith('fix')))
     if (arg === 'archive' || arg === 'archive force') return reply(await archivePlan($, arg.endsWith('force')))
     if (arg === 'timeline') {
@@ -670,7 +712,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|start T4|done T4|block T6 "why"|unblock T6|digest|report|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

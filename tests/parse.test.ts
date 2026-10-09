@@ -9,7 +9,7 @@ import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
 import { ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
-import { applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates } from '../hooks/lib/format'
+import { addQuestion, applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -876,5 +876,16 @@ describe('/progress doctor', () => {
     expect(doctorText([])).toBe('✓ No problems found in SPEC.md, tasks/plan.md or tasks/todo.md.')
     const plan = diagnose({ ...base, todo: null, plan: '# Plan\n## Open Questions\n- Upstash or self-host?\n- Q2 (T4): rate?\n' })
     expect(plan.map(f => f.message)).toContain('1 open question without a Q<n> number, e.g. "Upstash or self-host?"')
+  })
+})
+
+describe('the person sets task state', () => {
+  test('tick a task, number a new open question', async () => {
+    const ticked = tickTask(TODO_TEMPLATE, 'T3')
+    expect(parseTasks(ticked).tasks.find(t => t.id === 'T3')?.status).toBe('done')
+    expect(parseTasks(ticked).tasks.find(t => t.id === 'T4')?.boxes.every(b => !b.isDone)).toBe(true)
+    expect(addQuestion(null, 'T6', 'Upstash?')).toEqual({ text: '# Implementation Plan\n\n## Open Questions\n\n- Q1 (T6): Upstash?\n', q: 'Q1' })
+    const plan = '# Plan\n\n## Open Questions\n- Q2 (T4): a?\n\n## Risks\n- x\n'
+    expect(addQuestion(plan, 'T6', 'b?')).toEqual({ text: '# Plan\n\n## Open Questions\n- Q2 (T4): a?\n- Q3 (T6): b?\n\n## Risks\n- x\n', q: 'Q3' })
   })
 })

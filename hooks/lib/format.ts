@@ -247,3 +247,37 @@ export const FORMAT_RULES = [
   '- Open questions in tasks/plan.md are numbered and name the tasks they block: `- Q2 (T6): Upstash Redis or self-hosted for the sliding window?`.',
   '- When you start a task, set it to in progress with today as started; when you tick its last box, set it to done with today\'s date. The plugin also updates Status lines itself (from your edits, test runs and commits), so re-read tasks/todo.md before editing it.',
 ].join('\n')
+
+// ------------------------------------------------------------------ the person's own changes
+
+/** Every box in task `id`'s section ticked (`/progress done T4`). */
+export function tickTask(text: string, id: string): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const sec = sections(lines).find(s => s.id === id)
+  if (!sec) return text
+  for (let i = sec.heading + 1; i < sec.end; i++) lines[i] = lines[i]!.replace(/^(\s*[-*+]\s+)\[ \]/, '$1[x]')
+  return lines.join(eol)
+}
+
+/** Whether task `id` has a `## Task N:` section the format can stamp. */
+export const hasTaskSection = (text: string, id: string) => sections(text.replace(/\r\n?/g, '\n').split('\n')).some(s => s.id === id)
+
+/**
+ * The plan with a numbered open question for a blocked task added under
+ * `## Open Questions` (made when missing): `- Q3 (T6): why`.
+ */
+export function addQuestion(planText: string | null, id: string, why: string): { text: string; q: string } {
+  const base = planText ?? '# Implementation Plan\n'
+  const used = [...base.matchAll(/^\s*[-*+]\s+Q(\d+)\b/gm)].map(m => Number(m[1]))
+  const q = `Q${(used.length ? Math.max(...used) : 0) + 1}`
+  const line = `- ${q} (${id}): ${why}`
+  const head = /^##\s+Open Questions\s*$/im.exec(base)
+  if (!head) return { text: `${base.replace(/\s*$/, '')}\n\n## Open Questions\n\n${line}\n`, q }
+  // After the section's last list item, or right under its heading.
+  const after = base.slice(head.index + head[0].length)
+  const next = /^##\s/m.exec(after)
+  const body = next ? after.slice(0, next.index) : after
+  const insertAt = head.index + head[0].length + body.replace(/\s*$/, '').length
+  return { text: `${base.slice(0, insertAt)}\n${line}${base.slice(insertAt)}`, q }
+}
