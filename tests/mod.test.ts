@@ -1061,3 +1061,24 @@ test('/spec-view diff with nothing changed, and without git', async ($, on) => {
   world(on, { [`${CWD}/SPEC.md`]: SPEC }, { log: '', cat: '', diff: '' })
   expect(JSON.stringify(await $.command.run({ command: 'spec-view', args: 'diff', origin: { kind: 'composer' } } as never))).toMatch(/SPEC\.md has not changed since its last commit\./)
 })
+
+test('with checkpointGate on, source edits before a reached checkpoint is reviewed warn once a turn', { options: { checkpointGate: true } }, async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T2_DONE }
+  const seen = world(on, files)
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/limits.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts.filter(t => t.includes('gate'))).toEqual(['♦ Checkpoint gate · src/keys.ts changed before "After Tasks 1-2" was reviewed'])
+  // Reviewed: no more warnings.
+  files[`${CWD}/tasks/todo.md`] = TODO_CP_DONE
+  await $.turn.complete({ answer: 'done' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts.filter(t => t.includes('gate'))).toHaveLength(1)
+})
+
+test('the checkpoint gate is off by default', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T2_DONE })
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts.filter(t => t.includes('gate'))).toEqual([])
+})

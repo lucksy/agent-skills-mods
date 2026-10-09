@@ -26,7 +26,7 @@ import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { archiveDir, archiveReadme } from './lib/archive'
 import { diagnose, doctorText } from './lib/doctor'
-import { gateWarning } from './lib/gate'
+import { checkpointWarning, gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
 import { addQuestion, applyEdit, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, type TaskState } from './lib/format'
 import {
@@ -72,6 +72,8 @@ const specChoice = atom({ plugin: 'agent-skills-mods', key: 'specChoice' } as co
 const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null as string | null)
 /** Whether the spec gate already warned this turn (D2): one toast per turn, not one per edit. */
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
+/** Whether the checkpoint gate already raised its toast this turn. */
+const cpWarned = atom({ plugin: 'agent-skills-mods', key: 'cpWarned' } as const, false)
 /** The spec area opened for reading in the spec pane (A1), by key. */
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
 /** The spec's changes since approval, shown under the spec pane after `/spec-view diff`. */
@@ -661,6 +663,22 @@ async function specChanges($: $): Promise<string> {
   return `${file} since ${since}: +${added} −${removed} lines. The spec pane shows the diff.\n\n\`\`\`diff\n${diff}\n\`\`\``
 }
 
+/** The checkpoint gate: a source edit while a reached checkpoint waits for review. Never blocks. */
+async function checkpointGate<R extends { context?: readonly string[] }>($: $, path: string, result: R): Promise<R> {
+  try {
+    const p = (await read($, project)) ?? (await load($))
+    const warning = checkpointWarning({ cwd: p.cwd, path, list: p.list })
+    if (!warning) return result
+    if (!(await read($, cpWarned))) {
+      await update($, cpWarned, () => true)
+      $.ui.toast(warning.toast)
+    }
+    return { ...result, context: [...(result.context ?? []), warning.context] }
+  } catch {
+    return result
+  }
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -816,8 +834,11 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     await trackStep($, e, result)
     const path = 'file_path' in e && typeof e.file_path === 'string' ? e.file_path : null
-    if (path && EDIT_TOOLS.has(String(e.tool)) && !result.isError && !result.deny && options.specGate === true && !WATCHED.test(path)) {
-      return specGate($, path, result)
+    if (path && EDIT_TOOLS.has(String(e.tool)) && !result.isError && !result.deny && !WATCHED.test(path)) {
+      let out = result
+      if (options.specGate === true) out = await specGate($, path, out)
+      if (options.checkpointGate === true) out = await checkpointGate($, path, out)
+      return out
     }
     if (!path || !EDIT_TOOLS.has(String(e.tool)) || !WATCHED.test(path) || result.isError) return result
     // A refresh that fails must never change the tool's own result.
@@ -853,6 +874,7 @@ export const register: Register = (on, options) => {
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
       await update($, gateWarned, () => false)
+      await update($, cpWarned, () => false)
     }
     return next(e)
   })

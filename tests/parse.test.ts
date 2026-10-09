@@ -4,7 +4,7 @@ import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/par
 import { checkOverwrite } from '../hooks/lib/guard'
 import { archiveDir } from '../hooks/lib/archive'
 import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
-import { gateWarning, isSourceFile } from '../hooks/lib/gate'
+import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
@@ -887,5 +887,16 @@ describe('the person sets task state', () => {
     expect(addQuestion(null, 'T6', 'Upstash?')).toEqual({ text: '# Implementation Plan\n\n## Open Questions\n\n- Q1 (T6): Upstash?\n', q: 'Q1' })
     const plan = '# Plan\n\n## Open Questions\n- Q2 (T4): a?\n\n## Risks\n- x\n'
     expect(addQuestion(plan, 'T6', 'b?')).toEqual({ text: '# Plan\n\n## Open Questions\n- Q2 (T4): a?\n- Q3 (T6): b?\n\n## Risks\n- x\n', q: 'Q3' })
+  })
+})
+
+describe('checkpoint gate', () => {
+  test('a reached checkpoint with open items is due; source edits then warn', async () => {
+    expect(dueCheckpoint(parseTasks(TODO_TEMPLATE))).toBe(null)
+    expect(dueCheckpoint(parseTasks(TODO_T2_DONE))).toEqual({ after: 'T2', title: 'After Tasks 1-2', open: ['All tests pass', 'Review with human before proceeding'] })
+    expect(dueCheckpoint(parseTasks(TODO_CP_DONE))).toBe(null)
+    const w = checkpointWarning({ cwd: '/p', path: '/p/src/a.ts', list: parseTasks(TODO_T2_DONE) })
+    expect(w?.context).toMatch(/still waits for review: All tests pass; Review with human before proceeding\./)
+    expect(checkpointWarning({ cwd: '/p', path: '/p/tasks/todo.md', list: parseTasks(TODO_T2_DONE) })).toBe(null)
   })
 })

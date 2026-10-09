@@ -1,7 +1,7 @@
 // The spec gate (D2): an opt-in warning when source files change while the spec
 // still awaits approval. It warns and never blocks.
 
-import type { Spec } from './parse'
+import type { Spec, TaskList } from './parse'
 import { specApproval } from './view'
 
 /** Paths that are writing about the work, not the work: specs, plans, docs, notes. */
@@ -39,6 +39,35 @@ export function gateWarning(input: { cwd: string; path: string; spec: Spec | nul
       'The spec-driven-development skill asks for the human to approve the spec before implementation starts.',
       'Pause source changes, summarise what the spec still needs, and ask the user to approve it (the spec pane has an Approve button, or they can say so).',
       'This is a warning only; the edit went through.',
+    ].join(' '),
+  }
+}
+
+/** The first checkpoint reached (its task done) whose own items are not all ticked. */
+export function dueCheckpoint(list: TaskList | null): { after: string; title: string; open: string[] } | null {
+  for (const t of list?.tasks ?? []) {
+    const cp = t.checkpoint
+    if (!cp || t.status !== 'done' || cp.items.length === 0) continue
+    const open = cp.items.filter(b => !b.isDone).map(b => b.text)
+    if (open.length) return { after: t.id, title: cp.title, open }
+  }
+  return null
+}
+
+/**
+ * The checkpoint gate: an edit to a source file while a reached checkpoint
+ * still waits for review. Like the spec gate, it warns and never blocks.
+ */
+export function checkpointWarning(input: { cwd: string; path: string; list: TaskList | null }): GateWarning | null {
+  const due = dueCheckpoint(input.list)
+  if (!due || !isSourceFile(input.cwd, input.path)) return null
+  const rel = relativeTo(input.cwd, input.path) ?? input.path
+  return {
+    toast: `♦ Checkpoint gate · ${rel} changed before "${due.title}" was reviewed`,
+    context: [
+      `agent-skills-mods checkpoint gate: ${rel} was edited, but checkpoint "${due.title}" (after ${due.after}) still waits for review: ${due.open.join('; ')}.`,
+      'The planning skill asks for that review with the human before the next phase starts.',
+      'Stop starting new work: run the checks it lists, report the results, and ask the user to review before going on. This is a warning only; the edit went through.',
     ].join(' '),
   }
 }
