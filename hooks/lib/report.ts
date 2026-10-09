@@ -79,6 +79,8 @@ export type ReportInput = ProgressInput & {
   /** The day the report is written. */
   today: string
   charts: { burnup: { source: string; alt: string } | null; flow: { source: string; alt: string } | null }
+  /** Where the history comes from, in a sentence (historyNote). */
+  historyLine?: string
 }
 
 /**
@@ -176,7 +178,7 @@ ${
 }
 <section><h2>Days per task</h2>${perRows}</section>
 <section><h2>Needs a decision</h2>${asks.length ? `<ul>${asks.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '<p class="muted">Nothing.</p>'}</section>
-<footer>Written by agent-skills-mods from ${esc(p.specFile ?? 'SPEC.md')} and the task list.${p.charts.burnup ? " Hover a chart for each day's numbers." : ''}</footer>
+<footer>Written by agent-skills-mods from ${esc(p.specFile ?? 'SPEC.md')} and the task list.${p.historyLine ? ` ${esc(p.historyLine)}` : ''}${p.charts.burnup ? " Hover a chart for each day's numbers." : ''}</footer>
 </main></body></html>
 `
 }

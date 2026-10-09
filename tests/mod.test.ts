@@ -1,12 +1,12 @@
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
+import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
 
 const CWD = '/p'
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string } | 'no-repo'
+type Git = { log: string; cat: string; messages?: string } | 'no-repo'
 
 function world(
   on: On,
@@ -32,11 +32,13 @@ function world(
     }
     seen.git.push(e.argv.slice(0, 2).join(' '))
     if (git === 'no-repo') return out(128, '')
-    return out(0, e.argv[1] === 'log' ? git.log : git.cat)
+    if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
+    return out(0, git.cat)
   })
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
   mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home' : undefined }))
   on('fs.exists', (_$, e) => ({ value: e.path in files }))
   on('fs.write', (_$, e) => {
     files[e.path] = e.text
@@ -221,17 +223,17 @@ test('history is rebuilt from git once, so the first day already has an ETA', as
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, git)
   await $.command.run(run('refresh'))
   await $.command.run(run('refresh'))
-  expect(seen.git).toEqual(['git log', 'git cat-file'])
-  expect(seen.toasts).toEqual(['Progress history rebuilt from git: 3 days since 29 Sep'])
+  expect(seen.git).toEqual(['git log', 'git cat-file', 'git log'])
+  expect(seen.toasts).toEqual(['History since 29 Sep: 3 days from commits of tasks/todo.md.'])
   const board = await mountBoard($)
   expect(await board.find({ text: /from 3 tasks in 10 days/ })).toBeDefined()
-  expect(await board.find({ text: /History rebuilt from commits of tasks\/todo\.md back to 29 Sep/ })).toBeDefined()
+  expect(await board.find({ text: /History since 29 Sep: 3 days from commits of tasks\/todo\.md\./ })).toBeDefined()
 })
 
 test('without git the history starts today and the board says so', async ($, on) => {
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   await $.command.run(run('refresh'))
-  expect(seen.toasts).toEqual(['No git history for tasks/todo.md (not a git repository): tracking progress from today'])
+  expect(seen.toasts).toEqual(['History tracked from 9 Oct: not a git repository.'])
   const board = await mountBoard($)
   expect(await board.find({ text: /not enough history/ })).toBeDefined()
   expect(await board.find({ text: /History tracked from 9 Oct: not a git repository/ })).toBeDefined()
@@ -422,6 +424,90 @@ test('a report from one day of history says why it has no charts, and never clai
   expect(html).toMatch(/<th>T1<\/th><td class="t">Monorepo scaffold<\/td><td class="bar muted">done before tracking<\/td><td class="n">—<\/td><td class="d">by 9 Oct<\/td>/)
   expect(html).not.toMatch(/0 d</)
   expect(html).not.toMatch(/Hover a chart/)
+})
+
+const LOGS = `/home/.claude/projects/-p`
+/** A session log line as Claude Code writes it after an Edit of the task list. */
+const logEdit = (at: string, before: string, from: string, to: string) =>
+  JSON.stringify({
+    type: 'user',
+    timestamp: at,
+    cwd: CWD,
+    toolUseResult: { filePath: `${CWD}/tasks/todo.md`, oldString: from, newString: to, originalFile: before, replaceAll: false, structuredPatch: [] },
+  })
+
+test('too little git history: the band asks about session logs, and a yes adds their days', async ($, on) => {
+  // The plan was committed once, today; the sessions that ticked it are in the logs.
+  const files: Record<string, string> = {
+    [`${CWD}/tasks/todo.md`]: TODO_T3_DONE,
+    [`${LOGS}/s1.jsonl`]: [
+      logEdit('2026-10-02T10:00:00Z', TODO_TEMPLATE, '- [ ] Migration', '- [x] Migration'),
+      logEdit('2026-10-03T09:00:00Z', TODO_T2_DONE, '- [ ] All tests pass', '- [x] All tests pass'),
+    ].join('\n'),
+    [`${LOGS}/s2.jsonl`]: [
+      logEdit('2026-10-06T16:00:00Z', TODO_CP_DONE, '- [ ] POST /keys', '- [x] POST /keys'),
+      'not json',
+      JSON.stringify({ type: 'user', timestamp: '2026-10-06T17:00:00Z', toolUseResult: { filePath: `${CWD}/src/x.ts`, content: 'x' } }),
+    ].join('\n'),
+    [`${LOGS}/other.jsonl`]: '{"type":"user"}',
+  }
+  const seen = world(on, files, gitOutput([['2026-10-09', TODO_T3_DONE]]))
+  await $.command.run(run('refresh'))
+  expect(seen.toasts[0]).toMatch(/session logs could add more: the band above the prompt asks/)
+  const band = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 140, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never,
+  })
+  expect(await band.find({ text: /Also read this project's Claude Code session logs\?/ })).toBeDefined()
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/session logs: not read yet/)
+
+  await band.press({ key: 'logs-yes' })
+  expect(await band.find({ text: /session logs\?/ })).toBeUndefined()
+  const text = JSON.stringify(await $.command.run(run('history')))
+  expect(text).toMatch(/History since 2 Oct: 3 days from session logs\./)
+  expect(text).toMatch(/session logs: on, 3 days added/)
+  // The board dates T3 from the log, not from today.
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^6 Oct\s+ ✓ T3/ })).toBeDefined()
+
+  expect(JSON.stringify(await $.command.run(run('history logs off')))).toMatch(/Session logs are off/)
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/History tracked from 9 Oct\./)
+})
+
+test('a No keeps the logs unread and the question away', async ($, on) => {
+  const files: Record<string, string> = {
+    [`${CWD}/tasks/todo.md`]: TODO_T2_DONE,
+    [`${LOGS}/s1.jsonl`]: logEdit('2026-10-02T10:00:00Z', TODO_TEMPLATE, '- [ ] Migration', '- [x] Migration'),
+  }
+  world(on, files)
+  await $.command.run(run('refresh'))
+  const band = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 140, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never,
+  })
+  await band.press({ key: 'logs-no' })
+  expect(await band.find({ text: /session logs\?/ })).toBeUndefined()
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/session logs: off/)
+})
+
+test('commit messages date the tasks when the task list was never committed per tick', async ($, on) => {
+  const msg = (day: string, body: string) => `\x1e${Date.parse(`${day}T12:00:00Z`) / 1000}\x1f${body}\n`
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, {
+    ...gitOutput([['2026-09-25', TODO_NONE_DONE]]),
+    messages: msg('2026-10-06', 'T3: issue and revoke keys') + msg('2026-10-02', 'Task 2: prisma schema\n\nRefs T1') + msg('2026-09-30', 'feat: scaffold (T1)') + msg('2026-09-20', 'T2 of an older plan'),
+  })
+  await $.command.run(run('refresh'))
+  expect(seen.toasts[0]).toBe('History since 25 Sep: 1 day from commits of tasks/todo.md, 3 days from commit messages.')
+  const text = JSON.stringify(await $.command.run(run('history')))
+  expect(text).toMatch(/commit messages naming tasks \(T3, Task 3\): 3 days/)
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^30 Sep\s+ ✓ T1/ })).toBeDefined()
+  expect(await board.find({ text: /^2 Oct\s+ ✓ T2/ })).toBeDefined()
+  expect(await board.find({ text: /^6 Oct\s+ ✓ T3/ })).toBeDefined()
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

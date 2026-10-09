@@ -193,10 +193,36 @@ export function forecastText(f: Forecast): string {
   return `ETA ${shortDay(f.median)} (fast ${shortDay(f.optimistic)}, slow ${shortDay(f.slow)}) · ${f.basis}${added}`
 }
 
-/** Where the forecast's history starts (F5). */
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`
+
+/** Where the forecast's history comes from (F5): each source's days, or why there are none. */
 export function historyNote(h: Backfill, file: string | null): string {
-  if (h.source === 'git') return `History rebuilt from commits of ${file ?? 'the task list'} back to ${shortDay(h.since)}.`
-  return `History tracked from ${shortDay(h.since)}: ${h.reason}.`
+  const parts = [
+    h.days.git ? `${days(h.days.git)} from commits of ${file ?? 'the task list'}` : '',
+    h.days.messages ? `${days(h.days.messages)} from commit messages` : '',
+    h.days.logs ? `${days(h.days.logs)} from session logs` : '',
+  ].filter(Boolean)
+  if (parts.length === 0) return `History tracked from ${shortDay(h.since)}${h.gitNote ? `: ${h.gitNote}` : ''}.`
+  return `History since ${shortDay(h.since)}: ${parts.join(', ')}.`
+}
+
+/** `/progress history`: each source, what it gave, and how to change the session-log answer. */
+export function historyText(h: Backfill | null, file: string | null): string {
+  if (!h) return 'No task list here, so there is no history.'
+  const logs = {
+    ask: 'not read yet: the band above the prompt asks. /progress history logs on reads them.',
+    yes: `on, ${days(h.days.logs)} added. /progress history logs off stops using them.`,
+    no: 'off. /progress history logs on reads them.',
+    empty: `no session of this project writes ${file ?? 'the task list'}.`,
+    unasked: 'not read, since git gave enough. /progress history logs on reads them too.',
+  }[h.logs]
+  return [
+    historyNote(h, file),
+    `- commits of ${file ?? 'the task list'}: ${h.gitNote ?? days(h.days.git)}`,
+    `- commit messages naming tasks (T3, Task 3): ${days(h.days.messages)}`,
+    `- Claude Code session logs: ${logs}`,
+    `- seen by this plugin: ${days(h.days.seen)}`,
+  ].join('\n')
 }
 
 /** A `[████░░░░]` bar, `width` cells wide. */

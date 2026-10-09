@@ -7,14 +7,23 @@ import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './
 import {
   CAT_ARGV,
   catInput,
+  combine,
   doneDaysFromGit,
+  doneDaysFromMessages,
+  earliestDays,
+  emptySource,
   logArgv,
-  mergeHistory,
+  messagesArgv,
   parseLog,
+  parseMessages,
+  snapshotsFromDoneDays,
   snapshotsFromGit,
   splitBatch,
   type Backfill,
+  type LogsChoice,
+  type SourceData,
 } from './lib/history'
+import { historyFromLogs, logsDir, mentions } from './lib/logs'
 import { burnup, flow } from './lib/chart'
 import { digestText, reportHtml } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
@@ -29,6 +38,7 @@ import {
   taskInPrompt,
   forecastText,
   historyNote,
+  historyText,
   nextText,
   specApproval,
   specFileFor,
@@ -72,28 +82,67 @@ async function readText($: $, path: string): Promise<string | null> {
   }
 }
 
-/**
- * Rebuilds the snapshots a project had before the mod saw it (F5): two git
- * calls, once per project. Without git the history starts today, and says so.
- */
-type Found = { note: Backfill; snaps: Snapshot[]; doneDays: Record<string, string> }
+/** What the history sources found for a project, kept apart and stored once (F5). */
+type Sources = { git: SourceData; messages: SourceData; logs: SourceData; logsChoice: LogsChoice; gitNote: string | null }
+const sourcesKey = (cwd: string) => `sources:v2:${cwd}`
 
-async function backfill($: $, file: string, list: TaskList, today: string): Promise<Found> {
-  const none = (reason: string): Found => ({ note: { source: 'none', reason, since: today }, snaps: [], doneDays: {} })
+/**
+ * Git's two sources, once per project: the committed copies of the task list
+ * (two calls), and the commit messages that name its tasks (one more).
+ */
+async function fromGit($: $, file: string, list: TaskList): Promise<Pick<Sources, 'git' | 'messages' | 'gitNote'>> {
+  const none = (gitNote: string) => ({ git: emptySource(), messages: emptySource(), gitNote })
   try {
     const log = await $.process.run(logArgv(file), { timeoutMs: 20_000 })
     if (log.exitCode !== 0) return none('not a git repository')
     const commits = parseLog(log.stdout)
-    if (commits.length === 0) return none(`${file} has no commits`)
-    const cat = await $.process.run(CAT_ARGV, { stdin: catInput(commits, file), timeoutMs: 20_000 })
-    const texts = cat.exitCode === 0 ? splitBatch(cat.stdout) : []
-    const snaps = snapshotsFromGit(commits, texts, list)
-    const first = snaps[0]
-    if (!first) return none(`no commit of ${file} holds this plan`)
-    return { note: { source: 'git', days: snaps.length, since: first.day }, snaps, doneDays: doneDaysFromGit(commits, texts, list) }
+    let git = emptySource()
+    if (commits.length > 0) {
+      const cat = await $.process.run(CAT_ARGV, { stdin: catInput(commits, file), timeoutMs: 20_000 })
+      const texts = cat.exitCode === 0 ? splitBatch(cat.stdout) : []
+      git = { snaps: snapshotsFromGit(commits, texts, list), doneDays: doneDaysFromGit(commits, texts, list) }
+    }
+    // Messages from before the plan's first commit may name another plan's tasks.
+    const planStart = git.snaps[0] ? Date.parse(`${git.snaps[0].day}T00:00:00Z`) : null
+    const msgs = await $.process.run(messagesArgv, { timeoutMs: 20_000 })
+    const doneDays = msgs.exitCode === 0 ? doneDaysFromMessages(parseMessages(msgs.stdout), list, planStart) : {}
+    const messages = { snaps: snapshotsFromDoneDays(doneDays, list), doneDays }
+    const gitNote = git.snaps.length || messages.snaps.length ? null : commits.length ? `no commit of ${file} holds this plan` : `${file} has no commits`
+    return { git, messages, gitNote }
   } catch {
     return none('git is not available')
   }
+}
+
+/** Every session log of this project that writes the task list, as text. */
+async function readLogs($: $, cwd: string, file: string): Promise<string[]> {
+  const home = await $.env.get('HOME')
+  const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home ? `${home}/.claude` : null)
+  if (!configDir) return []
+  const dir = logsDir(configDir, cwd)
+  const entries = await $.fs.list(dir).catch(() => [])
+  const texts = await Promise.all(
+    entries.filter(f => f.kind === 'file' && f.name.endsWith('.jsonl')).map(f => readText($, `${dir}/${f.name}`)),
+  )
+  return texts.filter((t): t is string => t !== null && mentions(t, `${cwd}/${file}`))
+}
+
+/** The answer to the session-log question (band button or /progress history logs on|off). */
+async function chooseLogs($: $, allow: boolean): Promise<string> {
+  const p = await read($, project)
+  const sources = p ? ((await $.store.get(sourcesKey(p.cwd))) as Sources | undefined) : undefined
+  if (!p || !p.list || !p.listFile || !sources) return 'No task list here, so there is no history to read.'
+  if (!allow) {
+    await $.store.set(sourcesKey(p.cwd), { ...sources, logsChoice: 'no' })
+    await load($)
+    return 'Session logs are off for this project.'
+  }
+  const texts = await readLogs($, p.cwd, p.listFile)
+  const logs = historyFromLogs(texts, `${p.cwd}/${p.listFile}`, p.list)
+  await $.store.set(sourcesKey(p.cwd), { ...sources, logs, logsChoice: logs.snaps.length ? 'yes' : 'empty' })
+  const after = await load($)
+  if (!logs.snaps.length) return `No session log of this project writes ${p.listFile}.`
+  return `Session logs read: ${after.history?.days.logs ?? 0} more day(s) of history. ${after.history ? historyNote(after.history, after.listFile) : ''}`.trim()
 }
 
 /** The build loop in plan terms (H3, F1): what the spinner says, and × for a failed test run. */
@@ -164,41 +213,53 @@ async function load($: $): Promise<AsmProject> {
   if (list && list.total > 0) {
     const now = await $.clock.now()
     const key = `history:${cwd}`
-    const noteKey = `backfill:${cwd}`
-    let history = ((await $.store.get(key)) as Snapshot[] | undefined) ?? []
-    let note = ((await $.store.get(noteKey)) as Backfill | undefined) ?? null
+    let seen = ((await $.store.get(key)) as Snapshot[] | undefined) ?? []
     const daysKey = `doneDays:${cwd}`
-    let doneDays = ((await $.store.get(daysKey)) as Record<string, string> | undefined) ?? {}
-    if (!note && listFile && !backfilling.has(cwd)) {
+    let seenDone = ((await $.store.get(daysKey)) as Record<string, string> | undefined) ?? {}
+    let sources = ((await $.store.get(sourcesKey(cwd))) as Sources | undefined) ?? null
+    let isFirst = false
+    if (!sources && listFile && !backfilling.has(cwd)) {
       backfilling.add(cwd)
       try {
-        const found = await backfill($, listFile, list, dayOf(now))
-        note = found.note
-        history = mergeHistory(((await $.store.get(key)) as Snapshot[] | undefined) ?? [], found.snaps)
-        doneDays = { ...found.doneDays, ...doneDays }
-        await $.store.set(noteKey, note)
-        $.ui.toast(
-          note.source === 'git'
-            ? `Progress history rebuilt from git: ${note.days} day${note.days === 1 ? '' : 's'} since ${shortDay(note.since)}`
-            : `No git history for ${listFile} (${note.reason}): tracking progress from today`,
-        )
+        sources = { ...(await fromGit($, listFile, list)), logs: emptySource(), logsChoice: 'unasked' }
+        isFirst = true
       } finally {
         backfilling.delete(cwd)
       }
     }
-    const next = record(history, snapshotOf(dayOf(now), list))
-    await $.store.set(key, next)
-    fc = forecast(next, now)
-    backfilled = note
-    // A task first seen done today is dated today; the dates stay when it is unticked.
     const today = dayOf(now)
-    const fresh = list.tasks.filter(t => t.status === 'done' && !doneDays[taskKey(t)])
-    if (fresh.length > 0 || note?.source === 'git') {
-      for (const t of fresh) doneDays = { ...doneDays, [taskKey(t)]: today }
-      await $.store.set(daysKey, doneDays)
+    seen = record(seen, snapshotOf(today, list))
+    await $.store.set(key, seen)
+    const src = sources ?? { git: emptySource(), messages: emptySource(), logs: emptySource(), logsChoice: 'unasked' as const, gitNote: null }
+    const logs = src.logsChoice === 'yes' ? src.logs : emptySource()
+    const combined = combine(seen, [src.git, logs], src.messages)
+    snapshots = combined.snaps
+    fc = forecast(snapshots, now)
+    if (sources && isFirst) {
+      // Ask about the session logs only when git left too little for charts or a forecast.
+      const thin = new Set(snapshots.map(s => s.day)).size < 2 || fc.kind === 'not-enough'
+      const hasLogs = thin && (await readLogs($, cwd, listFile!).catch(() => [])).length > 0
+      sources = { ...sources, logsChoice: thin ? (hasLogs ? 'ask' : 'empty') : 'unasked' }
+      await $.store.set(sourcesKey(cwd), sources)
     }
-    dates = taskDates(list, doneDays, fc, today)
-    snapshots = next
+    // A task first seen done today is dated today, unless a source saw it done earlier.
+    const other = earliestDays(src.git.doneDays, logs.doneDays, src.messages.doneDays)
+    const fresh = list.tasks.filter(t => t.status === 'done' && !seenDone[taskKey(t)] && !other[taskKey(t)])
+    if (fresh.length > 0) {
+      for (const t of fresh) seenDone = { ...seenDone, [taskKey(t)]: today }
+      await $.store.set(daysKey, seenDone)
+    }
+    dates = taskDates(list, earliestDays(seenDone, other), fc, today)
+    backfilled = {
+      since: snapshots[0]?.day ?? today,
+      days: { seen: combined.added.seen, git: combined.added.files[0] ?? 0, logs: combined.added.files[1] ?? 0, messages: combined.added.messages },
+      logs: sources?.logsChoice ?? 'unasked',
+      gitNote: src.gitNote,
+    }
+    if (isFirst) {
+      const ask = backfilled.logs === 'ask' ? ' Claude Code session logs could add more: the band above the prompt asks.' : ''
+      $.ui.toast(`${historyNote(backfilled, listFile)}${ask}`)
+    }
   }
 
   const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots, dates, specFile, specFiles: files }
@@ -221,8 +282,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills task board. Args: next | charts | digest | report | allow-overwrite | refresh',
-      argumentHint: '[next|charts|digest|report|allow-overwrite|refresh]',
+      description: 'agent-skills task board. Args: next | charts | digest | report | history | allow-overwrite | refresh',
+      argumentHint: '[next|charts|digest|report|history|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -279,6 +340,7 @@ export const register: Register = (on, options) => {
         ...p,
         today: dayOf(await $.clock.now()),
         charts: { burnup: burnupSvg(p.snapshots, p.forecast), flow: flowSvg(p.snapshots) },
+        historyLine: p.history ? historyNote(p.history, p.listFile) : undefined,
       })
       await $.fs.write(path, html)
       const size = `${Math.round(html.length / 1024)} KB`
@@ -288,7 +350,9 @@ export const register: Register = (on, options) => {
           : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`,
       )
     }
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|allow-overwrite|refresh]`)
+    if (arg === 'history') return reply(historyText(p.history, p.listFile))
+    if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|history|allow-overwrite|refresh]`)
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
   })
@@ -391,13 +455,26 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const line = bandText((await read($, project))?.list ?? null)
-    if (!line) return next(e)
-    const { Text } = $.ui.resolve(e)
+    const p = await read($, project)
+    const line = bandText(p?.list ?? null)
+    const ask = p?.history?.logs === 'ask'
+    if (!line && !ask) return next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     return (
-      <Text dimColor wrap="truncate-end">
-        {line}
-      </Text>
+      <Box flexDirection="column">
+        {line && (
+          <Text dimColor wrap="truncate-end">
+            {line}
+          </Text>
+        )}
+        {ask && (
+          <Box flexDirection="row" gap={1}>
+            <Text wrap="truncate-end">Too little git history for charts. Also read this project's Claude Code session logs?</Text>
+            <Button key="logs-yes" label="Read logs" onPress={() => void chooseLogs($, true).then(t => $.ui.toast(t))} />
+            <Button key="logs-no" label="No" onPress={() => void chooseLogs($, false)} />
+          </Box>
+        )}
+      </Box>
     )
   })
 

@@ -43,10 +43,12 @@ export type AsmProject = {
   plan: AsmPlan | null
   forecast: AsmForecast | null
   /** Where the history behind the forecast starts: rebuilt from git, or from the day the mod first saw the plan. */
-  history:
-    | { source: 'git'; days: number; since: string }
-    | { source: 'none'; reason: string; since: string }
-    | null
+  history: {
+    since: string
+    days: { git: number; messages: number; logs: number; seen: number }
+    logs: 'ask' | 'yes' | 'no' | 'empty' | 'unasked'
+    gitNote: string | null
+  } | null
   /** One per day, oldest first: what the charts draw (F2). */
   snapshots: { day: string; done: number; total: number; doing?: number; blocked?: number }[]
   /** By task id: the day it was done, or the day the forecast expects it (F1). */

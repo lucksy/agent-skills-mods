@@ -46,7 +46,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Spec pane** | The six core areas of `SPEC.md` (Objective, Commands, Project structure, Code style, Testing, Boundaries), each marked present ✓, empty ○ or missing ×. With module specs (`SPEC-<id>.md` next to `SPEC.md`) a picker at the top switches between them, and a module spec the agent writes is shown at once. Boundaries show as Always / Ask first / Never columns, followed by the open questions. The header says *awaiting approval* until the spec is approved. Weak sections get a ! and one reason: success criteria with no number or condition, Commands with no runnable line, Code style with no code block. These are hints and never block approval. | Opens when the agent writes a spec, or with `/spec-view [id]` |
 | **Task board** | Phases, tasks and checkpoints in plan order, with ✓ ● ○ ◌ ♦ × glyphs, a progress bar and an ETA. A date column gives the day each task was done (rebuilt from git where it can be) and `≈` the day the median pace reaches each open one. A task whose last test run failed is marked ×, until a run passes. | Opens when the agent writes `tasks/todo.md`, or with `/progress` |
 | **ETA as a range** | A median date with optimistic and slow cases, plus where it comes from ("from 4 tasks in 11 days") and how much scope was added. It shows no date until 3 tasks have been finished in the history. | Board pane |
-| **History from git** | The first time the plugin sees a plan, it rebuilds past daily progress from the commits of `tasks/todo.md`, so a project that is already under way gets an ETA on day one. It reads back until the file did not exist or held a different plan. Without git, tracking starts that day, and the board says which. A toast reports the result once. | Board pane, under the ETA |
+| **History for a project already under way** | The first time the plugin sees a plan, it rebuilds past daily progress so the charts and ETA work on day one. Sources, best first: what the plugin saw itself; the commits of `tasks/todo.md` (back to where the current plan began); Claude Code's session logs, which hold every edit the agent made to the list, committed or not; and commit messages that name a task (`T3`, `Task 3`), which date tasks between the others. The git sources are read automatically. The session logs are read only if you say yes: when git leaves too little history, the band above the prompt asks once. A toast and the board say where the history comes from. | Board pane, under the ETA; `/progress history` |
 | **Charts** | A burn-up (scope and done per day, plus a dotted forecast line to the median ETA) drawn in braille dots, and a flow chart (tasks done, in progress, blocked and to do, per day) drawn in half-blocks. Each chart fits the pane's width and is redrawn when the pane is resized. Under each chart, a line gives the latest numbers and names each color, so the colors never carry the meaning on their own. Charts need two days of history. On desktop, VS Code and mobile the same charts are interactive SVG: hover a day for its numbers; the forecast shows as a band from fast to slow. | `/progress charts` |
 | **Digest** | Four lines for Slack, copied to the clipboard: progress and the current task, the ETA, this week's sparkline with tasks done and added, and what needs a decision (checkpoints reached, open questions, a spec waiting for approval). | `/progress digest` |
 | **HTML report** | One self-contained page for people without Claude Code: done, ETA, pace and added scope as headline figures, a bar of tasks by state, both charts, days per task, and what needs a decision. No scripts and no external requests, so it opens offline and can be attached to an email. Light and dark. | `/progress report` writes `tasks/progress-report.html` and opens it in your default browser |
@@ -66,6 +66,8 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress charts` | Opens the burn-up and flow charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
+| `/progress history` | Lists the history sources and what each added |
+| `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
 | `/progress next` | Prints the next unblocked task with its criteria and any checkpoint after it. It comes straight from the parser and costs no model tokens. |
 | `/progress allow-overwrite` | Lets the next turn overwrite an unfinished plan once |
 | `/progress refresh` | Re-reads the files and prints the status |
@@ -108,7 +110,7 @@ It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 60 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 66 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```
@@ -119,7 +121,8 @@ Layout:
 hooks/register.tsx     the mod: commands, guard, panes, band, footer
 hooks/lib/parse.ts     SPEC.md / plan.md / todo.md parsers (pure, no Claude Code API)
 hooks/lib/forecast.ts  daily snapshots → ETA range
-hooks/lib/history.ts   past snapshots rebuilt from git
+hooks/lib/history.ts   past snapshots from git commits and commit messages
+hooks/lib/logs.ts      past snapshots from Claude Code's session logs
 hooks/lib/chart.ts     burn-up and flow charts as Raster cells
 hooks/lib/svg.ts       the same charts as SVG
 hooks/lib/report.ts    digest and HTML report
@@ -130,7 +133,7 @@ types/index.d.ts       the session state contract
 statusline/            the status line script and its test
 ```
 
-History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository. Rebuilding it from git runs two read-only commands once per project: `git log` for the commits that touched the task list, and one `git cat-file --batch` for their copies of it. Days the plugin saw for itself win over days rebuilt from git, since they include uncommitted edits.
+History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report you ask for. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.
 
 ## Roadmap
 

@@ -3,7 +3,19 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
-import { doneDaysFromGit, mergeHistory, parseLog, snapshotsFromGit, splitBatch } from '../hooks/lib/history'
+import {
+  combine,
+  doneDaysFromGit,
+  doneDaysFromMessages,
+  earliestDays,
+  mergeHistory,
+  parseLog,
+  parseMessages,
+  snapshotsFromDoneDays,
+  snapshotsFromGit,
+  splitBatch,
+} from '../hooks/lib/history'
+import { historyFromLogs, logsDir, textAfter } from '../hooks/lib/logs'
 import { spinnerWord, stepOf } from '../hooks/lib/steps'
 import { digestText, sparkline } from '../hooks/lib/report'
 import { burnupSvg, flowSvg } from '../hooks/lib/svg'
@@ -167,6 +179,52 @@ describe('history from git (F5)', () => {
       { day: '2026-10-02', done: 1, total: 4 },
       { day: '2026-10-08', done: 4, total: 4 },
     ])
+  })
+})
+
+describe('more history sources (0.7.0)', () => {
+  test('commit messages: T3, Task 3, task #3; the first mention after the plan began', async () => {
+    const at = (day: string) => Date.parse(`${day}T12:00:00Z`) / 1000
+    const out = [
+      `\x1e${at('2026-10-08')}\x1fT3: issue keys\n`,
+      `\x1e${at('2026-10-02')}\x1fTask 2 done, refs task #1\n`,
+      `\x1e${at('2026-09-25')}\x1fT2 of an older plan\n`,
+      `\x1e${at('2026-09-20')}\x1fchore: nothing\n`,
+    ].join('')
+    const commits = parseMessages(out)
+    expect(commits.map(c => c.ids)).toEqual([['T3'], ['T2', 'T1'], ['T2']])
+    const list = parseTasks(TODO_T3_DONE)
+    const days = doneDaysFromMessages(commits, list, Date.parse('2026-09-30T00:00:00Z'))
+    expect(days).toEqual({ 'T3|Issue and revoke keys': '2026-10-08', 'T2|Prisma schema for keys': '2026-10-02', 'T1|Monorepo scaffold': '2026-10-02' })
+    expect(snapshotsFromDoneDays(days, list)).toEqual([
+      { day: '2026-10-02', done: 2, total: 4 },
+      { day: '2026-10-08', done: 3, total: 4 },
+    ])
+  })
+
+  test('combining: what the mod saw, then files, then messages held between them', async () => {
+    const seen = [{ day: '2026-10-09', done: 3, total: 4 }]
+    const git = { snaps: [{ day: '2026-10-05', done: 2, total: 4 }, { day: '2026-10-09', done: 1, total: 4 }], doneDays: {} }
+    const logs = { snaps: [{ day: '2026-10-03', done: 1, total: 4 }, { day: '2026-10-05', done: 9, total: 9 }], doneDays: {} }
+    const messages = { snaps: [{ day: '2026-09-30', done: 1, total: 4 }, { day: '2026-10-04', done: 2, total: 4 }], doneDays: {} }
+    const c = combine(seen, [git, logs], messages)
+    expect(c.snaps.map(s => `${s.day}:${s.done}/${s.total}`)).toEqual(['2026-09-30:1/4', '2026-10-03:1/4', '2026-10-04:2/4', '2026-10-05:2/4', '2026-10-09:3/4'])
+    expect(c.added).toEqual({ seen: 1, files: [1, 1], messages: 2 })
+    expect(earliestDays({ a: '2026-10-05' }, { a: '2026-10-02', b: '2026-10-01' })).toEqual({ a: '2026-10-02', b: '2026-10-01' })
+  })
+
+  test('session logs: Write and Edit replayed, other files and broken lines skipped', async () => {
+    expect(logsDir('/home/.claude', '/Users/me/Projects/agent-skills.demo')).toBe('/home/.claude/projects/-Users-me-Projects-agent-skills-demo')
+    const path = '/p/tasks/todo.md'
+    const write = JSON.stringify({ timestamp: '2026-10-01T08:00:00Z', toolUseResult: { filePath: path, content: TODO_TEMPLATE } })
+    const edit = JSON.stringify({ timestamp: '2026-10-02T08:00:00Z', toolUseResult: { filePath: path, originalFile: TODO_TEMPLATE, oldString: '- [ ] Migration', newString: '- [x] Migration' } })
+    expect(textAfter(write, path)?.text).toBe(TODO_TEMPLATE)
+    expect(textAfter(edit, path)?.text).toMatch(/- \[x\] Migration/)
+    expect(textAfter(edit, '/q/tasks/todo.md')).toBe(null)
+    expect(textAfter('{oops "toolUseResult"', path)).toBe(null)
+    const h = historyFromLogs([write, `${edit}\nnot json`], path, parseTasks(TODO_T2_DONE))
+    expect(h.snaps.map(s => `${s.day}:${s.done}`)).toEqual(['2026-10-01:1', '2026-10-02:1'])
+    expect(h.doneDays).toEqual({ 'T1|Monorepo scaffold': '2026-10-01' })
   })
 })
 
