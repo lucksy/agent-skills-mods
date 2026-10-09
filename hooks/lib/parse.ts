@@ -193,7 +193,14 @@ export function openCount(list: TaskList): number {
 
 export type AreaState = 'present' | 'empty' | 'missing'
 
-export type SpecArea = { key: string; label: string; state: AreaState; body: string }
+export type SpecArea = {
+  key: string
+  label: string
+  state: AreaState
+  body: string
+  /** Why a present area looks weak (A2), or null. A hint only: it never blocks approval. */
+  hint: string | null
+}
 
 export type Spec = {
   title: string | null
@@ -201,6 +208,8 @@ export type Spec = {
   status: 'draft' | 'approved' | null
   areas: SpecArea[]
   boundaries: { always: string[]; ask: string[]; never: string[] }
+  /** From `## Success Criteria`, or a "Success criteria" list inside Objective. */
+  successCriteria: string[]
   openQuestions: string[]
 }
 
@@ -240,12 +249,19 @@ export function parseSpec(text: string): Spec {
   }
   if (cur) sections.push({ heading: cur.heading, body: cur.lines.join('\n').trim() })
 
-  const isPlaceholder = (s: string) => s.replace(/\[[^\]]*\]|[-*\s]|<!--[\s\S]*?-->/g, '') === ''
-  const areas = CORE_AREAS.map(a => {
+  const areas: SpecArea[] = CORE_AREAS.map(a => {
     const s = sections.find(x => a.match.test(x.heading))
     const state: AreaState = !s ? 'missing' : isPlaceholder(s.body) ? 'empty' : 'present'
-    return { key: a.key, label: a.label, state, body: s?.body ?? '' }
+    return { key: a.key, label: a.label, state, body: s?.body ?? '', hint: null }
   })
+
+  const objective = areas.find(a => a.key === 'objective')?.body ?? ''
+  const scSection = sections.find(s => /^success criteria/i.test(s.heading))
+  const successCriteria = criteriaItems(
+    scSection ? scSection.body : (/success criteria[^\n]*\n([\s\S]*)/i.exec(objective)?.[1] ?? ''),
+    !scSection,
+  )
+  for (const a of areas) if (a.state === 'present') a.hint = weakness(a, successCriteria)
 
   const boundaries = { always: [] as string[], ask: [] as string[], never: [] as string[] }
   const bText = areas.find(a => a.key === 'boundaries')?.body ?? ''
@@ -269,7 +285,42 @@ export function parseSpec(text: string): Spec {
     .filter((l): l is string => !!l && !isPlaceholder(l))
     .map(stripMd)
 
-  return { title, status, areas, boundaries, openQuestions }
+  return { title, status, areas, boundaries, successCriteria, openQuestions }
+}
+
+const isPlaceholder = (s: string) => s.replace(/\[[^\]]*\]|[-*\s]|<!--[\s\S]*?-->/g, '') === ''
+
+/** List items of a criteria block; prose lines too when the block is its own section. */
+function criteriaItems(text: string, listOnly: boolean): string[] {
+  const items: string[] = []
+  for (const line of text.split('\n')) {
+    if (/^#{1,6}\s/.test(line) || (listOnly && items.length > 0 && !line.trim())) break
+    const li = /^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$/.exec(line)?.[1]
+    const item = li ?? (listOnly ? undefined : line.trim())
+    if (item && !isPlaceholder(item)) items.push(stripMd(item))
+  }
+  return items
+}
+
+/** A number, a comparison, or words that make a criterion checkable. */
+const TESTABLE =
+  /\d|[<>≤≥=]|\b(when|if|within|under|over|below|above|less|more|least|most|after|before|returns?|responds?|rejects?|fails?|passes|shows?|every|each|only|never|no|all|without)\b/i
+
+/** A runnable command: in a code block, in backticks, or a line that starts with a common tool. */
+const RUNNABLE =
+  /```[\s\S]*?\S[\s\S]*?```|~~~[\s\S]*?\S[\s\S]*?~~~|`[^`\n]+`|^\s*(?:[-*+]\s+)?(?:\$\s+)?(?:pnpm|npm|npx|yarn|bun|deno|node|make|cargo|go|python3?|pip|uv|pytest|poetry|docker|git|bash|sh|\.\/)\s/m
+
+/** The weak-section rules (A2): one short reason, or null. */
+function weakness(a: SpecArea, criteria: string[]): string | null {
+  if (a.key === 'objective') {
+    if (criteria.length === 0) return 'no success criteria'
+    const vague = criteria.filter(c => !TESTABLE.test(c))
+    if (vague.length === 0) return null
+    return `${vague.length} of ${criteria.length} success criteria have no number or condition: "${vague[0]}"`
+  }
+  if (a.key === 'commands' && !RUNNABLE.test(a.body)) return 'no runnable command line'
+  if (a.key === 'style' && !/^\s*(```|~~~)/m.test(a.body)) return 'no example code block'
+  return null
 }
 
 // ---------------------------------------------------------------- tasks/plan.md

@@ -85,6 +85,59 @@ export const CHECKLIST = `# TODO
 - [ ] ship it
 `
 
+/** Every A2 rule trips once: vague criterion, prose-only commands, style without a snippet. */
+export const WEAK_SPEC = `# Spec: Webhooks
+
+## Objective
+Customers get events pushed to their own URL.
+
+## Commands
+Run the dev server and the tests.
+
+## Project Structure
+services/gateway/src/webhooks
+
+## Code Style
+camelCase, small functions.
+
+## Testing Strategy
+Vitest.
+
+## Boundaries
+- Always: sign payloads
+
+## Success Criteria
+- Delivery is reliable
+- Failed deliveries retry 5 times with backoff
+`
+
+/** Objective carries its own criteria list; every rule passes. */
+export const GOOD_SPEC = `# Spec: Rate limits
+
+## Objective
+Stop one key from starving the others.
+
+Success criteria:
+- 60 requests per minute per key by default
+- Over the limit returns 429 with Retry-After
+
+## Commands
+- \`pnpm --filter gateway test\`
+
+## Code Style
+\`\`\`ts
+export const limitFor = (key: ApiKey) => key.plan.rpm ?? DEFAULT_RPM
+\`\`\`
+`
+
+const tick = (text: string, ...boxes: string[]) => boxes.reduce((t, b) => t.replace(`- [ ] ${b}`, `- [x] ${b}`), text)
+/** T2 finished: the checkpoint after it is reached. */
+export const TODO_T2_DONE = tick(TODO_TEMPLATE, 'Migration', 'Tests pass: `pnpm test keys`')
+/** Checkpoint ticked too. */
+export const TODO_CP_DONE = tick(TODO_T2_DONE, 'All tests pass', 'Review with human')
+/** And T3 finished. */
+export const TODO_T3_DONE = tick(TODO_CP_DONE, 'POST /keys')
+
 export const SPEC = `---
 status: draft
 ---

@@ -3,8 +3,18 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
-import { bandText, forecastText, nextText, statusText, timelineRows } from '../hooks/lib/view'
-import { CHECKLIST, PLAN_INDEX, SPEC, TODO_TEMPLATE } from './fixtures'
+import { bandText, completionToast, forecastText, nextText, statusText, timelineRows } from '../hooks/lib/view'
+import {
+  CHECKLIST,
+  GOOD_SPEC,
+  PLAN_INDEX,
+  SPEC,
+  TODO_CP_DONE,
+  TODO_T2_DONE,
+  TODO_T3_DONE,
+  TODO_TEMPLATE,
+  WEAK_SPEC,
+} from './fixtures'
 
 describe('parseTasks', () => {
   test('template: ## Task N sections, dependencies and checkpoints', async () => {
@@ -62,6 +72,23 @@ describe('parseSpec', () => {
     expect(spec.boundaries.ask).toEqual(['database schema changes'])
     expect(spec.boundaries.never).toEqual(['commit secrets', 'log API keys'])
     expect(spec.openQuestions).toEqual(['Should keys expire by default?'])
+  })
+
+  test('weak sections are flagged with one reason each (A2)', async () => {
+    const hints = (text: string) => Object.fromEntries(parseSpec(text).areas.map(a => [a.key, a.hint]))
+    expect(hints(WEAK_SPEC)).toEqual({
+      objective: '1 of 2 success criteria have no number or condition: "Delivery is reliable"',
+      commands: 'no runnable command line',
+      structure: null,
+      style: 'no example code block',
+      testing: null,
+      boundaries: null,
+    })
+    const good = parseSpec(GOOD_SPEC)
+    expect(good.successCriteria).toEqual(['60 requests per minute per key by default', 'Over the limit returns 429 with Retry-After'])
+    expect(good.areas.map(a => a.hint)).toEqual([null, null, null, null, null, null])
+    // No criteria anywhere; missing and empty areas carry no hint, their state says it.
+    expect(hints(SPEC)).toMatchObject({ objective: 'no success criteria', commands: null, structure: null, style: null })
   })
 
   test('plan doc: tracker line and open questions', async () => {
@@ -149,6 +176,20 @@ describe('views', () => {
     expect(text).toMatch(/\[ \] Migration runs on a clean database/)
     expect(text).toMatch(/Checkpoint after this task: After Tasks 1-2/)
     expect(nextText(null, null)).toMatch(/Run \/plan/)
+  })
+
+  test('completion toast: checkpoint first, one per edit, none for unticking (B4)', async () => {
+    const [t0, t2, cp, t3] = [TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE].map(parseTasks)
+    expect(completionToast(t0!, t2!)).toBe('♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human before proceeding')
+    expect(completionToast(cp!, t3!)).toBe('✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key')
+    // Ticking the checkpoint's own boxes finishes no task.
+    expect(completionToast(t2!, cp!)).toBe(undefined)
+    expect(completionToast(t3!, cp!)).toBe(undefined)
+    expect(completionToast(null, t3!)).toBe(undefined)
+    // A new plan that reuses T1..Tn is not progress on the old one.
+    expect(completionToast(t0!, parseTasks(PLAN_INDEX))).toBe(undefined)
+    const all = TODO_T3_DONE.replace(/- \[ \]/g, '- [x]')
+    expect(completionToast(t3!, parseTasks(all))).toBe('✓ T4 done Rate limit per key · all tasks done')
   })
 
   test('timeline rows: phases, glyphs and a checkpoint that needs you', async () => {

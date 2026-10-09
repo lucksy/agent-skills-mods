@@ -146,3 +146,28 @@ export function bar(done: number, total: number, width: number): string {
   const filled = Math.round((done / total) * width)
   return '█'.repeat(filled) + '░'.repeat(width - filled)
 }
+
+/**
+ * The toast for one edit of the task list (B4), or undefined. A checkpoint just
+ * reached wins over the task that reached it, so there is at most one per edit, and
+ * unticking never raises one. Tasks match by id and title, so a new plan that
+ * reuses ids doesn't read as progress.
+ */
+export function completionToast(before: TaskList | null, after: TaskList | null): string | undefined {
+  if (!before || !after) return undefined
+  const key = (t: Task) => `${t.id}|${t.title}`
+  const wasDone = new Set(before.tasks.filter(t => t.status === 'done').map(key))
+  const known = new Set(before.tasks.map(key))
+  const finished = after.tasks.filter(t => t.status === 'done' && known.has(key(t)) && !wasDone.has(key(t)))
+  if (finished.length === 0) return undefined
+
+  const cp = finished.map(t => t.checkpoint).find(c => c && !(c.items.length > 0 && c.items.every(b => b.isDone)))
+  if (cp) {
+    const open = cp.items.filter(b => !b.isDone).map(b => b.text)
+    return `${GLYPH.needsYou} Checkpoint reached: ${cp.title}${open.length ? ` · ${open.join(' · ')}` : ''}`
+  }
+  const names = finished.map(t => t.id).join(', ')
+  const title = finished.length === 1 ? ` ${finished[0]?.title ?? ''}` : ''
+  const next = after.current ? ` · Next: ${after.current.id} ${after.current.title}` : after.done === after.total ? ' · all tasks done' : ''
+  return `${GLYPH.done} ${names} done${title}${next}`
+}

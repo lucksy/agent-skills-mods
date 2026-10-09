@@ -1,13 +1,13 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SPEC, TODO_TEMPLATE, PLAN_INDEX } from './fixtures'
+import { SPEC, TODO_TEMPLATE, TODO_T2_DONE, PLAN_INDEX, WEAK_SPEC } from './fixtures'
 
 const CWD = '/p'
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
 function world(on: On, files: Record<string, string>) {
-  const seen = { status: [] as unknown[], opened: [] as string[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[] }
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
   mock.store(on)
   on('session.cwd', () => ({ value: CWD }))
@@ -19,6 +19,10 @@ function world(on: On, files: Record<string, string>) {
   })
   on('ui.status', (_$, e) => {
     seen.status.push(e)
+    return { value: undefined }
+  })
+  on('ui.toast', (_$, e) => {
+    seen.toasts.push(e.text)
     return { value: undefined }
   })
   on('ui.open', (_$, e) => {
@@ -75,6 +79,33 @@ test('the overwrite allowance lasts the turn after the command, through subagent
   await $.command.run(run('allow-overwrite'))
   await turnEnd()
   expect(await write()).toMatch(/refused/)
+})
+
+test('an agent edit that finishes a task raises one toast; a stray edit raises none', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  const edit = () => $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'a', new_string: 'b' } as never)
+  await $.command.run(run('refresh'))
+  files[`${CWD}/tasks/todo.md`] = TODO_T2_DONE
+  await edit()
+  expect(seen.toasts).toEqual(['♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human before proceeding'])
+  await edit()
+  expect(seen.toasts.length).toBe(1)
+})
+
+test('the spec pane flags weak sections', async ($, on) => {
+  world(on, { [`${CWD}/SPEC.md`]: WEAK_SPEC })
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } } as never)
+  const pane = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-spec',
+    props: { title: 'x', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+  expect(await pane.find({ text: /no runnable command line/ })).toBeDefined()
+  expect(await pane.find({ text: /no example code block/ })).toBeDefined()
+  expect(await pane.find({ text: /1 of 2 success criteria/ })).toBeDefined()
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

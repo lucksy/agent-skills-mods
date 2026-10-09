@@ -8,6 +8,7 @@ import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import {
   bandText,
   bar,
+  completionToast,
   forecastText,
   nextText,
   specApproval,
@@ -137,7 +138,10 @@ export const register: Register = on => {
     const result = await next(e)
     const path = 'file_path' in e && typeof e.file_path === 'string' ? e.file_path : null
     if (!path || !EDIT_TOOLS.has(String(e.tool)) || !WATCHED.test(path) || result.isError) return result
-    await load($)
+    const before = (await read($, project))?.list ?? null
+    const after = (await load($)).list
+    const toast = GUARDED.test(path) ? completionToast(before, after) : undefined
+    if (toast) $.ui.toast(toast)
     if (/SPEC\.md$/.test(path)) void $.ui.open({ id: SPEC_PANE, title: 'Spec' })
     else if (/todo\.md$/.test(path)) void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return result
@@ -224,8 +228,13 @@ export const register: Register = on => {
         <Box flexDirection="column">
           {spec.areas.map(a => (
             <Text wrap="truncate-end">
-              <Text color={tone[a.state]}>{glyph[a.state]}</Text> {a.label.padEnd(18)}
-              <Text dimColor>{a.state === 'present' ? firstLine(a.body) : a.state}</Text>
+              {a.hint ? <Text color="warning">!</Text> : <Text color={tone[a.state]}>{glyph[a.state]}</Text>}{' '}
+              {a.label.padEnd(18)}
+              {a.hint ? (
+                <Text color="warning">{a.hint}</Text>
+              ) : (
+                <Text dimColor>{a.state !== 'present' ? a.state : areaDetail(a, spec.successCriteria)}</Text>
+              )}
             </Text>
           ))}
         </Box>
@@ -297,6 +306,11 @@ export const register: Register = on => {
       </Box>
     )
   })
+}
+
+function areaDetail(a: { key: string; body: string }, criteria: string[]): string {
+  if (a.key === 'objective') return `${criteria.length} success criteri${criteria.length === 1 ? 'on' : 'a'}`
+  return firstLine(a.body)
 }
 
 function firstLine(body: string): string {

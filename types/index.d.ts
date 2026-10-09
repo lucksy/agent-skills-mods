@@ -23,8 +23,9 @@ export type AsmTaskList = {
 export type AsmSpec = {
   title: string | null
   status: 'draft' | 'approved' | null
-  areas: { key: string; label: string; state: 'present' | 'empty' | 'missing'; body: string }[]
+  areas: { key: string; label: string; state: 'present' | 'empty' | 'missing'; body: string; hint: string | null }[]
   boundaries: { always: string[]; ask: string[]; never: string[] }
+  successCriteria: string[]
   openQuestions: string[]
 }
 export type AsmPlan = { trackedIn: string | null; openQuestions: string[] }
