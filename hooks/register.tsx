@@ -1300,7 +1300,8 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
             )
           ) : (
             <Box key={row.id} flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between" gap={1}>
+              {/* The current task's row is shaded (mockups 7, 9) with the theme's own dimmed diff tint, so it reads in light and dark. */}
+              <Box flexDirection="row" justifyContent="space-between" gap={1} backgroundColor={row.isCurrent ? 'diffAddedDimmed' : undefined}>
                 <Button key={`task-${row.id}`} label={`${row.glyph} ${row.id} ${row.title}`} plain onPress={() => void update($, expanded, x => (x === row.id ? null : row.id))}>
                   <Text inverse={row.id === focused} bold={row.isCurrent}>
                     <Text color={color[row.tone]}>{row.glyph}</Text> <Text bold={row.isCurrent}>{row.id}</Text>{' '}

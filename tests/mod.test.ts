@@ -1175,3 +1175,11 @@ test('the charts tab opens with the four figures, the now-bar and days per task'
   expect(await pane.find({ text: /^T3 Issue and revoke keys +█+ 2d$/ })).toBeDefined()
   expect(await pane.find({ text: /^T4 Rate limit per key +█+ 1d so far$/ })).toBeDefined()
 })
+
+test('the current task row is shaded with a theme colour', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run(''))
+  const board = await mountBoard($)
+  const drawn = JSON.stringify(await board.drawn())
+  expect(drawn.match(/"backgroundColor":"diffAddedDimmed"/g)).toHaveLength(1)
+})
