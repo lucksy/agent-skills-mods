@@ -8,7 +8,7 @@ import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
-import { ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
+import { alerts, ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
 import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
@@ -908,5 +908,17 @@ describe('spec drift', () => {
     expect(driftedSpec(approved, approved)).toBe(null)
     expect(driftedSpec(approved, approved.replace('2026-10-01', '2026-10-02'))).toBe(null)
     expect(driftedSpec(approved.replace('approved\n', 'draft\n'), 'x')).toBe(null)
+  })
+})
+
+describe('band alerts', () => {
+  test('a task running over twice the usual pace, and scope grown over 20%', async () => {
+    const todo = `---\ncreated: 2026-10-03\n---\n${TODO_T2_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · started 2026-10-01')}`
+    const list = parseTasks(todo)
+    expect(alerts({ list, snapshots: [{ day: '2026-09-29', total: 3 }], today: '2026-10-09' })).toEqual([
+      'T3 has run 8d, over twice the usual 3d a task',
+      'scope grew from 3 to 4 tasks (+33%) since 29 Sep',
+    ])
+    expect(alerts({ list: parseTasks(TODO_T2_DONE), snapshots: [{ day: '2026-10-08', total: 4 }], today: '2026-10-09' })).toEqual([])
   })
 })

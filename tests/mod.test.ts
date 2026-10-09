@@ -1121,3 +1121,12 @@ test('with notifications off, nothing is sent', { options: { notifications: fals
   await $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'x', new_string: 'y' } as never)
   expect(seen.notified).toEqual([])
 })
+
+test('the band warns, one line each, when a task runs long or scope grows', async ($, on) => {
+  const todo = `---\ncreated: 2026-10-03\n---\n${TODO_T2_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · started 2026-10-01')}`
+  world(on, { [`${CWD}/tasks/todo.md`]: todo }, 'no-repo', { [`history:${CWD}`]: [{ day: '2026-09-29', done: 0, total: 3 }] })
+  await $.command.run(run('refresh'))
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never })
+  expect((await band.find({ text: /^! T3 has run 8d, over twice the usual 3d a task$/ }))?.props).toMatchObject({ color: 'warning' })
+  expect(await band.find({ text: /^! scope grew from 3 to 4 tasks \(\+33%\) since 29 Sep$/ })).toBeDefined()
+})

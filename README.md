@@ -55,6 +55,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
 | **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess, laid out as cards in a text block: a header naming its source (`Checkpoint 1 · 1 task left    from tasks/todo.md`), the task with its glyph and open boxes, a blocked task's dependency chain (`T6 ← T5 ← T4`) and the open question, then one sentence on what you can do. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
 | **Current task band** | `▸ T4 Rate limit per key   3 criteria · 2 verifications   checkpoint after this task`: open acceptance criteria and verifications counted apart. While the agent works the ▸ turns (◐ ◓ ◑ ◒). Hidden when there is no plan or every task is done. | Above the prompt |
+| **Band alerts** | Under the current task, an amber line each when the task has run over twice the usual days per task (`! T4 has run 8d, over twice the usual 3d a task`) or scope has grown more than 20% since the plan began (`! scope grew from 9 to 12 tasks (+33%) since 29 Sep`). | Above the prompt |
 | **Status entry** | `spec ✓ approved · plan ████░░░░░ 4/9` | Status area |
 | **Stage in the footer** | When an agent-skills skill loads, its stage (spec, plan, build, test, review, ship) and the current task are added to the hint line (`· build T2`) and to the mode labels. Claude Code's own text stays. | Hint line and mode labels |
 | **Spinner in plan terms** | Off by default. Turned on with the `planSpinner` option, the spinner's random word becomes the task and step: `Working on T4` until the agent takes a step, then `Building T4` for source edits, `Testing T4` for a test command, `Committing T4` for `git commit`. | The spinner, while a turn runs |
@@ -181,7 +182,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 136 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 138 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

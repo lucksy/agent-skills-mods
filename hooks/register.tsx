@@ -33,6 +33,7 @@ import {
   bandText,
   bar,
   areaSummary,
+  alerts,
   boardRows,
   commitsNaming,
   taskDetail,
@@ -980,6 +981,7 @@ export const register: Register = (on, options) => {
     const ask = p?.history?.logs === 'ask'
     if ((!list || !t) && !ask) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
+    const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
     // ▸ between turns; a turning marker while the agent works, where surface modules run.
     const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
     const Client = working ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
@@ -999,6 +1001,11 @@ export const register: Register = (on, options) => {
             {t.checkpoint && <Text dimColor>checkpoint after this task</Text>}
           </Box>
         )}
+        {warnings.map(w => (
+          <Text color="warning" wrap="truncate-end">
+            ! {w}
+          </Text>
+        ))}
         {ask && (
           <Box flexDirection="row" gap={1}>
             <Text wrap="truncate-end">Too little git history for charts. Also read this project's Claude Code session logs?</Text>

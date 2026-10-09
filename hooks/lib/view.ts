@@ -614,3 +614,29 @@ export function commitsNaming(out: string, id: string): { hash: string; day: str
     .filter((m): m is RegExpExecArray => !!m && re.test(m[3]!))
     .map(m => ({ hash: m[1]!, day: m[2]!, subject: m[3]! }))
 }
+
+// ------------------------------------------------------------------ alerts on the band
+
+/**
+ * What the band warns about, one line each: the current task running more
+ * than twice the usual days per task, and scope grown more than 20% since the
+ * plan began.
+ */
+export function alerts(input: { list: TaskList | null; snapshots: { day: string; total: number }[]; today: string }): string[] {
+  const { list, snapshots, today } = input
+  if (!list || list.total === 0) return []
+  const out: string[] = []
+  const began = list.meta?.created ?? snapshots[0]?.day
+  const days = (a: string, b: string) => Math.max(0, Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000))
+  const t = list.current
+  if (t?.state?.started && began && list.done >= 2) {
+    const pace = Math.max(1, days(began, today) / list.done)
+    const running = days(t.state.started, today)
+    if (running > pace * 2) out.push(`${t.id} has run ${running}d, over twice the usual ${Math.round(pace)}d a task`)
+  }
+  const first = snapshots[0]?.total
+  if (first && list.total > first && (list.total - first) / first > 0.2) {
+    out.push(`scope grew from ${first} to ${list.total} tasks (+${Math.round(((list.total - first) / first) * 100)}%) since ${shortDay(snapshots[0]!.day)}`)
+  }
+  return out
+}
