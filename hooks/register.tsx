@@ -15,7 +15,7 @@ import {
   type SourceData,
 } from './lib/history'
 import { historyFromLogs, logsDir, mentions } from './lib/logs'
-import { burnup, flow } from './lib/chart'
+import { burnup, flow, revealCells } from './lib/chart'
 import { digestText, reportHtml } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
@@ -63,6 +63,8 @@ const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as co
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
 /** Whether this terminal draws pictures (F3), read from its environment at session start. */
 const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, false)
+/** How much of the cell charts is drawn (0 to 1): they sweep in left to right when the pane opens. */
+const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as const, 1)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -164,6 +166,23 @@ async function openInEditor($: $): Promise<void> {
     } catch {}
   }
   $.ui.toast(`Could not open ${p.specFile}; it is at ${path}`)
+}
+
+/** The charts' draw-in: eight frames, about a third of a second, then the whole chart. */
+const SWEEP_FRAMES = 8
+let sweep: { cancel: () => void } | null = null
+async function sweepCharts($: $): Promise<void> {
+  sweep?.cancel()
+  await update($, chartReveal, () => 0)
+  let frame = 0
+  sweep = $.clock.every(45, () => {
+    frame++
+    void update($, chartReveal, () => Math.min(1, frame / SWEEP_FRAMES))
+    if (frame >= SWEEP_FRAMES) {
+      sweep?.cancel()
+      sweep = null
+    }
+  })
 }
 
 /** The spec pane's picker (A3): show another spec file. */
@@ -378,6 +397,7 @@ export const register: Register = (on, options) => {
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
     if (arg === 'charts') {
+      await sweepCharts($)
       await $.ui.open({ id: CHARTS_PANE, title: 'Charts' })
       const days = new Set(p.snapshots.map(s => s.day)).size
       return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
@@ -515,16 +535,40 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const p = await read($, project)
-    const line = bandText(p?.list ?? null)
+    const list = p?.list ?? null
+    const t = list?.current
     const ask = p?.history?.logs === 'ask'
-    if (!line && !ask) return next(e)
+    if ((!list || !t) && !ask) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
+    // A turning marker and a filling bar where the surface runs surface modules.
+    const animated = e.surface === 'terminal' || e.surface === 'desktop'
+    const Client = animated ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
+    const left = t ? t.boxes.filter(b => !b.isDone).length : 0
     return (
       <Box flexDirection="column">
-        {line && (
-          <Text dimColor wrap="truncate-end">
-            {line}
-          </Text>
+        {list && t && (
+          <Box flexDirection="row" gap={1}>
+            {Client ? (
+              <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: e.props.isWorking === true }} width={1} height={1} />
+            ) : (
+              <Text color="warning">●</Text>
+            )}
+            <Text wrap="truncate-end">
+              <Text bold color="warning">
+                {t.id}
+              </Text>{' '}
+              {t.title}
+              <Text dimColor>
+                {' '}
+                · {left} criteri{left === 1 ? 'on' : 'a'} left
+              </Text>
+            </Text>
+            {Client && <Client key="band-meter" module="./ui/meter.tsx" props={{ done: list.done, total: list.total }} width={10} height={1} />}
+            <Text dimColor>
+              {list.done}/{list.total} done
+            </Text>
+            {t.checkpoint && <Text color="permission">♦ checkpoint after this task</Text>}
+          </Box>
         )}
         {ask && (
           <Box flexDirection="row" gap={1}>
@@ -695,12 +739,20 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text>
+          <Box flexDirection="row" gap={1}>
             <Text bold>
               {list.done}/{list.total} done
-            </Text>{' '}
-            <Text color="success">{bar(list.done, list.total, Math.max(4, Math.min(30, width - 16)))}</Text>
-          </Text>
+            </Text>
+            {e.surface === 'terminal' || e.surface === 'desktop' ? (
+              (() => {
+                const { Client } = $.ui.resolve(e as typeof e & { surface: 'terminal' })
+                return <Client key="meter" module="./ui/meter.tsx" props={{ done: list.done, total: list.total }} width={Math.max(4, Math.min(30, width - 16))} height={1} />
+              })()
+            ) : (
+              <Text color="success">{bar(list.done, list.total, Math.max(4, Math.min(30, width - 16)))}</Text>
+            )}
+            <Text dimColor>{Math.round((list.done / list.total) * 100)}%</Text>
+          </Box>
           {p?.forecast && (
             <Text dimColor wrap="wrap">
               {forecastText(p.forecast)}
@@ -715,7 +767,9 @@ export const register: Register = (on, options) => {
             row.kind === 'phase' ? (
               <Text wrap="truncate-end">
                 {date(row.date)}
+                <Text color="claude">── </Text>
                 <Text bold>{row.text}</Text>
+                <Text color="subtle"> {'─'.repeat(Math.max(2, width - row.text.length - (dated ? 12 : 4)))}</Text>
               </Text>
             ) : row.kind === 'checkpoint' ? (
               <Text color={row.glyph === '♦' ? 'permission' : undefined} dimColor={row.glyph !== '♦'} wrap="truncate-end">
@@ -734,7 +788,22 @@ export const register: Register = (on, options) => {
             ),
           )}
         </Box>
-        <Text dimColor>✓ done ● next ○ to do ◌ waits on another task ■ blocked by a question ♦ needs you × tests failed{dated ? ' · ≈ expected' : ''}</Text>
+        <Text wrap="wrap">
+          <Text color="success">✓</Text>
+          <Text dimColor> done </Text>
+          <Text color="warning">●</Text>
+          <Text dimColor> next </Text>
+          <Text color="subtle">○</Text>
+          <Text dimColor> to do </Text>
+          <Text color="subtle">◌</Text>
+          <Text dimColor> waits on another task </Text>
+          <Text color="error">■</Text>
+          <Text dimColor> blocked by a question </Text>
+          <Text color="permission">♦</Text>
+          <Text dimColor> needs you </Text>
+          <Text color="error">×</Text>
+          <Text dimColor> tests failed{dated ? ' · ≈ expected' : ''}</Text>
+        </Text>
       </Box>
     )
   })
@@ -755,6 +824,7 @@ export const register: Register = (on, options) => {
     // Pictures on kitty and Ghostty (F3), terminal cells elsewhere (F2); interactive
     // SVG on desktop, VS Code and mobile (F4).
     const usePixels = e.surface === 'terminal' && (await read($, pixels))
+    const reveal = await read($, chartReveal)
     const picture = (key: 'burnup' | 'flow', c: { columns: number; rows: number }, pic: PixelChart | null) => {
       if (e.surface !== 'terminal' || !pic) return null
       const { Image } = $.ui.resolve(e)
@@ -788,7 +858,7 @@ export const register: Register = (on, options) => {
           if (drawn) return drawn
         }
         const { Raster } = $.ui.resolve(e)
-        return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
+        return <Raster key={key} columns={c.columns} rows={c.rows} cells={revealCells(c.cells, c.columns, c.rows, reveal)} />
       }
       const svg = key === 'burnup' ? burnupSvg(snaps, p?.forecast ?? null) : flowSvg(snaps)
       if (!svg) return null
@@ -799,6 +869,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
           <Text>
+            <Text color="claude">── </Text>
             <Text bold>Burn-up</Text> <Text dimColor>scope vs done{p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}</Text>
           </Text>
           {chart('burnup', up)}
@@ -806,6 +877,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Box flexDirection="column">
           <Text>
+            <Text color="claude">── </Text>
             <Text bold>Flow</Text> <Text dimColor>tasks by state, per day</Text>
           </Text>
           {chart('flow', fl)}

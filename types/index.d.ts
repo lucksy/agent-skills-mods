@@ -72,6 +72,7 @@ declare module 'claude-code' {
       gateWarned: boolean
       specSection: string | null
       pixels: boolean
+      chartReveal: number
     }
   }
 }

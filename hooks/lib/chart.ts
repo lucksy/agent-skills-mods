@@ -208,3 +208,25 @@ export function flow(history: Snapshot[], columns: number, rows: number): Chart 
   const parts = STATES.map(k => `${now[k]} ${STATE_NAME[k]}`)
   return { columns, rows, cells: g.pack(), legend: `${shortDay(last.day)}: ${parts.join(' · ')} (bottom to top: green, amber, red, grey)` }
 }
+
+/**
+ * The cells with the plot cleared right of `fraction` of its width, axis and
+ * labels kept: one frame of the draw-in when the charts pane opens.
+ */
+export function revealCells(cells: string, columns: number, rows: number, fraction: number): string {
+  if (fraction >= 1) return cells
+  const bin = atob(cells)
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
+  const view = new DataView(bytes.buffer)
+  const cut = GUTTER + Math.round(Math.max(0, fraction) * (columns - GUTTER))
+  // The last two rows are the x axis and its dates.
+  for (let r = 0; r < rows - 2; r++) {
+    for (let c = cut; c < columns; c++) {
+      const i = (r * columns + c) * 12
+      view.setUint32(i, 0x20, true)
+      view.setUint32(i + 4, COLOR.none, true)
+      view.setUint32(i + 8, COLOR.none, true)
+    }
+  }
+  return toBase64(bytes)
+}

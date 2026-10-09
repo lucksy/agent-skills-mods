@@ -23,7 +23,8 @@ import { historyFromLogs, logsDir, textAfter } from '../hooks/lib/logs'
 import { spinnerWord, stepOf } from '../hooks/lib/steps'
 import { digestText, sparkline } from '../hooks/lib/report'
 import { burnupSvg, flowSvg } from '../hooks/lib/svg'
-import { burnup, COLOR, daily, flow, toBase64 } from '../hooks/lib/chart'
+import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../hooks/lib/chart'
+import { meterCells } from '../hooks/ui/meter'
 import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../hooks/lib/view'
 import {
   CHECKLIST,
@@ -708,5 +709,28 @@ describe('the progress script for other agents (E2)', () => {
     const empty = renderCli(await gather(io({})), { color: false, width: 60 })
     expect(empty).toMatch(/No SPEC\.md, tasks\/plan\.md or tasks\/todo\.md here\./)
     expect(empty).toMatch(/agent-skills · no plan yet/)
+  })
+})
+
+describe('motion (bar fill, chart sweep)', () => {
+  test('the bar in eighths: whole blocks, one partial cell, then track', async () => {
+    expect(meterCells(0, 4)).toEqual({ fill: '', track: '░░░░' })
+    expect(meterCells(0.25, 30)).toEqual({ fill: '███████▌', track: '░'.repeat(22) })
+    expect(meterCells(1, 4)).toEqual({ fill: '████', track: '' })
+    expect(meterCells(2, 4).fill).toBe('████')
+  })
+
+  test('a sweep frame clears the plot right of the cut and keeps the axes', async () => {
+    const history = [
+      { day: '2026-10-01', done: 0, total: 4 },
+      { day: '2026-10-09', done: 3, total: 4 },
+    ]
+    const up = burnup(history, null, 40, 10)!
+    expect(revealCells(up.cells, 40, 10, 1)).toBe(up.cells)
+    const none = decodeCells(revealCells(up.cells, 40, 10, 0), 40).glyphs
+    const full = decodeCells(up.cells, 40).glyphs
+    expect(none.slice(0, 8).every(r => r.slice(4).trim() === '')).toBe(true)
+    expect(none.slice(0, 8).map(r => r.slice(0, 4))).toEqual(full.slice(0, 8).map(r => r.slice(0, 4)))
+    expect(none.slice(8)).toEqual(full.slice(8))
   })
 })

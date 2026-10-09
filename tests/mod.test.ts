@@ -1,9 +1,12 @@
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
+import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput, decodeCells } from './fixtures'
 
 const CWD = '/p'
+
+/** Each world's mocked clock, for tests that move time on. */
+const clocks = new WeakMap<object, ReturnType<typeof mock.clock>>()
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
 type Git = { log: string; cat: string; messages?: string } | 'no-repo' | 'no-commits'
@@ -36,7 +39,7 @@ function world(
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.cat)
   })
-  mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
+  clocks.set(seen, mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') }))
   mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
@@ -755,4 +758,53 @@ test('chartStyle auto on a terminal that draws no pictures keeps the braille and
   const pane = await mountCharts($)
   expect(await pane.find({ type: 'Image' })).toBeUndefined()
   expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
+})
+
+test('the band turns its marker while the agent works and holds it still between turns', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run('refresh'))
+  const props = (isWorking: boolean) =>
+    ({ hasSurvey: false, isWorking, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} }) as never
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: props(false) })
+  expect((await band.find({ type: 'Client', key: 'pulse' }))?.props).toMatchObject({ module: 'hooks/ui/pulse.tsx', props: { isActive: false } })
+  expect(await band.find({ text: /^●$/, in: 'pulse' })).toBeDefined()
+  await band.advance(600)
+  expect(await band.find({ text: /^●$/, in: 'pulse' })).toBeDefined()
+
+  await band.redraw(props(true))
+  await band.advance(150)
+  const glyphs = new Set<string>()
+  for (let i = 0; i < 4; i++) {
+    await band.advance(140)
+    for (const g of ['◐', '◓', '◑', '◒']) if (await band.find({ text: new RegExp(`^${g}$`), in: 'pulse' })) glyphs.add(g)
+  }
+  expect(glyphs.size).toBeGreaterThan(2)
+  expect((await band.find({ type: 'Client', key: 'band-meter' }))?.props).toMatchObject({ props: { done: 1, total: 4 } })
+  expect(await band.find({ text: /^1\/4 done$/ })).toBeDefined()
+})
+
+test('the board bar fills in smoothly to the share done', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run('refresh'))
+  const board = await mountBoard($)
+  const meter = await board.find({ type: 'Client', key: 'meter' })
+  expect(meter?.props).toMatchObject({ module: 'hooks/ui/meter.tsx', props: { done: 1, total: 4 }, width: 30 })
+  await board.resize({ columns: 30, rows: 1, in: 'meter' })
+  await board.advance(2000)
+  expect(await board.find({ text: /^███████▌░{22}$/, in: 'meter' })).toBeDefined()
+  expect(await board.find({ text: /^25%$/ })).toBeDefined()
+})
+
+test('/progress charts sweeps the cell charts in from the left', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($)
+  const plot = async () => {
+    const r = await pane.find({ type: 'Raster', key: 'burnup' })
+    const { glyphs } = decodeCells(String((r?.props as { cells: string }).cells), 70)
+    return glyphs.slice(0, 8).map(g => g.slice(4)).join('').trim()
+  }
+  expect(await plot()).toBe('')
+  await clocks.get(seen)!.advance(500)
+  expect((await plot()).length).toBeGreaterThan(10)
 })
