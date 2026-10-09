@@ -30,6 +30,7 @@ import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFro
 import {
   bandText,
   bar,
+  areaSummary,
   boardRows,
   openCounts,
   phaseLabel,
@@ -759,15 +760,6 @@ export const register: Register = (on, options) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const p = await read($, project)
     const width = Math.max(20, e.props.bodyColumns)
-    const rule = (label: string, color: string = 'subtle') => (
-      <Text wrap="truncate-end">
-        <Text color={color}>── </Text>
-        <Text bold color={color}>
-          {label}
-        </Text>
-        <Text color="subtle"> {'─'.repeat(Math.max(0, width - label.length - 4))}</Text>
-      </Text>
-    )
     // The mobile app draws no Select yet; there /spec-view <id> picks.
     const picker = (() => {
       if (!p || p.specFiles.length < 2) return null
@@ -787,7 +779,10 @@ export const register: Register = (on, options) => {
     if (!spec) {
       return (
         <Box flexDirection="column">
-          {rule('SPEC', 'claude')}
+          <Text bold color="claude">
+            SPEC.md
+          </Text>
+          <Text color="subtle">{'─'.repeat(width)}</Text>
           <Text>No SPEC.md yet.</Text>
           <Text dimColor>It would be at {p?.cwd ?? '.'}/SPEC.md. Run /spec to write one.</Text>
         </Box>
@@ -797,102 +792,92 @@ export const register: Register = (on, options) => {
     const colWidth = Math.max(12, Math.floor((width - 2) / 3))
     const glyph = { present: '✓', empty: '○', missing: '×' } as const
     const tone = { present: 'success', empty: 'warning', missing: 'error' } as const
-    const present = spec.areas.filter(a => a.state === 'present').length
     const column = (head: string, color: string, items: string[]) => (
-      <Box flexDirection="column" width={colWidth} borderStyle="round" borderColor={color} paddingX={1}>
+      <Box flexDirection="column" width={colWidth} borderStyle="round" borderColor="subtle" paddingX={1}>
         <Text bold color={color}>
           {head}
         </Text>
-        {items.length === 0 ? <Text dimColor>none</Text> : items.map(i => <Text wrap="wrap">· {i}</Text>)}
+        {items.length === 0 ? <Text dimColor>none</Text> : items.map(i => <Text wrap="wrap">{i}</Text>)}
       </Box>
     )
     const opened = await read($, specSection)
     const area = spec.areas.find(a => a.key === opened && a.state === 'present')
-    const reader = (() => {
-      if (e.surface === 'mobile') return null
-      const readable = spec.areas.filter(a => a.state === 'present')
-      if (readable.length === 0) return null
-      const { Select, Markdown } = $.ui.resolve(e)
-      return (
-        <Box flexDirection="column">
-          {rule('Read a section')}
-          <Select
-            key="spec-section"
-            label="Section"
-            options={readable.map(a => ({ value: a.key, label: a.label }))}
-            value={area?.key}
-            onSelect={(key: string) => void update($, specSection, () => key)}
-          />
-          {area && (
-            <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
-              <Markdown key="spec-section-body" text={area.body} />
-            </Box>
-          )}
-        </Box>
-      )
-    })()
+    const readable = spec.areas.filter(a => a.state === 'present')
+    const Select = e.surface === 'mobile' ? null : $.ui.resolve(e as typeof e & { surface: 'terminal' }).Select
+    const Markdown = $.ui.resolve(e).Markdown
+    const approvedNote = spec.approvedOn ? ` ${shortDay(spec.approvedOn)}` : ''
     return (
-      <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column">
         {picker}
-        <Box flexDirection="column">
-          <Text bold wrap="truncate-end">
-            <Text color="claude">SPEC </Text>
-            {spec.title ?? p?.specFile ?? 'SPEC.md'}
-            {spec.title && p?.specFile && p.specFile !== 'SPEC.md' ? <Text dimColor> ({p.specFile})</Text> : ''}
+        <Box flexDirection="row" justifyContent="space-between" gap={1}>
+          <Text bold color="claude" wrap="truncate-end">
+            {p?.specFile ?? 'SPEC.md'}
+            {spec.title ? <Text dimColor> · {spec.title}</Text> : ''}
           </Text>
-          <Text>
-            <Text color={approval === 'approved' ? 'success' : 'permission'} bold>
-              {approval === 'approved' ? '✓ approved' : '♦ awaiting approval'}
+          <Box flexShrink={0}>
+            <Text bold color={approval === 'approved' ? 'success' : 'warning'}>
+              {approval === 'approved' ? `approved${approvedNote}` : 'awaiting approval'}
             </Text>
-            <Text dimColor>{spec.status ? ' · front matter' : approval === 'approved' ? ' · a plan exists' : ' · review, then approve'}</Text>
-          </Text>
-          <Box flexDirection="row" gap={1}>
-            {approval === 'approved' ? (
-              spec.status === 'approved' && <Button key="spec-draft" label="Back to draft" hotkey="d" dimColor onPress={() => void setApproval($, 'draft')} />
-            ) : (
-              <Button key="spec-approve" label="Approve" hotkey="a" variant="primary" onPress={() => void setApproval($, 'approved')} />
-            )}
-            <Button key="spec-edit" label="Open in editor" hotkey="e" onPress={() => void openInEditor($)} />
           </Box>
         </Box>
-        <Box flexDirection="column">
-          {rule(`Core areas ${present}/${spec.areas.length}`, present === spec.areas.length ? 'success' : 'warning')}
-          {spec.areas.map(a => (
-            <Text wrap="truncate-end">
-              {a.hint ? <Text color="warning">!</Text> : <Text color={tone[a.state]}>{glyph[a.state]}</Text>}{' '}
-              <Text bold={a.key === area?.key}>{a.label.padEnd(18)}</Text>
-              {a.hint ? (
-                <Text color="warning">{a.hint}</Text>
-              ) : (
-                <Text dimColor>{a.state !== 'present' ? a.state : areaDetail(a, spec.successCriteria)}</Text>
-              )}
-            </Text>
-          ))}
-        </Box>
-        <Box flexDirection="column">
-          {rule('Boundaries')}
-          <Box flexDirection="row" gap={1}>
-            {column('Always', 'success', spec.boundaries.always)}
-            {column('Ask first', 'warning', spec.boundaries.ask)}
-            {column('Never', 'error', spec.boundaries.never)}
-          </Box>
+        <Text color="subtle">{'─'.repeat(width)}</Text>
+        {spec.areas.map((a, i) => {
+          const sum = areaSummary(a, spec.successCriteria)
+          return (
+            <Box key={a.key} flexDirection="row" justifyContent="space-between" gap={1}>
+              <Text wrap="truncate-end" bold={a.key === area?.key}>
+                {a.hint ? <Text color="warning">!</Text> : <Text color={tone[a.state]}>{glyph[a.state]}</Text>} {i + 1} {a.label}
+              </Text>
+              <Box flexShrink={0}>
+                <Text color={sum.isWeak ? (a.state === 'missing' ? 'error' : 'warning') : undefined} dimColor={!sum.isWeak}>
+                  {sum.text}
+                </Text>
+              </Box>
+            </Box>
+          )
+        })}
+        <Box flexDirection="row" gap={1} marginTop={1}>
+          {column('Always', 'success', spec.boundaries.always)}
+          {column('Ask first', 'warning', spec.boundaries.ask)}
+          {column('Never', 'error', spec.boundaries.never)}
         </Box>
         {spec.openQuestions.length > 0 && (
-          <Box flexDirection="column">
-            {rule(`Open questions ${spec.openQuestions.length}`, 'permission')}
+          <Box flexDirection="column" marginTop={1}>
             {spec.openQuestions.map(q => (
               <Text wrap="wrap">
-                <Text color="permission">♦</Text> {q}
+                <Text color="permission">♦</Text> <Text dimColor>{q}</Text>
               </Text>
             ))}
           </Box>
         )}
-        {reader}
+        <Box flexDirection="row" gap={1} marginTop={1} flexWrap="wrap">
+          {Select && readable.length > 0 && (
+            <Select
+              key="spec-section"
+              label="↵ open section"
+              options={readable.map(a => ({ value: a.key, label: a.label }))}
+              value={area?.key}
+              onSelect={(key: string) => void update($, specSection, () => key)}
+            />
+          )}
+          <Text dimColor>·</Text>
+          {approval === 'approved' ? (
+            spec.status === 'approved' && <Button key="spec-draft" label="back to draft" hotkey="d" plain dimColor onPress={() => void setApproval($, 'draft')} />
+          ) : (
+            <Button key="spec-approve" label="approve" hotkey="a" plain dimColor onPress={() => void setApproval($, 'approved')} />
+          )}
+          <Text dimColor>·</Text>
+          <Button key="spec-edit" label="edit in $EDITOR" hotkey="e" plain dimColor onPress={() => void openInEditor($)} />
+        </Box>
+        {area && (
+          <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} marginTop={1}>
+            <Text bold>{area.label}</Text>
+            <Markdown key="spec-section-body" text={area.body} />
+          </Box>
+        )}
       </Box>
     )
   })
-
-  // ----------------------------------------------------------- task board + run timeline (B1, F1, G3)
 
   // ----------------------------------------------------------- the plan pane: timeline, charts, tasks (B1, F1, F2, G3)
 

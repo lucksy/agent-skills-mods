@@ -165,9 +165,10 @@ test('the spec pane flags weak sections', async ($, on) => {
     requestId: 'asm-spec',
     props: { title: 'x', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
   })
-  expect(await pane.find({ text: /no runnable command line/ })).toBeDefined()
-  expect(await pane.find({ text: /no example code block/ })).toBeDefined()
-  expect(await pane.find({ text: /1 of 2 success criteria/ })).toBeDefined()
+  expect(await pane.find({ text: /^nothing runnable$/ })).toBeDefined()
+  expect(await pane.find({ text: /^no example$/ })).toBeDefined()
+  expect(await pane.find({ text: /^1 vague criterion$/ })).toBeDefined()
+  expect(await pane.find({ text: /^! 1 Objective$/ })).toBeDefined()
 })
 
 test('the system prompt carries the parsed progress as its last section, only where there is a plan', async ($, on) => {
@@ -393,7 +394,7 @@ test('module specs: a picker in the spec pane, /spec-view <id>, and the one the 
   expect(await pane.find({ text: /Should keys expire by default/ })).toBeDefined()
 
   await pane.select({ key: 'spec-file', value: 'SPEC-limits.md' })
-  expect(await pane.find({ text: /SPEC Rate limits \(SPEC-limits\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /^SPEC-limits\.md · Rate limits$/ })).toBeDefined()
   expect(await pane.find({ text: /Should keys expire/ })).toBeUndefined()
 
   expect(JSON.stringify(await $.command.run({ command: 'spec-view', args: 'nope', origin: { kind: 'composer' } } as never))).toMatch(
@@ -405,7 +406,7 @@ test('module specs: a picker in the spec pane, /spec-view <id>, and the one the 
   // The agent writes a third spec: the pane shows that one.
   files[`${CWD}/SPEC-billing.md`] = WEAK_SPEC
   await $.tool.call({ tool: 'Write', file_path: `${CWD}/SPEC-billing.md`, content: WEAK_SPEC } as never)
-  expect(await pane.find({ text: /SPEC Webhooks \(SPEC-billing\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /^SPEC-billing\.md · Webhooks$/ })).toBeDefined()
   expect(seen.opened).toContain('asm-spec')
 })
 
@@ -685,13 +686,13 @@ test('the spec pane approves the spec in front matter, and can put it back to dr
   const seen = world(on, files)
   await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
   const pane = await mountSpec($)
-  expect(await pane.find({ text: /♦ awaiting approval/ })).toBeDefined()
+  expect(await pane.find({ text: /^awaiting approval$/ })).toBeDefined()
   expect(await pane.find({ type: 'Button', key: 'spec-draft' })).toBeUndefined()
 
   await pane.press({ key: 'spec-approve' })
   expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\napproved: 2026-10-09\ncreated: 2026-10-09\n---\n# Spec: API keys/)
   expect(seen.toasts).toContain('✓ SPEC.md approved · planning can start')
-  expect(await pane.find({ text: /✓ approved/ })).toBeDefined()
+  expect(await pane.find({ text: /^approved 9 Oct$/ })).toBeDefined()
   expect(JSON.stringify(seen.status.at(-1))).toMatch(/spec ✓ approved/)
 
   await pane.press({ key: 'spec-draft' })
@@ -729,11 +730,11 @@ test('module specs from a capability map: specs/<module>.md in the picker, by /s
   })
   const reply = await $.command.run({ command: 'spec-view', args: 'limits', origin: { kind: 'composer' } } as never)
   expect(JSON.stringify(reply)).toMatch(/Spec pane opened: specs\/limits\.md/)
-  expect(await pane.find({ text: /Rate limits \(specs\/limits\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /^specs\/limits\.md · Rate limits$/ })).toBeDefined()
 
   files[`${CWD}/specs/hooks.md`] = WEAK_SPEC
   await $.tool.call({ tool: 'Write', file_path: `${CWD}/specs/hooks.md`, content: WEAK_SPEC } as never)
-  expect(await pane.find({ text: /Webhooks \(specs\/hooks\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /^specs\/hooks\.md · Webhooks$/ })).toBeDefined()
 })
 
 const CHART_HISTORY = [
@@ -929,4 +930,22 @@ test('the charts tab: side by side when wide, colour swatch legends, phase bars 
   await pane.resize({ columns: 20, rows: 1, in: 'phase-1' })
   await pane.advance(2000)
   expect(await pane.find({ text: /^█{10}░{10}$/, in: 'phase-1' })).toBeDefined()
+})
+
+test('the spec pane as mockup 8: numbered areas, summaries on the right, framed boundaries, key hints', async ($, on) => {
+  const full = `${GOOD_SPEC}\n## Project Structure\nservices/gateway\n\n## Testing Strategy\nVitest unit tests, 80% line coverage.\n\n## Boundaries\n- Always: hash keys\n- Ask first: new deps\n- Never: store raw key\n`
+  world(on, { [`${CWD}/SPEC.md`]: full })
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  expect(await pane.find({ text: /^SPEC\.md · Rate limits$/ })).toBeDefined()
+  expect(await pane.find({ text: /^awaiting approval$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓ 1 Objective$/ })).toBeDefined()
+  expect(await pane.find({ text: /^\d success criteri(on|a)$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓ 2 Commands$/ })).toBeDefined()
+  expect(await pane.find({ text: /^\d runnable$/ })).toBeDefined()
+  expect(await pane.find({ text: /^vitest · 80%$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓ 6 Boundaries$/ })).toBeDefined()
+  expect((await pane.find({ type: 'Button', key: 'spec-approve' }))?.props).toMatchObject({ label: 'approve', hotkey: 'a', plain: true })
+  expect((await pane.find({ type: 'Button', key: 'spec-edit' }))?.props).toMatchObject({ label: 'edit in $EDITOR', hotkey: 'e' })
+  expect((await pane.find({ type: 'Select', key: 'spec-section' }))?.props).toMatchObject({ label: '↵ open section' })
 })

@@ -485,3 +485,53 @@ export function openCounts(t: Task): string {
   if (v) parts.push(`${v} verification${v === 1 ? '' : 's'}`)
   return parts.join(' · ')
 }
+
+// ------------------------------------------------------------------ the spec pane (A1, A2, mockup 8)
+
+const RUN_LINE = /^\s*(?:[-*+]\s+)?(?:\$\s+)?`?(?:pnpm|npm|npx|yarn|bun|deno|node|make|cargo|go|python3?|pip|uv|pytest|poetry|docker|git|bash|sh|\.\/)\b/
+const TEST_TOOLS = /\b(vitest|jest|mocha|ava|pytest|unittest|playwright|cypress|rspec|minitest|phpunit|go test|cargo test|node:test|bun test|deno test|junit|xunit)\b/i
+
+/** Commands a Commands section lets you run: lines in code blocks and lines that start with a tool. */
+export function runnableCount(body: string): number {
+  let n = 0
+  let inFence = false
+  for (const line of body.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence ? line.trim() !== '' : RUN_LINE.test(line)) n++
+  }
+  return n
+}
+
+/**
+ * What the spec pane writes on the right of an area (mockup 8): `4 success
+ * criteria`, `4 runnable`, `vitest · 80%`; a weak area's short reason (`no
+ * example`) with `isWeak`; `missing` or `empty`; or nothing.
+ */
+export function areaSummary(a: { key: string; state: string; body: string; hint: string | null }, criteria: string[]): { text: string; isWeak: boolean } {
+  if (a.state !== 'present') return { text: a.state, isWeak: true }
+  if (a.hint) {
+    const short =
+      a.key === 'style'
+        ? 'no example'
+        : a.key === 'commands'
+          ? 'nothing runnable'
+          : /^no success criteria/.test(a.hint)
+            ? 'no success criteria'
+            : ((n: string) => `${n} vague criteri${n === '1' ? 'on' : 'a'}`)(/^(\d+) of/.exec(a.hint)?.[1] ?? 'some')
+    return { text: short, isWeak: true }
+  }
+  if (a.key === 'objective') return { text: `${criteria.length} success criteri${criteria.length === 1 ? 'on' : 'a'}`, isWeak: false }
+  if (a.key === 'commands') {
+    const n = runnableCount(a.body)
+    return { text: n ? `${n} runnable` : '', isWeak: false }
+  }
+  if (a.key === 'testing') {
+    const tool = TEST_TOOLS.exec(a.body)?.[1]?.toLowerCase()
+    const cover = /(\d{1,3})\s*%/.exec(a.body)?.[1]
+    return { text: [tool, cover ? `${cover}%` : null].filter(Boolean).join(' · '), isWeak: false }
+  }
+  return { text: '', isWeak: false }
+}

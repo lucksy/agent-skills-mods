@@ -6,6 +6,7 @@ import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, type CliIo } from '../hooks/lib/cli'
+import { areaSummary, runnableCount } from '../hooks/lib/view'
 import { applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
@@ -811,5 +812,17 @@ describe('progress format (E1)', () => {
     const spec = parseSpec('---\nstatus: approved\ncreated: 2026-09-28\napproved: 2026-09-29\n---\n# Spec: X\n')
     expect([spec.status, spec.created, spec.approvedOn]).toEqual(['approved', '2026-09-28', '2026-09-29'])
     expect(parsePlan('---\nstatus: approved\napproved: 2026-09-29\n---\n# Plan').approvedOn).toBe('2026-09-29')
+  })
+})
+
+describe('spec pane summaries (mockup 8)', () => {
+  test('runnable lines, test tool and coverage, short weak reasons', async () => {
+    expect(runnableCount('```\npnpm dev\npnpm test\n\n```\n- `pnpm lint`\nRun it')).toBe(3)
+    const area = (key: string, body: string, hint: string | null = null) => ({ key, state: 'present', body, hint })
+    expect(areaSummary(area('testing', 'Vitest unit tests, 80% coverage'), [])).toEqual({ text: 'vitest · 80%', isWeak: false })
+    expect(areaSummary(area('commands', '```\na\nb\nc\nd\n```'), [])).toEqual({ text: '4 runnable', isWeak: false })
+    expect(areaSummary(area('objective', 'x'), ['a', 'b', 'c', 'd'])).toEqual({ text: '4 success criteria', isWeak: false })
+    expect(areaSummary(area('style', 'x', 'no example code block'), [])).toEqual({ text: 'no example', isWeak: true })
+    expect(areaSummary({ key: 'structure', state: 'missing', body: '', hint: null }, [])).toEqual({ text: 'missing', isWeak: true })
   })
 })
