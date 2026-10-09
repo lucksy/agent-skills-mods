@@ -5,21 +5,12 @@ import type { AsmProject } from '../types'
 import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from './lib/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './lib/forecast'
 import {
-  CAT_ARGV,
-  catInput,
   combine,
-  doneDaysFromGit,
-  doneDaysFromMessages,
   earliestDays,
   emptySource,
-  logArgv,
-  messagesArgv,
-  parseLog,
-  parseMessages,
-  snapshotsFromDoneDays,
-  snapshotsFromGit,
-  splitBatch,
+  gitSources,
   type Backfill,
+  type GitSources,
   type LogsChoice,
   type SourceData,
 } from './lib/history'
@@ -94,37 +85,14 @@ async function readText($: $, path: string): Promise<string | null> {
 }
 
 /** What the history sources found for a project, kept apart and stored once (F5). */
-type Sources = { git: SourceData; messages: SourceData; logs: SourceData; logsChoice: LogsChoice; gitNote: string | null }
+type Sources = GitSources & { logs: SourceData; logsChoice: LogsChoice }
 // v4: from 0.7.1 a task waiting on another no longer counts as blocked, and no commits
 // yet is told apart from no repository; projects seen by 0.7.0 gather again once.
 const sourcesKey = (cwd: string) => `sources:v4:${cwd}`
 
-/**
- * Git's two sources, once per project: the committed copies of the task list
- * (two calls), and the commit messages that name its tasks (one more).
- */
-async function fromGit($: $, file: string, list: TaskList): Promise<Pick<Sources, 'git' | 'messages' | 'gitNote'>> {
-  const none = (gitNote: string) => ({ git: emptySource(), messages: emptySource(), gitNote })
-  try {
-    const log = await $.process.run(logArgv(file), { timeoutMs: 20_000 })
-    if (log.exitCode !== 0) return none(/does not have any commits/.test(log.stderr) ? 'no commits yet' : 'not a git repository')
-    const commits = parseLog(log.stdout)
-    let git = emptySource()
-    if (commits.length > 0) {
-      const cat = await $.process.run(CAT_ARGV, { stdin: catInput(commits, file), timeoutMs: 20_000 })
-      const texts = cat.exitCode === 0 ? splitBatch(cat.stdout) : []
-      git = { snaps: snapshotsFromGit(commits, texts, list), doneDays: doneDaysFromGit(commits, texts, list) }
-    }
-    // Messages from before the plan's first commit may name another plan's tasks.
-    const planStart = git.snaps[0] ? Date.parse(`${git.snaps[0].day}T00:00:00Z`) : null
-    const msgs = await $.process.run(messagesArgv, { timeoutMs: 20_000 })
-    const doneDays = msgs.exitCode === 0 ? doneDaysFromMessages(parseMessages(msgs.stdout), list, planStart) : {}
-    const messages = { snaps: snapshotsFromDoneDays(doneDays, list), doneDays }
-    const gitNote = git.snaps.length || messages.snaps.length ? null : commits.length ? `no commit of ${file} holds this plan` : `${file} has no commits`
-    return { git, messages, gitNote }
-  } catch {
-    return none('git is not available')
-  }
+/** Git's two sources for the task list (F5), through the session's process runner. */
+function fromGit($: $, file: string, list: TaskList): Promise<GitSources> {
+  return gitSources((argv, opts) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 }), file, list)
 }
 
 /** Every session log of this project that writes the task list, as text. */

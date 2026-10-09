@@ -113,12 +113,48 @@ Copy it somewhere stable and point `statusLine` at it in `~/.claude/settings.jso
 
 It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only the stage, so you can append it to a status line you already have. Projects without these files get the plain line. It needs `jq`.
 
+## Other agents: agent-skills-progress
+
+Cursor, Gemini CLI, Codex or a CI job get the same summary from a script with no dependencies. It uses the plugin's parser, git history and forecast, so its numbers match the panes:
+
+```
+╭─ keys ───────────────────────────────────────────────────────────────╮
+│ agent-skills · API keys                                              │
+│ ♦spec ✓plan ●build 1/4 ○review ○ship                                 │
+│ ██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25% 1 of 4 tasks           │
+│ ETA 23 Oct (fast 19 Oct, slow 28 Oct)                                │
+│ from 4 tasks in 11 days                                              │
+╰──────────────────────────────────────────────────────────────────────╯
+
+── Spec · SPEC.md ──────────────────────────────────────────────────────
+  ♦ awaiting approval  4/6 core areas
+  ! Objective                       ✓ Commands
+  ...
+── Tasks · tasks/todo.md ───────────────────────────────────────────────
+  Phase 1: Foundation
+    ✓ T1 Monorepo scaffold · 3/3
+    ● T2 Prisma schema for keys · 1/3
+  ...
+── Next · T2 ───────────────────────────────────────────────────────────
+── Needs you · 2 ───────────────────────────────────────────────────────
+```
+
+```sh
+node scripts/agent-skills-progress.mjs [dir]          # the full summary, in colour on a terminal
+node scripts/agent-skills-progress.mjs --brief        # one line: ✓spec ✓plan ●build 1/4 ○review ○ship · T2 ...
+node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools
+node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
+```
+
+Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_COLOR=1`), `--width <n>`. A braille spinner shows on stderr while it reads git. It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type stripping) and nothing else.
+
 ## Development
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 89 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 93 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
+bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```
 
@@ -136,6 +172,11 @@ hooks/lib/report.ts    digest and HTML report
 hooks/lib/steps.ts     tool calls as build, test and commit
 hooks/lib/guard.ts     the overwrite check
 hooks/lib/view.ts      text views shared by panes and commands
+hooks/lib/gate.ts      the spec gate warning
+hooks/lib/specedit.ts  approve / draft in front matter, the editor to open
+hooks/lib/pixels.ts    pixel charts: RGBA canvas and PNG encoder
+hooks/lib/cli.ts       the summary agent-skills-progress prints
+scripts/               agent-skills-progress and its test
 types/index.d.ts       the session state contract
 statusline/            the status line script and its test
 ```

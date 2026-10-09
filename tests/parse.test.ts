@@ -5,6 +5,7 @@ import { checkOverwrite } from '../hooks/lib/guard'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
+import { gather, renderBrief, renderCli, renderJson, type CliIo } from '../hooks/lib/cli'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -638,5 +639,74 @@ describe('pixel charts (F3)', () => {
     expect(drawsPixels({ term: 'xterm-256color', kitty: '1' })).toBe(true)
     expect(drawsPixels({ term: 'xterm-ghostty', tmux: '/tmp/tmux-501/default,1,0' })).toBe(false)
     expect(drawsPixels({ term: 'xterm-256color', termProgram: 'Apple_Terminal' })).toBe(false)
+  })
+})
+
+describe('the progress script for other agents (E2)', () => {
+  const NOW = Date.parse('2026-10-09T10:00:00Z')
+  const io = (files: Record<string, string>, run?: CliIo['run']): CliIo => ({
+    cwd: '/work/keys',
+    now: NOW,
+    read: async rel => files[rel] ?? null,
+    list: async rel => Object.keys(files).filter(f => (rel ? f.startsWith(`${rel}/`) && !f.slice(rel.length + 1).includes('/') : !f.includes('/'))).map(f => f.split('/').pop()!),
+    run,
+  })
+  const git = (copies: [string, string | null][]): CliIo['run'] => {
+    const out = gitOutput(copies)
+    return async argv => ({ exitCode: 0, stdout: argv[1] === 'log' ? (argv.some(a => a.includes('%B')) ? '' : out.log) : out.cat, stderr: '' })
+  }
+
+  test('same parse as the mod: spec, task list, history from git and an ETA range', async () => {
+    const s = await gather(
+      io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_T3_DONE }, git([['2026-10-08', TODO_T3_DONE], ['2026-10-03', TODO_T2_DONE], ['2026-09-29', TODO_NONE_DONE]])),
+    )
+    expect(s.specFile).toBe('SPEC.md')
+    expect([s.list?.done, s.list?.total, s.list?.current?.id]).toEqual([3, 4, 'T4'])
+    expect(s.forecast?.kind).toBe('range')
+    expect(s.history).toBe('history since 29 Sep: 3 days from git')
+    expect(s.dates.T3).toEqual({ day: '2026-10-08', isEstimate: false })
+  })
+
+  test('plain text: a framed header, then spec, tasks, next and what needs you under rules', async () => {
+    const s = await gather(io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_TEMPLATE }))
+    const text = renderCli(s, { color: false, width: 72 })
+    const lines = text.split('\n')
+    expect(lines[0]).toMatch(/^╭─ keys ─+╮$/)
+    expect(lines[0]!.length).toBe(72)
+    expect(lines.every(l => [...l].length <= 72)).toBe(true)
+    expect(text).toMatch(/│ agent-skills · API keys +│/)
+    expect(text).toMatch(/│ ♦spec ✓plan ●build 1\/4 ○review ○ship +│/)
+    expect(text).toMatch(/█+░+  25% 1 of 4 tasks/)
+    expect(text).toMatch(/^── Spec · SPEC\.md ─+$/m)
+    expect(text).toMatch(/♦ awaiting approval {2}4\/6 core areas/)
+    expect(text).toMatch(/^── Tasks · tasks\/todo\.md ─+$/m)
+    expect(text).toMatch(/^ {2}Phase 1: Foundation$/m)
+    expect(text).toMatch(/^ {4}● T2 Prisma schema for keys · 1\/3$/m)
+    expect(text).toMatch(/^── Next · T2 ─+$/m)
+    expect(text).toMatch(/^ {4}☐ Migration runs on a clean database$/m)
+    expect(text).toMatch(/^ {4}☑ Key table with hashed secret$/m)
+    expect(text).toMatch(/^── Needs you · \d+ ─+$/m)
+    expect(text).toMatch(/♦ approve SPEC\.md/)
+    expect(text).not.toMatch(/\u001b\[/)
+  })
+
+  test('colour only when asked: green done, yellow next, magenta needs you', async () => {
+    const s = await gather(io({ 'tasks/todo.md': TODO_TEMPLATE }))
+    const text = renderCli(s, { color: true, width: 80 })
+    expect(text).toContain('\u001b[32m✓\u001b[0m T1')
+    expect(text).toContain('\u001b[1;33mT2\u001b[0m')
+    // No spec but a plan: the spec gate is behind it, as the mod's status entry says.
+    expect(renderBrief(s, { color: false })).toBe('✓spec ✓plan ●build 1/4 ○review ○ship · T2 Prisma schema for keys')
+  })
+
+  test('JSON for other tools, and a friendly empty project', async () => {
+    const s = await gather(io({ 'specs/limits.md': GOOD_SPEC, 'tasks/todo.md': TODO_TEMPLATE }), { specFile: 'specs/limits.md' })
+    const json = JSON.parse(renderJson(s))
+    expect(json.spec).toMatchObject({ file: 'specs/limits.md', title: 'Rate limits' })
+    expect(json.tasks).toMatchObject({ done: 1, total: 4, current: 'T2' })
+    expect(json.tasks.items[1]).toMatchObject({ id: 'T2', status: 'next', open: ['Migration runs on a clean database', 'Tests pass: pnpm test keys'] })
+    const empty = renderCli(await gather(io({})), { color: false, width: 60 })
+    expect(empty).toMatch(/No SPEC\.md, tasks\/plan\.md or tasks\/todo\.md here\./)
+    expect(empty).toMatch(/agent-skills · no plan yet/)
   })
 })

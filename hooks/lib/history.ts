@@ -197,3 +197,39 @@ export function earliestDays(...sources: Record<string, string>[]): Record<strin
   for (const days of sources) for (const [k, d] of Object.entries(days)) if (!out[k] || d < out[k]!) out[k] = d
   return out
 }
+
+// ------------------------------------------------------------ reading git
+
+/** Runs one command in the project folder: the mod's `$.process.run`, or Node's in the script (E2). */
+export type Runner = (argv: string[], opts?: { stdin?: string }) => Promise<{ exitCode: number; stdout: string; stderr: string }>
+
+/** What git gave for a task list: its committed copies, the commit messages naming its tasks, or why nothing. */
+export type GitSources = { git: SourceData; messages: SourceData; gitNote: string | null }
+
+/**
+ * Git's two sources, once per project: the committed copies of the task list
+ * (two calls), and the commit messages that name its tasks (one more).
+ */
+export async function gitSources(run: Runner, file: string, list: TaskList): Promise<GitSources> {
+  const none = (gitNote: string) => ({ git: emptySource(), messages: emptySource(), gitNote })
+  try {
+    const log = await run(logArgv(file))
+    if (log.exitCode !== 0) return none(/does not have any commits/.test(log.stderr) ? 'no commits yet' : 'not a git repository')
+    const commits = parseLog(log.stdout)
+    let git = emptySource()
+    if (commits.length > 0) {
+      const cat = await run(CAT_ARGV, { stdin: catInput(commits, file) })
+      const texts = cat.exitCode === 0 ? splitBatch(cat.stdout) : []
+      git = { snaps: snapshotsFromGit(commits, texts, list), doneDays: doneDaysFromGit(commits, texts, list) }
+    }
+    // Messages from before the plan's first commit may name another plan's tasks.
+    const planStart = git.snaps[0] ? Date.parse(`${git.snaps[0].day}T00:00:00Z`) : null
+    const msgs = await run(messagesArgv)
+    const doneDays = msgs.exitCode === 0 ? doneDaysFromMessages(parseMessages(msgs.stdout), list, planStart) : {}
+    const messages = { snaps: snapshotsFromDoneDays(doneDays, list), doneDays }
+    const gitNote = git.snaps.length || messages.snaps.length ? null : commits.length ? `no commit of ${file} holds this plan` : `${file} has no commits`
+    return { git, messages, gitNote }
+  } catch {
+    return none('git is not available')
+  }
+}
