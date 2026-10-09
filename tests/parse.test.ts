@@ -6,7 +6,7 @@ import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, type CliIo } from '../hooks/lib/cli'
-import { areaSummary, runnableCount } from '../hooks/lib/view'
+import { ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
 import { applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
@@ -496,7 +496,7 @@ describe('views', () => {
       listFile: 'tasks/todo.md',
       forecast: null,
     })!
-    const lines = brief.split('\n').slice(2)
+    const lines = brief.split('\n').slice(2 + ANSWER_CARDS.split('\n').length)
     expect(lines).toEqual([
       'SPEC.md: awaiting approval; Project structure empty, Code style missing; weak: Objective: no success criteria.',
       '- open question (SPEC.md): Should keys expire by default?',
@@ -824,5 +824,16 @@ describe('spec pane summaries (mockup 8)', () => {
     expect(areaSummary(area('objective', 'x'), ['a', 'b', 'c', 'd'])).toEqual({ text: '4 success criteria', isWeak: false })
     expect(areaSummary(area('style', 'x', 'no example code block'), [])).toEqual({ text: 'no example', isWeak: true })
     expect(areaSummary({ key: 'structure', state: 'missing', body: '', hint: null }, [])).toEqual({ text: 'missing', isWeak: true })
+  })
+})
+
+describe('answers as cards (mockup 10)', () => {
+  test('the brief tells Claude the card layout, and blocked tasks carry their chain', async () => {
+    const plan = parsePlan('# Plan\n## Open Questions\n- Q2 (T4): Upstash or self-hosted?\n')
+    const list = withBlockers(parseTasks(TODO_TEMPLATE.replace('**Dependencies:** 1', '**Dependencies:** T3')), [{ file: 'tasks/plan.md', text: plan.openQuestions[0]! }])
+    const brief = progressBrief({ spec: null, list, plan, listFile: 'tasks/todo.md', forecast: null })!
+    expect(brief).toContain(ANSWER_CARDS)
+    expect(brief).toMatch(/- blocked: T4 Rate limit per key, by open question \(tasks\/plan\.md: Q2 \(T4\): Upstash or self-hosted\?\); dependency chain T4 ← T3/)
+    expect(ANSWER_CARDS).toMatch(/Checkpoint 1 · 1 task left +from tasks\/todo\.md/)
   })
 })

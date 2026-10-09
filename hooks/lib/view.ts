@@ -314,6 +314,23 @@ export type BriefInput = {
 
 const MAX_ROWS = 12
 
+/** How Claude lays out an answer about progress (mockup 10): one short card per topic, its source named. */
+export const ANSWER_CARDS = [
+  'Lay the answer out as cards inside one ```text block: one card per topic (a checkpoint, a blocked task, the next task), each opening with a header line that names its source file on the right, then the task line with its glyph (◐ current, ○ to do, ◌ waiting, ■ blocked, ✓ done), its open boxes as "☐ ..." lines, and what follows. Then one plain sentence after the block saying what the user can do. For example:',
+  '```text',
+  'Checkpoint 1 · 1 task left                         from tasks/todo.md',
+  '◐ T4 Rate limit per key',
+  '  ☐ 429 with Retry-After after 60 req/min',
+  '  ☐ pnpm --filter gateway test',
+  'then checkpoint: tests pass · build clean · review with you',
+  '',
+  'T6 blocked                     from tasks/plan.md → Open questions',
+  'T6 ← T5 ← T4 (dependency chain)',
+  'and Q2 is still open: "Upstash Redis or self-hosted for the sliding window?"',
+  '```',
+  "Answer Q2 and I'll update plan.md and unblock T6.",
+].join('\n')
+
 /**
  * The system-prompt section (C1): the parsed state the model answers progress
  * questions from, so counts come from the parser and not from a guess.
@@ -325,6 +342,7 @@ export function progressBrief(p: BriefInput): string | undefined {
   const out = [
     'agent-skills progress, parsed from the project files by the agent-skills-mods plugin and current as of this request.',
     'When the user asks about progress ("what\'s left?", "where are we?", "what\'s next?", "why is T6 blocked?"), answer from these facts: cite task ids, name the source file, and keep it to a few short lines rather than pasting the markdown. Read the file itself only for detail not listed here.',
+    ANSWER_CARDS,
   ]
   const approval = specApproval(spec, list !== null)
   if (spec) {
@@ -346,7 +364,8 @@ export function progressBrief(p: BriefInput): string | undefined {
         if (t.checkpoint) out.push(`- checkpoint after ${t.id}: ${t.checkpoint.title} (${t.checkpoint.items.map(b => b.text).join('; ')})`)
       } else if (list.done === list.total) out.push('- all tasks done; next stage is review.')
       for (const b of list.tasks.filter(x => x.status === 'blocked').slice(0, MAX_ROWS)) {
-        out.push(`- blocked: ${b.id} ${b.title}, by open question (${b.blockedBy})`)
+        const chain = blockChain(list, b)
+        out.push(`- blocked: ${b.id} ${b.title}, by open question (${b.blockedBy})${chain.includes('←') ? `; dependency chain ${chain}` : ''}`)
       }
       for (const b of list.tasks.filter(x => x.status === 'waiting').slice(0, MAX_ROWS)) {
         out.push(`- waiting: ${b.id} ${b.title}, chain ${blockChain(list, b)}`)
