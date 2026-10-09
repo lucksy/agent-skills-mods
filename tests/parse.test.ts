@@ -6,6 +6,7 @@ import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, type CliIo } from '../hooks/lib/cli'
+import { applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -732,5 +733,83 @@ describe('motion (bar fill, chart sweep)', () => {
     expect(none.slice(0, 8).every(r => r.slice(4).trim() === '')).toBe(true)
     expect(none.slice(0, 8).map(r => r.slice(0, 4))).toEqual(full.slice(0, 8).map(r => r.slice(0, 4)))
     expect(none.slice(8)).toEqual(full.slice(8))
+  })
+})
+
+describe('progress format (E1)', () => {
+  const TODAY = '2026-10-09'
+
+  test('Status lines read and write the same way', async () => {
+    expect(parseStatusLine('**Status:** in progress · started 2026-10-08 · step test')).toEqual({ status: 'in progress', started: '2026-10-08', step: 'test' })
+    expect(parseStatusLine('**Status:** done · started 2026-10-01 · done 2026-10-02')).toEqual({ status: 'done', started: '2026-10-01', done: '2026-10-02' })
+    expect(parseStatusLine('**Status**: Blocked')).toEqual({ status: 'blocked' })
+    expect(parseStatusLine('**Description:** x')).toBe(null)
+    expect(statusLine({ status: 'in progress', started: '2026-10-08', step: 'build' })).toBe('**Status:** in progress · started 2026-10-08 · step build')
+    expect(statusLine({ status: 'done', started: '2026-10-01', done: '2026-10-02', step: 'commit' })).toBe('**Status:** done · started 2026-10-01 · done 2026-10-02')
+  })
+
+  test('front matter: set, add, remove; every other byte kept', async () => {
+    expect(setFrontMatter('# X\n', { status: 'draft' })).toBe('---\nstatus: draft\n---\n# X\n')
+    expect(setFrontMatter('---\nstatus: draft\nowner: me\n---\n# X\n', { status: 'approved', approved: TODAY })).toBe('---\nstatus: approved\nowner: me\napproved: 2026-10-09\n---\n# X\n')
+    expect(setFrontMatter('---\nstatus: approved\napproved: 2026-10-01\n---\n# X\n', { status: 'draft', approved: null })).toBe('---\nstatus: draft\n---\n# X\n')
+    expect(readFrontMatter('---\nplan: api-keys # short\ncreated: 2026-09-29\n---\nbody').fields).toEqual({ plan: 'api-keys', created: '2026-09-29' })
+  })
+
+  test('a task list gets front matter and one Status line per task, from its boxes', async () => {
+    const out = stampTodo(TODO_TEMPLATE, TODAY, { plan: planName(TODO_TEMPLATE) })
+    expect(out.startsWith('---\nplan: api-keys\ncreated: 2026-10-09\n---\n# Tasks: API keys')).toBe(true)
+    expect(taskStates(out)).toEqual({
+      T1: { status: 'done', done: TODAY },
+      T2: { status: 'in progress', started: TODAY },
+      T3: { status: 'todo' },
+      T4: { status: 'todo' },
+    })
+    expect(out).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* in progress · started 2026-10-09\n/)
+    // Idempotent, and a later day changes nothing already dated.
+    expect(stampTodo(out, '2026-10-12')).toBe(out)
+  })
+
+  test('changes the plugin saw merge in; ticking the last box makes a task done', async () => {
+    const base = stampTodo(TODO_TEMPLATE, '2026-10-01')
+    const building = stampTodo(base, TODAY, { changes: { T3: { status: 'in progress', started: TODAY, step: 'build' } } })
+    expect(taskStates(building).T3).toEqual({ status: 'in progress', started: TODAY, step: 'build' })
+    const ticked = building.replace('- [ ] Migration runs', '- [x] Migration runs').replace('- [ ] Tests pass: `pnpm test keys`', '- [x] Tests pass: `pnpm test keys`')
+    expect(taskStates(stampTodo(ticked, TODAY)).T2).toEqual({ status: 'done', started: '2026-10-01', done: TODAY })
+    // A done Status line with open boxes goes back to in progress: the boxes are the truth.
+    const claimed = base.replace('**Status:** todo', '**Status:** done · done 2026-10-05')
+    expect(taskStates(stampTodo(claimed, TODAY)).T3?.status).toBe('in progress')
+  })
+
+  test('specs and plans: draft and created when missing, an approval date once approved', async () => {
+    expect(readFrontMatter(stampDoc('# Spec: X\n', TODAY)).fields).toEqual({ status: 'draft', created: TODAY })
+    expect(readFrontMatter(stampDoc('---\nstatus: approved\ncreated: 2026-09-28\n---\n# X', TODAY)).fields).toEqual({ status: 'approved', created: '2026-09-28', approved: TODAY })
+    const done = '---\nstatus: approved\ncreated: 2026-09-28\napproved: 2026-09-29\n---\n# X'
+    expect(stampDoc(done, TODAY)).toBe(done)
+  })
+
+  test('an Edit grows to carry the Status line it moved, and stays unique', async () => {
+    const before = stampTodo(TODO_TEMPLATE, '2026-10-01')
+    const after = applyEdit(before, '- [ ] POST /keys returns the secret once', '- [x] POST /keys returns the secret once')!
+    const stamped = stampTodo(after, TODAY)
+    const edit = editBetween(before, stamped)!
+    expect(edit.old_string).toContain('**Status:** todo')
+    expect(edit.new_string).toContain('**Status:** done · done 2026-10-09')
+    expect(applyEdit(before, edit.old_string, edit.new_string)).toBe(stamped)
+    expect(applyEdit('a a', 'a', 'b')).toBe(null)
+    expect(editBetween('same', 'same')).toBe(null)
+  })
+
+  test('the parser reads the format: state, the task in progress as current, box kinds, dates', async () => {
+    const text = stampTodo(TODO_TEMPLATE, '2026-10-01', { plan: 'api-keys' }).replace(/(## Task 4: Rate limit per key\n)\*\*Status:\*\* todo/, '$1**Status:** in progress · started 2026-10-08 · step test')
+      .replace('**Status:** in progress · started 2026-10-01', '**Status:** todo')
+    const list = parseTasks(text)
+    expect(list.meta).toEqual({ plan: 'api-keys', created: '2026-10-01' })
+    expect(list.current?.id).toBe('T4')
+    expect(list.tasks.find(t => t.id === 'T2')?.status).toBe('todo')
+    expect(list.tasks.find(t => t.id === 'T1')?.state).toEqual({ status: 'done', done: '2026-10-01' })
+    expect(list.tasks.find(t => t.id === 'T2')?.kinds).toEqual(['criteria', 'criteria', 'verification'])
+    const spec = parseSpec('---\nstatus: approved\ncreated: 2026-09-28\napproved: 2026-09-29\n---\n# Spec: X\n')
+    expect([spec.status, spec.created, spec.approvedOn]).toEqual(['approved', '2026-09-28', '2026-09-29'])
+    expect(parsePlan('---\nstatus: approved\napproved: 2026-09-29\n---\n# Plan').approvedOn).toBe('2026-09-29')
   })
 })

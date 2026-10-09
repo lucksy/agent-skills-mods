@@ -18,7 +18,7 @@ function world(
   stored: Record<string, unknown> = {},
   surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
 ) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[] }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
     return { value: { isCopied: true } }
@@ -76,7 +76,7 @@ function world(
   })
   // A Bash command with FAIL in it fails, as a failing test run does.
   on('tool.call', (_$, e) =>
-    (e.tool === 'Bash' && /FAIL/.test(String((e as { command?: string }).command))
+    (seen.calls.push(e as never), e.tool === 'Bash' && /FAIL/.test(String((e as { command?: string }).command))
       ? { result: 'Exit code 1', isError: true }
       : { result: 'written' }) as never,
   )
@@ -676,13 +676,13 @@ test('the spec pane approves the spec in front matter, and can put it back to dr
   expect(await pane.find({ type: 'Button', key: 'spec-draft' })).toBeUndefined()
 
   await pane.press({ key: 'spec-approve' })
-  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\n---\n# Spec: API keys/)
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\napproved: 2026-10-09\ncreated: 2026-10-09\n---\n# Spec: API keys/)
   expect(seen.toasts).toContain('✓ SPEC.md approved · planning can start')
   expect(await pane.find({ text: /✓ approved/ })).toBeDefined()
   expect(JSON.stringify(seen.status.at(-1))).toMatch(/spec ✓ approved/)
 
   await pane.press({ key: 'spec-draft' })
-  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: draft\n---/)
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: draft\ncreated: 2026-10-09\n---/)
   expect(await pane.find({ type: 'Button', key: 'spec-approve' })).toBeDefined()
 })
 
@@ -827,3 +827,67 @@ test('the board and charts carry Report, Copy digest and a switch to the other p
   expect(seen.opened.at(-1)).toBe('asm-board')
   expect((await charts.find({ type: 'Button', key: 'report' }))?.props).toMatchObject({ hotkey: 'r' })
 })
+
+test('progress format: a task list the agent writes gets front matter and Status lines', async ($, on) => {
+  const seen = world(on, {})
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: TODO_TEMPLATE } as never)
+  const written = String(seen.calls.at(-1)?.content)
+  expect(written).toMatch(/^---\nplan: api-keys\ncreated: 2026-10-09\n---\n/)
+  expect(written).toMatch(/## Task 3: Issue and revoke keys\n\*\*Status:\*\* todo\n/)
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/SPEC.md`, content: '# Spec: X\n' } as never)
+  expect(String(seen.calls.at(-1)?.content)).toBe('---\nstatus: draft\ncreated: 2026-10-09\n---\n# Spec: X\n')
+})
+
+test('progress format: ticking the last box carries the done date in the same Edit', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · started 2026-10-07') }
+  const seen = world(on, files)
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: '- [ ] POST /keys', new_string: '- [x] POST /keys' } as never)
+  const call = seen.calls.at(-1) as { old_string: string; new_string: string }
+  expect(call.new_string).toContain('**Status:** done · started 2026-10-07 · done 2026-10-09')
+  expect(call.new_string).toContain('- [x] POST /keys')
+})
+
+test('progress format: source edits, test runs and commits move the current task, written at the turn end', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  await $.turn.complete({ answer: 'done' } as never)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* in progress · started 2026-10-09 · step test\n/)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/^---\nplan: api-keys\ncreated: 2026-10-09\n---/)
+})
+
+test('progress format: Claude is told the rules where agent-skills is at work, and its skills carry them', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run('refresh'))
+  const composed = await $.prompt.compose(COMPOSE)
+  const format = composed.sections.find(x => x.id === 'agent-skills-mods:format')
+  expect(format?.text).toMatch(/\*\*Status:\*\* in progress · started YYYY-MM-DD/)
+  const skill = await $.skill.prompt({ skill: 'agent-skills:planning-and-task-breakdown', text: 'PLAN SKILL' } as never)
+  expect(String((skill as { text: string }).text)).toMatch(/^PLAN SKILL\n\n---\n\nagent-skills progress format/)
+})
+
+test('/progress format applies the format here and writes its rules into the project instructions, once', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: '# Spec: Keys\n', [`${CWD}/CLAUDE.md`]: '# Project\n' }
+  world(on, files)
+  const out = await $.command.run(run('format'))
+  expect(out.text).toMatch(/tasks\/todo\.md: 4 Status lines and front matter/)
+  expect(out.text).toMatch(/SPEC\.md: front matter/)
+  expect(readFm(files[`${CWD}/SPEC.md`]!)).toMatch(/status: approved/)
+  expect(files[`${CWD}/CLAUDE.md`]).toMatch(/^# Project\n\n<!-- agent-skills-mods:progress-format -->\n## agent-skills progress format\n/)
+  const again = await $.command.run(run('format'))
+  expect(again.text).toBe('The progress format is already in place here.')
+})
+
+test('with progressFormat off, files go through as written and Claude is not told the rules', { options: { progressFormat: false } }, async ($, on) => {
+  const seen = world(on, {})
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: TODO_TEMPLATE } as never)
+  expect(seen.calls.at(-1)?.content).toBe(TODO_TEMPLATE)
+  await $.command.run(run('refresh'))
+  const composed = await $.prompt.compose(COMPOSE)
+  expect(composed.sections.some(x => x.id === 'agent-skills-mods:format')).toBe(false)
+})
+
+const readFm = (text: string) => /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? ''

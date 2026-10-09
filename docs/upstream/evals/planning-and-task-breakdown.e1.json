@@ -1,0 +1,33 @@
+{
+  "skill_name": "planning-and-task-breakdown",
+  "note": "Behavioural evals to append to evals/cases/planning-and-task-breakdown.json for E1. Fixtures: evals/fixtures/planning-progress-format/ (an approved SPEC.md with front matter) and evals/fixtures/planning-progress-format-existing/ (a tasks/todo.md with T1-T3, T1 done).",
+  "evals": [
+    {
+      "id": 101,
+      "kind": "execution",
+      "prompt": "The spec in SPEC.md is approved. Break it into a plan and a task list.",
+      "expected_output": "tasks/plan.md and tasks/todo.md in the progress format: front matter, a Status line per task, stable T<n> ids, T<n> dependencies",
+      "files": ["planning-progress-format"],
+      "expectations": [
+        "tasks/todo.md starts with front matter holding plan and created (YYYY-MM-DD)",
+        "Every '## Task N:' heading is followed by a '**Status:** todo' line",
+        "Dependencies are written as T<n> ids or None",
+        "tasks/plan.md starts with front matter holding status: draft and created",
+        "Open questions in tasks/plan.md are numbered Q<n> and name the tasks they block",
+        "No checkbox is ticked and no task is marked in progress during planning"
+      ]
+    },
+    {
+      "id": 102,
+      "kind": "execution",
+      "prompt": "Add a task for audit logging to the existing plan.",
+      "expected_output": "A new task T4 appended with its own Status line; T1-T3 keep their numbers, boxes and Status lines",
+      "files": ["planning-progress-format-existing"],
+      "expectations": [
+        "The new task is numbered 4; no existing task is renumbered",
+        "The new task has a '**Status:** todo' line under its heading",
+        "T1's '**Status:** done' line and dates are unchanged"
+      ]
+    }
+  ]
+}

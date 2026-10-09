@@ -36,7 +36,7 @@ export function snapshotOf(day: string, list: TaskList): Snapshot {
     day,
     done: list.done,
     total: list.total,
-    doing: open.filter(t => t.status !== 'blocked' && t.boxes.some(b => b.isDone)).length,
+    doing: open.filter(t => t.status !== 'blocked' && (t.boxes.some(b => b.isDone) || t.state?.status === 'in progress')).length,
     blocked: open.filter(t => t.status === 'blocked').length,
   }
 }

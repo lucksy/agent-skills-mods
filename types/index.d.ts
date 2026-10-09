@@ -12,6 +12,8 @@ export type AsmTask = {
   status: 'done' | 'next' | 'todo' | 'waiting' | 'blocked'
   blockedBy?: string
   checkpoint: AsmCheckpoint | null
+  state?: { status: 'todo' | 'in progress' | 'done' | 'blocked'; started?: string; done?: string; step?: 'build' | 'test' | 'commit' }
+  kinds?: ('criteria' | 'verification')[]
 }
 export type AsmTaskList = {
   kind: 'tasks' | 'checklist' | 'empty'
@@ -20,6 +22,7 @@ export type AsmTaskList = {
   done: number
   total: number
   current: AsmTask | null
+  meta?: { plan?: string; created?: string }
 }
 export type AsmSpec = {
   title: string | null
@@ -28,8 +31,10 @@ export type AsmSpec = {
   boundaries: { always: string[]; ask: string[]; never: string[] }
   successCriteria: string[]
   openQuestions: string[]
+  created?: string
+  approvedOn?: string
 }
-export type AsmPlan = { trackedIn: string | null; openQuestions: string[] }
+export type AsmPlan = { trackedIn: string | null; openQuestions: string[]; status?: 'draft' | 'approved'; created?: string; approvedOn?: string }
 export type AsmForecast =
   | { kind: 'done' }
   | { kind: 'not-enough'; reason: string }

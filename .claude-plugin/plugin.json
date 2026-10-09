@@ -1,6 +1,6 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, and a guard that refuses overwriting an unfinished plan.",
   "author": {
     "name": "lucksy"
@@ -39,6 +39,12 @@
         "cells"
       ],
       "default": "auto"
+    },
+    "progressFormat": {
+      "type": "boolean",
+      "title": "Keep the progress format",
+      "description": "Add and update Status lines and front matter in SPEC.md, tasks/plan.md and tasks/todo.md (status, created, approved, started, done, step), and tell Claude the format's rules.",
+      "default": true
     }
   }
 }

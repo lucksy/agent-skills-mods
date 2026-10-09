@@ -1,0 +1,33 @@
+{
+  "skill_name": "spec-driven-development",
+  "note": "Behavioural evals to append to evals/cases/spec-driven-development.json for E1. Fixtures: evals/fixtures/spec-progress-format/ (a small repo with a README describing the feature) and evals/fixtures/spec-progress-format-draft/ (the same repo with a SPEC.md in status: draft).",
+  "evals": [
+    {
+      "id": 101,
+      "kind": "execution",
+      "prompt": "Write a spec for per-key rate limits, as described in the README.",
+      "expected_output": "SPEC.md with front matter status: draft and created; the turn ends asking for approval",
+      "files": [
+        "spec-progress-format"
+      ],
+      "expectations": [
+        "SPEC.md starts with front matter holding status: draft and created (YYYY-MM-DD)",
+        "The agent does not set status: approved on its own",
+        "The reply asks the human to review and approve the spec"
+      ]
+    },
+    {
+      "id": 102,
+      "kind": "execution",
+      "prompt": "I've read the spec. Looks good, approved.",
+      "expected_output": "SPEC.md front matter changed to status: approved with an approved date",
+      "files": [
+        "spec-progress-format-draft"
+      ],
+      "expectations": [
+        "The agent sets status: approved and approved: YYYY-MM-DD in SPEC.md's front matter",
+        "No other part of SPEC.md changes"
+      ]
+    }
+  ]
+}

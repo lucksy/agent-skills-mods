@@ -9,6 +9,7 @@ import {
   earliestDays,
   emptySource,
   gitSources,
+  snapshotsFromDoneDays,
   type Backfill,
   type GitSources,
   type LogsChoice,
@@ -22,7 +23,8 @@ import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, 
 import { spinnerWord, stepOf, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { gateWarning } from './lib/gate'
-import { editorArgvs, withStatus } from './lib/specedit'
+import { editorArgvs } from './lib/specedit'
+import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from './lib/format'
 import {
   bandText,
   bar,
@@ -133,14 +135,109 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
   try {
     const s = stepOf(String(e.tool), e as never)
     if (!s) return
-    const task = (await read($, project))?.list?.current?.id ?? null
+    const p = await read($, project)
+    const task = p?.list?.current?.id ?? null
     await update($, step, () => ({ step: s, task }))
     if (s === 'test' && task) {
       const isFailed = result.isError === true
       await update($, failed, f => (isFailed ? task : f === task ? null : f))
     }
+    // The progress format (E1): the current task is in progress, at this step.
+    if (keepFormat && task && p?.listFile === 'tasks/todo.md') {
+      const today = dayOf(await $.clock.now())
+      const pending = await readPending($, p.cwd)
+      await $.store.set(pendingKey(p.cwd), { ...pending, [task]: { ...pending[task], status: 'in progress', started: pending[task]?.started ?? today, step: s } })
+    }
   } catch {}
 }
+
+/** Whether the plugin keeps the progress format (the `progressFormat` option), set at register. */
+let keepFormat = true
+
+/** Task state changes seen since the task list was last written, by task id (E1). */
+const pendingKey = (cwd: string) => `pending:${cwd}`
+async function readPending($: $, cwd: string): Promise<Record<string, Partial<TaskState>>> {
+  return ((await $.store.get(pendingKey(cwd))) as Record<string, Partial<TaskState>> | undefined) ?? {}
+}
+
+/** A spec or plan document whose front matter the format keeps. */
+const FORMAT_DOC = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/]plan\.md)$/
+const TODO_FILE = /(^|[\\/])tasks[\\/]todo\.md$/
+
+/** A file's new text with the progress format kept: Status lines and front matter (E1). */
+async function formatted($: $, path: string, text: string): Promise<string> {
+  if (!keepFormat) return text
+  const today = dayOf(await $.clock.now())
+  if (TODO_FILE.test(path)) {
+    const cwd = await $.session.cwd()
+    const changes = await readPending($, cwd)
+    const out = stampTodo(text, today, { changes, plan: planName(text) })
+    if (Object.keys(changes).length) await $.store.set(pendingKey(cwd), {})
+    return out
+  }
+  if (FORMAT_DOC.test(path) && !/(^|[\\/])specs[\\/](readme|index)\.md$/i.test(path)) return stampDoc(text, today)
+  return text
+}
+
+/** Writes the state changes nobody wrote into tasks/todo.md this turn (E1). */
+async function flushPending($: $): Promise<void> {
+  if (!keepFormat) return
+  const cwd = await $.session.cwd()
+  const pending = await readPending($, cwd)
+  if (Object.keys(pending).length === 0) return
+  const path = `${cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text !== null) {
+    const next = stampTodo(text, dayOf(await $.clock.now()), { changes: pending, plan: planName(text) })
+    if (next !== text) await $.fs.write(path, next)
+  }
+  await $.store.set(pendingKey(cwd), {})
+}
+
+/** `/progress format`: the format applied to the files here, and its rules in the project's agent instructions. */
+async function applyFormat($: $): Promise<string> {
+  const cwd = await $.session.cwd()
+  const today = dayOf(await $.clock.now())
+  const done: string[] = []
+  const p = await load($)
+  const todoPath = `${cwd}/tasks/todo.md`
+  const todo = await readText($, todoPath)
+  if (todo !== null) {
+    const next = stampTodo(todo, today, { changes: await readPending($, cwd), plan: planName(todo) })
+    if (next !== todo) {
+      await $.fs.write(todoPath, next)
+      done.push(`tasks/todo.md: ${(next.match(/^\*\*Status:\*\*/gm) ?? []).length} Status lines and front matter`)
+    }
+    await $.store.set(pendingKey(cwd), {})
+  }
+  for (const file of [...p.specFiles, 'tasks/plan.md']) {
+    const text = await readText($, `${cwd}/${file}`)
+    if (text === null) continue
+    // A spec agent-skills already planned against was approved before the format came in.
+    const approvedBefore = !readFrontMatter(text).fields.status && file !== 'tasks/plan.md' && !!p.list
+    const next = stampDoc(approvedBefore ? setFrontMatter(text, { status: 'approved', approved: today }) : text, today)
+    if (next !== text) {
+      await $.fs.write(`${cwd}/${file}`, next)
+      done.push(`${file}: front matter`)
+    }
+  }
+  const target = (await readText($, `${cwd}/AGENTS.md`)) !== null ? 'AGENTS.md' : 'CLAUDE.md'
+  const current = (await readText($, `${cwd}/${target}`)) ?? ''
+  const block = `${FORMAT_BEGIN}\n## agent-skills progress format\n\n${FORMAT_RULES}\n${FORMAT_END}`
+  const has = current.includes(FORMAT_BEGIN) && current.includes(FORMAT_END)
+  const next = has
+    ? current.slice(0, current.indexOf(FORMAT_BEGIN)) + block + current.slice(current.indexOf(FORMAT_END) + FORMAT_END.length)
+    : `${current}${current && !current.endsWith('\n') ? '\n' : ''}${current ? '\n' : ''}${block}\n`
+  if (next !== current) {
+    await $.fs.write(`${cwd}/${target}`, next)
+    done.push(`${target}: the format's rules${has ? ' (updated)' : ''}, so every agent and session keeps it`)
+  }
+  await load($)
+  return done.length ? `Progress format applied:\n${done.map(d => `- ${d}`).join('\n')}` : 'The progress format is already in place here.'
+}
+
+const FORMAT_BEGIN = '<!-- agent-skills-mods:progress-format -->'
+const FORMAT_END = '<!-- /agent-skills-mods:progress-format -->'
 
 /** The spec pane's Approve and Back to draft buttons (A1): the status in front matter. */
 async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
@@ -149,7 +246,8 @@ async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
   const path = `${p.cwd}/${p.specFile}`
   const text = await readText($, path)
   if (text === null) return
-  await $.fs.write(path, withStatus(text, status))
+  const today = dayOf(await $.clock.now())
+  await $.fs.write(path, stampDoc(setFrontMatter(text, { status, approved: status === 'approved' ? today : null }), today))
   await load($)
   $.ui.toast(status === 'approved' ? `✓ ${p.specFile} approved · planning can start` : `○ ${p.specFile} back to draft`)
 }
@@ -266,7 +364,10 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
     await $.store.set(key, seen)
     const src = sources ?? { git: emptySource(), messages: emptySource(), logs: emptySource(), logsChoice: 'unasked' as const, gitNote: null }
     const logs = src.logsChoice === 'yes' ? src.logs : emptySource()
-    const combined = combine(seen, [src.git, logs], src.messages)
+    // Done dates written in the task list (the progress format) are history of their own.
+    const fileDone = Object.fromEntries(list.tasks.filter(t => t.status === 'done' && t.state?.done).map(t => [taskKey(t), t.state!.done!]))
+    const marked = earliestDays(fileDone, src.messages.doneDays)
+    const combined = combine(seen, [src.git, logs], { snaps: snapshotsFromDoneDays(marked, list), doneDays: marked })
     snapshots = combined.snaps
     fc = forecast(snapshots, now)
     // Ask about the session logs only when git left too little for charts or a forecast:
@@ -283,7 +384,7 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
       }
     }
     // A task first seen done today is dated today, unless a source saw it done earlier.
-    const other = earliestDays(src.git.doneDays, logs.doneDays, src.messages.doneDays)
+    const other = earliestDays(fileDone, src.git.doneDays, logs.doneDays, src.messages.doneDays)
     const fresh = list.tasks.filter(t => t.status === 'done' && !seenDone[taskKey(t)] && !other[taskKey(t)])
     if (fresh.length > 0) {
       for (const t of fresh) seenDone = { ...seenDone, [taskKey(t)]: today }
@@ -369,11 +470,12 @@ async function stageLabel($: $): Promise<string | null> {
 const reply = (text: string) => ({ text })
 
 export const register: Register = (on, options) => {
+  keepFormat = options.progressFormat !== false
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills task board. Args: next | charts | digest | report | history | allow-overwrite | refresh',
-      argumentHint: '[next|charts|digest|report|history|allow-overwrite|refresh]',
+      description: 'agent-skills task board. Args: next | charts | digest | report | history | format | allow-overwrite | refresh',
+      argumentHint: '[next|charts|digest|report|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -435,9 +537,10 @@ export const register: Register = (on, options) => {
     }
     if (arg === 'digest') return reply(await copyDigest($, p))
     if (arg === 'report') return reply(await writeReport($, p))
+    if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|history|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|history|format|allow-overwrite|refresh]`)
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
   })
@@ -445,17 +548,34 @@ export const register: Register = (on, options) => {
   // ----------------------------------------------------------- write guard (D1)
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
-    if (!GUARDED.test(e.file_path)) return next(e)
+    const write = async () => {
+      const content = await formatted($, e.file_path, e.content).catch(() => e.content)
+      return next(content === e.content ? e : { ...e, content })
+    }
+    if (!GUARDED.test(e.file_path)) return write()
     const old = await readText($, e.file_path)
-    if (old === null) return next(e)
+    if (old === null) return write()
     const verdict = checkOverwrite(old, e.content)
-    if (verdict.isAllowed) return next(e)
+    if (verdict.isAllowed) return write()
     if (await read($, allowOverwrite)) {
       await update($, allowOverwrite, () => false)
-      return next(e)
+      return write()
     }
     return { deny: denyMessage(e.file_path, verdict) }
   }).catch(($, e, next) => (next.called ? next(e) : { deny: `${NAME}: the plan guard failed, so the write was stopped.` }))
+
+  // An Edit of a task list, spec or plan carries the format's changes with it
+  // (E1): the span the agent edits and the Status lines it moves, in one Edit,
+  // so the file the agent last saw is the file on disk.
+  on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
+    if (!keepFormat || !(TODO_FILE.test(e.file_path) || FORMAT_DOC.test(e.file_path))) return next(e)
+    const before = await readText($, e.file_path)
+    const after = before === null ? null : applyEdit(before, e.old_string, e.new_string, e.replace_all === true)
+    if (before === null || after === null) return next(e)
+    const stamped = await formatted($, e.file_path, after)
+    const edit = stamped === after ? null : editBetween(before, stamped)
+    return next(edit ? { ...e, ...edit, replace_all: false } : e)
+  }).catch(($, e, next) => (next.called ? undefined : next(e)) as never)
 
   // ----------------------------------------------------------- after each tool call: refresh (A1, B1) and step (H3, F1)
 
@@ -494,6 +614,7 @@ export const register: Register = (on, options) => {
   // Edits made outside the session show after the next turn. The overwrite allowance
   // lasts the person's whole turn, so a subagent finishing inside it leaves it alone.
   on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) await flushPending($).catch(() => undefined)
     await load($).catch(() => undefined)
     if (e.agentId === undefined) {
       await update($, allowOverwrite, () => false)
@@ -520,7 +641,11 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     const p = await read($, project)
     const text = p ? progressBrief(p) : undefined
-    return text ? { ...result, sections: [...result.sections, { id: `${NAME}:progress`, text, scope: 'session' as const }] } : result
+    const sections = [...result.sections]
+    // The progress format's rules wherever agent-skills is at work: its files here, or one of its skills loaded.
+    if (keepFormat && ((p && (p.spec || p.list || p.plan)) || (await read($, stage)))) sections.push({ id: `${NAME}:format`, text: FORMAT_RULES, scope: 'session' as const })
+    if (text) sections.push({ id: `${NAME}:progress`, text, scope: 'session' as const })
+    return sections.length === result.sections.length ? result : { ...result, sections }
   }).catch(($, e, next) => next(e))
 
   // ----------------------------------------------------------- stage in the footer (H2)
@@ -528,6 +653,8 @@ export const register: Register = (on, options) => {
   on('skill.prompt', async ($, e, next) => {
     const s = stageOfSkill(e.skill)
     if (s) await update($, stage, () => s)
+    // agent-skills writes checkboxes only; its spec, plan and build skills get the format's rules (E1).
+    if (keepFormat && (s === 'spec' || s === 'plan' || s === 'build' || s === 'test')) return next({ ...e, text: `${e.text}\n\n---\n\n${FORMAT_RULES}` })
     return next(e)
   })
 

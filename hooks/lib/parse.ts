@@ -1,6 +1,8 @@
 // Parsers for the files agent-skills writes: SPEC.md, tasks/plan.md and tasks/todo.md.
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
+import { parseStatusLine, readFrontMatter, type TaskState } from './format'
+
 export type Box = { text: string; isDone: boolean }
 
 /**
@@ -22,6 +24,10 @@ export type Task = {
   blockedBy?: string
   /** Set on the last task before a checkpoint. */
   checkpoint: Checkpoint | null
+  /** What its `**Status:**` line says (the progress format, E1), when it has one. */
+  state?: TaskState
+  /** Which part of the section each box is in, parallel to `boxes`: acceptance criteria or verification. */
+  kinds?: ('criteria' | 'verification')[]
 }
 
 export type Checkpoint = { title: string; items: Box[] }
@@ -36,8 +42,10 @@ export type TaskList = {
   checkpoints: Checkpoint[]
   done: number
   total: number
-  /** The first task that is neither done, waiting nor blocked. */
+  /** The first task marked in progress, else the first that is neither done, waiting nor blocked. */
   current: Task | null
+  /** The task list's front matter (the progress format): its plan name and the day it was created. */
+  meta?: { plan?: string; created?: string }
 }
 
 const BOX = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/
@@ -74,6 +82,7 @@ export function parseTasks(text: string): TaskList {
     kind: 'other',
   }
   let inFence = false
+  let boxKind: 'criteria' | 'verification' = 'criteria'
 
   const closeCheckpoint = (cp: Checkpoint) => {
     const last = tasks[tasks.length - 1]
@@ -102,6 +111,7 @@ export function parseTasks(text: string): TaskList {
         }
         tasks.push(t)
         section = { kind: 'task', task: t }
+        boxKind = 'criteria'
       } else if (cp) {
         const c: Checkpoint = { title: (cp[1] ?? '').trim() || 'Checkpoint', items: [] }
         closeCheckpoint(c)
@@ -112,6 +122,16 @@ export function parseTasks(text: string): TaskList {
         section = { kind: 'other' }
       }
       continue
+    }
+
+    if (section.kind === 'task') {
+      if (/^\s*\*\*Verification:?\*\*/i.test(line)) boxKind = 'verification'
+      else if (/^\s*\*\*Acceptance criteria:?\*\*/i.test(line)) boxKind = 'criteria'
+      const st = section.task.state ? null : parseStatusLine(line)
+      if (st) {
+        section.task.state = st
+        continue
+      }
     }
 
     const deps = DEPS.exec(line)
@@ -126,6 +146,7 @@ export function parseTasks(text: string): TaskList {
 
     if (section.kind === 'task') {
       section.task.boxes.push(item)
+      ;(section.task.kinds ??= []).push(boxKind)
     } else if (section.kind === 'checkpoint') {
       section.cp.items.push(item)
     } else {
@@ -158,9 +179,15 @@ export function parseTasks(text: string): TaskList {
         checkpoint: null,
       }),
     )
-    return finish(tasks, checkpoints, 'checklist')
+    return withMeta(finish(tasks, checkpoints, 'checklist'), text)
   }
-  return finish(tasks, checkpoints, tasks.length > 0 ? 'tasks' : 'empty')
+  return withMeta(finish(tasks, checkpoints, tasks.length > 0 ? 'tasks' : 'empty'), text)
+}
+
+function withMeta(list: TaskList, text: string): TaskList {
+  const { fields, hasFrontMatter } = readFrontMatter(text)
+  if (!hasFrontMatter) return list
+  return { ...list, meta: { plan: fields.plan || undefined, created: /^\d{4}-\d{2}-\d{2}$/.test(fields.created ?? '') ? fields.created : undefined } }
 }
 
 /** Detailed sections win over the one-line index when both name the same task. */
@@ -185,11 +212,21 @@ function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind']):
   for (const t of tasks) {
     if (doneIds.has(t.id)) t.status = 'done'
     else if (t.blockedBy) t.status = 'blocked'
-    else if (t.deps.some(d => known.has(d) && !doneIds.has(d))) t.status = 'waiting'
+    else if (t.state?.status === 'blocked') {
+      t.status = 'blocked'
+      t.blockedBy = t.blockedBy ?? 'its Status line says blocked'
+    } else if (t.deps.some(d => known.has(d) && !doneIds.has(d))) t.status = 'waiting'
     else if (current === null) {
       t.status = 'next'
       current = t
     } else t.status = 'todo'
+  }
+  // A task its Status line says is in progress is the current one, wherever it is.
+  const active = tasks.find(t => t.state?.status === 'in progress' && (t.status === 'todo' || t.status === 'next' || t.status === 'waiting'))
+  if (active && active !== current) {
+    if (current) current.status = 'todo'
+    active.status = 'next'
+    current = active
   }
   return { kind, tasks, checkpoints, done: doneIds.size, total: tasks.length, current }
 }
@@ -207,7 +244,7 @@ export function withBlockers(list: TaskList, questions: { file: string; text: st
   for (const q of questions) for (const m of q.text.matchAll(TASK_REF)) by.set(`T${m[1] ?? m[2]}`, `${q.file}: ${q.text}`)
   if (![...by.keys()].some(id => list.tasks.some(t => t.id === id))) return list
   const tasks = list.tasks.map(t => ({ ...t, blockedBy: by.get(t.id) }))
-  return finish(tasks, list.checkpoints, list.kind)
+  return { ...finish(tasks, list.checkpoints, list.kind), meta: list.meta }
 }
 
 /** Tasks still to do, as the write guard counts them. */
@@ -232,6 +269,9 @@ export type Spec = {
   title: string | null
   /** From front matter `status:`; `null` when the file does not say. */
   status: 'draft' | 'approved' | null
+  /** From front matter (the progress format): the day it was written and the day it was approved. */
+  created?: string
+  approvedOn?: string
   areas: SpecArea[]
   boundaries: { always: string[]; ask: string[]; never: string[] }
   /** From `## Success Criteria`, or a "Success criteria" list inside Objective. */
@@ -311,7 +351,9 @@ export function parseSpec(text: string): Spec {
     .filter((l): l is string => !!l && !isPlaceholder(l))
     .map(stripMd)
 
-  return { title, status, areas, boundaries, successCriteria, openQuestions }
+  const dates = readFrontMatter(text).fields
+  const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)
+  return { title, status, areas, boundaries, successCriteria, openQuestions, created: day(dates.created), approvedOn: day(dates.approved) }
 }
 
 const isPlaceholder = (s: string) => s.replace(/\[[^\]]*\]|[-*\s]|<!--[\s\S]*?-->/g, '') === ''
@@ -351,7 +393,14 @@ function weakness(a: SpecArea, criteria: string[]): string | null {
 
 // ---------------------------------------------------------------- tasks/plan.md
 
-export type PlanDoc = { trackedIn: string | null; openQuestions: string[] }
+export type PlanDoc = {
+  trackedIn: string | null
+  openQuestions: string[]
+  /** Front matter (the progress format): approval and dates. */
+  status?: 'draft' | 'approved'
+  created?: string
+  approvedOn?: string
+}
 
 export function parsePlan(text: string): PlanDoc {
   const trackedIn = /tasks (?:are )?tracked in ([^\n.]+)/i.exec(text)?.[1]?.trim() ?? null
@@ -361,5 +410,8 @@ export function parsePlan(text: string): PlanDoc {
     .map(l => /^\s*[-*+]\s+(.*)$/.exec(l)?.[1])
     .filter((l): l is string => !!l && !/^\[.*\]$/.test(l.trim()))
     .map(stripMd)
-  return { trackedIn, openQuestions }
+  const fm = readFrontMatter(text).fields
+  const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)
+  const status = fm.status === 'approved' || fm.status === 'draft' ? fm.status : undefined
+  return { trackedIn, openQuestions, status, created: day(fm.created), approvedOn: day(fm.approved) }
 }

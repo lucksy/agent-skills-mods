@@ -67,6 +67,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress charts` | Opens the burn-up and flow charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
+| `/progress format` | Applies the progress format to the files here and writes its rules into `AGENTS.md` or `CLAUDE.md` |
 | `/progress history` | Lists the history sources and what each added |
 | `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
 | `/progress next` | Prints the next unblocked task with its criteria and any checkpoint after it. It comes straight from the parser and costs no model tokens. |
@@ -78,6 +79,7 @@ Options, set in `/config` or under `pluginConfigs` in settings:
 
 | Option | Default | |
 |---|---|---|
+| `progressFormat` | on | Keep the progress format: Status lines and front matter, and tell Claude its rules |
 | `planSpinner` | off | Spinner in plan terms |
 | `specGate` | off | Warn when source files change before the spec is approved |
 | `chartStyle` | auto | Terminal charts: `auto` pictures on kitty and Ghostty, characters elsewhere; `pixels`; `cells` |
@@ -112,6 +114,19 @@ Copy it somewhere stable and point `statusLine` at it in `~/.claude/settings.jso
 ```
 
 It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only the stage, so you can append it to a status line you already have. Projects without these files get the plain line. It needs `jq`.
+
+## Progress format (E1)
+
+agent-skills records progress only as checkboxes. This plugin extends its files with a small, documented format so state and dates persist in the repository and read the same in every agent and editor: `status` / `created` / `approved` front matter on specs and plans, `plan` / `created` on the task list, and one line per task:
+
+```markdown
+## Task 4: Rate limit per key
+**Status:** in progress · started 2026-10-09 · step test
+```
+
+The plugin keeps it for you: Claude is told the rules every session (and the spec, planning, build and test skills carry them when they load); a `Write` of the task list gets its front matter and Status lines; an `Edit` that ticks a task's last box marks it done with the date in the same edit; source edits, test runs and commits move the current task to in progress at that step; the spec pane's Approve button records the approval date. `/progress format` applies it to a project already under way and writes the rules into `AGENTS.md` (or `CLAUDE.md`) so other agents keep it too. Turn it off with the `progressFormat` option.
+
+The format is described in [docs/progress-format.md](docs/progress-format.md); the proposal to adopt it upstream, with eval cases in agent-skills' own schema, is in [docs/upstream/](docs/upstream/).
 
 ## Other agents: agent-skills-progress
 
@@ -152,7 +167,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 99 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 112 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
@@ -173,6 +188,7 @@ hooks/lib/steps.ts     tool calls as build, test and commit
 hooks/lib/guard.ts     the overwrite check
 hooks/lib/view.ts      text views shared by panes and commands
 hooks/lib/gate.ts      the spec gate warning
+hooks/lib/format.ts    the progress format: front matter, Status lines, stamping
 hooks/lib/specedit.ts  approve / draft in front matter, the editor to open
 hooks/lib/pixels.ts    pixel charts: RGBA canvas and PNG encoder
 hooks/lib/cli.ts       the summary agent-skills-progress prints
@@ -188,7 +204,7 @@ History for the ETA is one snapshot per day, stored per project in the plugin's 
 
 The user stories, mockups and chart designs live in the proposal; every story in it is now built except the upstream one below.
 
-Upstream, the plan is to propose a documented, parseable file shape to agent-skills: `status:` front matter and stable `T<n>` IDs. That would let any tool, not only this plugin, read progress reliably.
+Upstream, the plan is to propose the progress format to agent-skills (issue text and eval cases in [docs/upstream/](docs/upstream/)), so any tool, not only this plugin, can read progress reliably.
 
 ## Status
 
