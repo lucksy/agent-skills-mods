@@ -38,6 +38,8 @@ export type AsmProject = {
   cwd: string
   spec: AsmSpec | null
   list: AsmTaskList | null
+  /** The file the task list came from: tasks/todo.md, else tasks/plan.md. */
+  listFile: string | null
   plan: AsmPlan | null
   forecast: AsmForecast | null
 }
@@ -48,6 +50,7 @@ declare module 'claude-code' {
       project: AsmProject | null
       stage: 'spec' | 'plan' | 'build' | 'test' | 'review' | 'ship' | null
       allowOverwrite: boolean
+      focus: string | null
     }
   }
 }

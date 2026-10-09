@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
-import { bandText, completionToast, forecastText, nextText, statusText, timelineRows } from '../hooks/lib/view'
+import { bandText, blockChain, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
 import {
   CHECKLIST,
   GOOD_SPEC,
@@ -190,6 +190,48 @@ describe('views', () => {
     expect(completionToast(t0!, parseTasks(PLAN_INDEX))).toBe(undefined)
     const all = TODO_T3_DONE.replace(/- \[ \]/g, '- [x]')
     expect(completionToast(t3!, parseTasks(all))).toBe('✓ T4 done Rate limit per key · all tasks done')
+  })
+
+  test('block chain follows undone dependencies (C1)', async () => {
+    const list = parseTasks(
+      '## Task 1: A\n- [x] a\n## Task 2: B\n- [ ] b\n## Task 3: C\n**Dependencies:** Task 2\n- [ ] c\n## Task 4: D\n**Dependencies:** Task 1, Task 3\n- [ ] d\n',
+    )
+    const t4 = list.tasks.find(t => t.id === 'T4')!
+    expect(blockChain(list, t4)).toBe('T4 ← T3 ← T2')
+  })
+
+  test('progress brief: the facts the model answers from (C1)', async () => {
+    const list = parseTasks(TODO_TEMPLATE)
+    const brief = progressBrief({
+      spec: parseSpec(SPEC),
+      list,
+      plan: parsePlan(PLAN_INDEX),
+      listFile: 'tasks/todo.md',
+      forecast: null,
+    })!
+    const lines = brief.split('\n').slice(2)
+    expect(lines).toEqual([
+      'SPEC.md: awaiting approval; Project structure empty, Code style missing; weak: Objective: no success criteria.',
+      '- open question (SPEC.md): Should keys expire by default?',
+      'tasks/todo.md: 1/4 tasks done.',
+      '- current: T2 Prisma schema for keys (Phase 1: Foundation); open: Migration runs on a clean database; Tests pass: pnpm test keys',
+      '- checkpoint after T2: After Tasks 1-2 (All tests pass; Review with human before proceeding)',
+      '- blocked: T3 Issue and revoke keys, chain T3 ← T2',
+      '- not started: T4 Rate limit per key',
+      '- open question (tasks/plan.md): Upstash or self-hosted Redis?',
+    ])
+    expect(progressBrief({ spec: null, list: null, plan: null, listFile: null, forecast: null })).toBe(undefined)
+  })
+
+  test('the task a prompt is about (C1)', async () => {
+    const list = parseTasks(TODO_TEMPLATE)
+    expect(taskInPrompt('why is T3 blocked?', list)).toBe('T3')
+    expect(taskInPrompt('what about task 4', list)).toBe('T4')
+    expect(taskInPrompt("what's left before the checkpoint?", list)).toBe('T2')
+    expect(taskInPrompt('where are we', list)).toBe('T2')
+    expect(taskInPrompt('fix the lint errors', list)).toBe(null)
+    expect(taskInPrompt('is T9 done', list)).toBe(null)
+    expect(taskInPrompt('why is T3 blocked?', null)).toBe(null)
   })
 
   test('timeline rows: phases, glyphs and a checkpoint that needs you', async () => {

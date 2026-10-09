@@ -9,6 +9,8 @@ import {
   bandText,
   bar,
   completionToast,
+  progressBrief,
+  taskInPrompt,
   forecastText,
   nextText,
   specApproval,
@@ -22,6 +24,8 @@ const NAME = 'agent-skills-mods'
 const project = atom({ plugin: 'agent-skills-mods', key: 'project' } as const, null as AsmProject | null)
 const stage = atom({ plugin: 'agent-skills-mods', key: 'stage' } as const, null as Stage | null)
 const allowOverwrite = atom({ plugin: 'agent-skills-mods', key: 'allowOverwrite' } as const, false)
+/** The task the last prompt asked about, highlighted on the board (C1). */
+const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null as string | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -64,7 +68,8 @@ async function load($: $): Promise<AsmProject> {
     fc = forecast(next, now)
   }
 
-  const value: AsmProject = { cwd, spec, list, plan, forecast: fc }
+  const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
+  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc }
   await update($, project, () => value)
   $.ui.status(statusText(spec, list))
   return value
@@ -156,6 +161,26 @@ export const register: Register = on => {
     if (e.agentId === undefined) await update($, allowOverwrite, () => false)
     return next(e)
   })
+
+  // ----------------------------------------------------------- answers about progress (C1)
+
+  // Fresh numbers for the turn (edits made outside the session included), and the
+  // board focused on the task the prompt asks about.
+  on('prompt.submit', async ($, e, next) => {
+    const p = await load($)
+    const id = taskInPrompt(e.text, p.list)
+    await update($, focus, () => id)
+    if (id) void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // The parsed state as the last system-prompt section, after the cache boundary.
+  on('prompt.compose', async ($, e, next) => {
+    const result = await next(e)
+    const p = await read($, project)
+    const text = p ? progressBrief(p) : undefined
+    return text ? { ...result, sections: [...result.sections, { id: `${NAME}:progress`, text, scope: 'session' as const }] } : result
+  }).catch(($, e, next) => next(e))
 
   // ----------------------------------------------------------- stage in the footer (H2)
 
@@ -265,6 +290,7 @@ export const register: Register = on => {
       return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
     }
     const width = e.props.bodyColumns
+    const focused = await read($, focus)
     const tone = { done: 'success', next: 'warning', blocked: 'error', todo: 'subtle' } as const
     return (
       <Box flexDirection="column" gap={1}>
@@ -293,8 +319,8 @@ export const register: Register = on => {
                 {row.glyph} {row.text}
               </Text>
             ) : (
-              <Text wrap="truncate-end">
-                {'  '}
+              <Text wrap="truncate-end" inverse={row.id === focused}>
+                {row.id === focused ? '› ' : '  '}
                 <Text color={tone[row.status]}>{row.glyph}</Text> <Text bold={row.status === 'next'}>{row.id}</Text>{' '}
                 <Text dimColor={row.status === 'done'}>{row.title}</Text>
                 {row.detail ? <Text dimColor> · {row.detail}</Text> : ''}

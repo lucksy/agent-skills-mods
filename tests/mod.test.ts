@@ -32,8 +32,19 @@ function world(on: On, files: Record<string, string>) {
   on('tool.call', () => ({ result: 'written' }) as never)
   on('skill.prompt', (_$, e) => ({ text: e.text }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine intro', scope: 'shared' as const }] }))
   return seen
 }
+
+const COMPOSE = {
+  model: 'claude-opus-5-5',
+  promptModel: 'claude-opus-5-5',
+  surfaces: ['terminal'],
+  tools: ['Read'],
+  outputStyle: null,
+  traits: [],
+} as never
 
 const run = (args: string) =>
   ({
@@ -106,6 +117,46 @@ test('the spec pane flags weak sections', async ($, on) => {
   expect(await pane.find({ text: /no runnable command line/ })).toBeDefined()
   expect(await pane.find({ text: /no example code block/ })).toBeDefined()
   expect(await pane.find({ text: /1 of 2 success criteria/ })).toBeDefined()
+})
+
+test('the system prompt carries the parsed progress as its last section, only where there is a plan', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
+  await $.command.run(run('refresh'))
+  const { sections } = await $.prompt.compose(COMPOSE)
+  const last = sections[sections.length - 1]!
+  expect(sections[0]?.id).toBe('intro')
+  expect(last.id).toBe('agent-skills-mods:progress')
+  expect(last.scope).toBe('session')
+  expect(last.text).toMatch(/tasks\/todo\.md: 1\/4 tasks done/)
+  expect(last.text).toMatch(/blocked: T3 Issue and revoke keys, chain T3 ← T2/)
+})
+
+test('no plan, no section', async ($, on) => {
+  world(on, {})
+  await $.command.run(run('refresh'))
+  const { sections } = await $.prompt.compose(COMPOSE)
+  expect(sections.map(s => s.id)).toEqual(['intro'])
+})
+
+test('a prompt about a task reloads the files and focuses the board on it', async ($, on) => {
+  const files: Record<string, string> = {}
+  const seen = world(on, files)
+  await $.command.run(run('refresh'))
+  // Written outside the session, so no tool call saw it.
+  files[`${CWD}/tasks/todo.md`] = TODO_TEMPLATE
+  await $.prompt.submit({ text: 'why is T3 blocked?', wait: false, origin: { kind: 'composer' } } as never)
+  expect(seen.opened).toEqual(['asm-board'])
+  const board = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-board',
+    props: { title: 'x', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+  expect(await board.find({ text: /› ◌ T3/ })).toBeDefined()
+
+  await $.prompt.submit({ text: 'run the linter', wait: false, origin: { kind: 'composer' } } as never)
+  expect(seen.opened).toEqual(['asm-board'])
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

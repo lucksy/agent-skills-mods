@@ -171,3 +171,89 @@ export function completionToast(before: TaskList | null, after: TaskList | null)
   const next = after.current ? ` · Next: ${after.current.id} ${after.current.title}` : after.done === after.total ? ' · all tasks done' : ''
   return `${GLYPH.done} ${names} done${title}${next}`
 }
+
+/** `T6 ← T5 ← T4`: from a blocked task down its undone dependencies to one that can start. */
+export function blockChain(list: TaskList, t: Task): string {
+  const byId = new Map(list.tasks.map(x => [x.id, x]))
+  const chain = [t.id]
+  let cur: Task | undefined = t
+  while (cur) {
+    const dep: Task | undefined = cur.deps.map(d => byId.get(d)).find(d => d && d.status !== 'done' && !chain.includes(d.id))
+    if (!dep) break
+    chain.push(dep.id)
+    cur = dep.status === 'blocked' ? dep : undefined
+  }
+  return chain.join(' ← ')
+}
+
+export type BriefInput = {
+  spec: Spec | null
+  list: TaskList | null
+  plan: PlanDoc | null
+  /** The file the task list came from. */
+  listFile: string | null
+  forecast: Forecast | null
+}
+
+const MAX_ROWS = 12
+
+/**
+ * The system-prompt section (C1): the parsed state the model answers progress
+ * questions from, so counts come from the parser and not from a guess.
+ * Undefined when there is nothing agent-skills shaped in the project.
+ */
+export function progressBrief(p: BriefInput): string | undefined {
+  const { spec, list, plan, listFile } = p
+  if (!spec && !list) return undefined
+  const out = [
+    'agent-skills progress, parsed from the project files by the agent-skills-mods plugin and current as of this request.',
+    'When the user asks about progress ("what\'s left?", "where are we?", "what\'s next?", "why is T6 blocked?"), answer from these facts: cite task ids, name the source file, and keep it to a few short lines rather than pasting the markdown. Read the file itself only for detail not listed here.',
+  ]
+  const approval = specApproval(spec, list !== null)
+  if (spec) {
+    const weak = spec.areas.filter(a => a.hint).map(a => `${a.label}: ${a.hint}`)
+    const gaps = spec.areas.filter(a => a.state !== 'present').map(a => `${a.label} ${a.state}`)
+    out.push(
+      `SPEC.md: ${approval === 'approved' ? 'approved' : 'awaiting approval'}${gaps.length ? `; ${gaps.join(', ')}` : ''}${weak.length ? `; weak: ${weak.join('; ')}` : ''}.`,
+    )
+    for (const q of spec.openQuestions.slice(0, 5)) out.push(`- open question (SPEC.md): ${q}`)
+  }
+  if (list && listFile) {
+    if (list.total === 0) out.push(`${listFile}: no tasks yet.`)
+    else {
+      out.push(`${listFile}: ${list.done}/${list.total} tasks done${list.kind === 'checklist' ? ' (plain checklist, no task headings)' : ''}.`)
+      const t = list.current
+      if (t) {
+        const open = t.boxes.filter(b => !b.isDone).map(b => b.text)
+        out.push(`- current: ${t.id} ${t.title}${t.phase ? ` (${t.phase})` : ''}${open.length ? `; open: ${open.join('; ')}` : ''}`)
+        if (t.checkpoint) out.push(`- checkpoint after ${t.id}: ${t.checkpoint.title} (${t.checkpoint.items.map(b => b.text).join('; ')})`)
+      } else if (list.done === list.total) out.push('- all tasks done; next stage is review.')
+      for (const b of list.tasks.filter(x => x.status === 'blocked').slice(0, MAX_ROWS)) {
+        out.push(`- blocked: ${b.id} ${b.title}, chain ${blockChain(list, b)}`)
+      }
+      const todo = list.tasks.filter(x => x.status === 'todo')
+      if (todo.length) {
+        const shown = todo.slice(0, MAX_ROWS).map(x => `${x.id} ${x.title}`)
+        out.push(`- not started: ${shown.join('; ')}${todo.length > MAX_ROWS ? `; and ${todo.length - MAX_ROWS} more` : ''}`)
+      }
+      const due = list.tasks.find(x => x.status === 'done' && x.checkpoint && !x.checkpoint.items.every(b => b.isDone))
+      if (due?.checkpoint) out.push(`- checkpoint waiting on the user: ${due.checkpoint.title}`)
+    }
+  }
+  for (const q of plan?.openQuestions.slice(0, 5) ?? []) out.push(`- open question (tasks/plan.md): ${q}`)
+  if (plan?.trackedIn) out.push(`- tasks are tracked in ${plan.trackedIn}`)
+  if (p.forecast) out.push(`- ${forecastText(p.forecast)}`)
+  return out.join('\n')
+}
+
+/** The task a prompt is about (C1): one it names (`T6`, `task 6`), else the current one for a progress question. */
+export function taskInPrompt(text: string, list: TaskList | null): string | null {
+  if (!list || list.total === 0) return null
+  const known = new Set(list.tasks.map(t => t.id))
+  for (const m of text.matchAll(/\b(?:T|task\s*#?\s*)(\d+)\b/gi)) {
+    const id = `T${m[1] ?? ''}`
+    if (known.has(id)) return id
+  }
+  const isProgress = /\b(what'?s|what is) (left|next|remaining|blocked)\b|\bwhere are we\b|\bhow far\b|\bprogress\b|\bstatus\b/i.test(text)
+  return isProgress ? (list.current?.id ?? null) : null
+}

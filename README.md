@@ -47,6 +47,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Task board** | Phases, tasks and checkpoints in plan order, with ✓ ● ○ ◌ ♦ glyphs, a progress bar and an ETA. | Opens when the agent writes `tasks/todo.md`, or with `/progress` |
 | **ETA as a range** | A median date with optimistic and slow cases, plus where it comes from ("from 4 tasks in 11 days") and how much scope was added. It shows no date until 3 tasks have been finished while the plugin was tracking. | Board pane |
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
+| **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
 | **Current task band** | `● T2 title · 2 criteria left · 1/4 done · checkpoint after this task`. Hidden when there is no plan or every task is done. | Above the prompt |
 | **Status entry** | `spec ✓ approved · plan 4/9` | Status area |
 | **Stage in the footer** | When an agent-skills skill loads, its stage (spec, plan, build, test, review, ship) and the current task are added to the hint line (`· build T2`) and to the mode labels. Claude Code's own text stays. | Hint line and mode labels |
@@ -97,7 +98,7 @@ It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 32 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 38 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```
@@ -120,7 +121,6 @@ History for the ETA is one snapshot per day, stored per project in the plugin's 
 
 The user stories, mockups and chart designs live in the proposal. Next up:
 
-- the parsed state given to the model, so "what's left?" gets an answer that cites task IDs;
 - braille and half-block burn-up and flow charts in the terminal, and SVG charts on desktop;
 - history rebuilt from `git log`;
 - `/progress report` (HTML for managers) and `/progress digest` (Slack text).
