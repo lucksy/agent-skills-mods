@@ -274,8 +274,9 @@ test('/progress charts draws each surface its own tier: Rasters on the terminal,
   const term = await mount('terminal', 70)
   const up = await term.find({ type: 'Raster', key: 'burnup' })
   expect(up?.props).toMatchObject({ columns: 70, rows: 10 })
-  expect((await term.find({ type: 'Raster', key: 'flow' }))?.props).toMatchObject({ columns: 70, rows: 8 })
-  expect(await term.find({ text: /^9 Oct: 3 done · 0 in progress/ })).toBeDefined()
+  expect((await term.find({ type: 'Raster', key: 'flow' }))?.props).toMatchObject({ columns: 70, rows: 10 })
+  expect(await term.find({ text: /^done 3$/ })).toBeDefined()
+  expect(await term.find({ text: /^in progress 0$/ })).toBeDefined()
   // A resized pane draws charts to its new width.
   await term.redraw({ title: 'x', isFocused: false, bodyColumns: 40, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never)
   expect((await term.find({ type: 'Raster', key: 'burnup' }))?.props).toMatchObject({ columns: 40 })
@@ -286,7 +287,7 @@ test('/progress charts draws each surface its own tier: Rasters on the terminal,
   expect(svgs.map(s => s.props.isInteractive)).toEqual([true, true])
   expect(String(svgs[0]!.props.alt)).toMatch(/^Burn-up: 3 of 4 tasks done by 9 Oct/)
   expect(String(svgs[1]!.props.source)).toMatch(/<title>5 Oct: 2 done · 0 in progress · 0 blocked · 2 to do<\/title>/)
-  expect(await desk.find({ text: /^done 3 \(green\)/ })).toBeDefined()
+  expect(await desk.find({ text: /^done 3$/ })).toBeDefined()
 })
 
 test('charts wait for two days of history', async ($, on) => {
@@ -757,10 +758,10 @@ test('with chartStyle pixels, the terminal charts are pictures with text axes an
   const up = await pane.find({ type: 'Image', key: 'burnup' })
   expect(up?.props).toMatchObject({ columns: 66, rows: 9 })
   expect(String((up?.props as { alt: string }).alt)).toMatch(/^Burn-up: 3 of 4 tasks done by 9 Oct/)
-  expect((await pane.find({ type: 'Image', key: 'flow' }))?.props).toMatchObject({ columns: 66, rows: 7 })
+  expect((await pane.find({ type: 'Image', key: 'flow' }))?.props).toMatchObject({ columns: 66, rows: 9 })
   expect(await pane.find({ text: /^ 4 ┤$/ })).toBeDefined()
   expect(await pane.find({ text: /^ {4}1 Oct +9 Oct$/ })).toBeDefined()
-  expect(await pane.find({ text: /^done 3 \(green\)/ })).toBeDefined()
+  expect(await pane.find({ text: /^done 3$/ })).toBeDefined()
 })
 
 test('chartStyle auto on a terminal that draws no pictures keeps the braille and block Rasters', async ($, on) => {
@@ -909,3 +910,23 @@ test('with progressFormat off, files go through as written and Claude is not tol
 })
 
 const readFm = (text: string) => /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? ''
+
+test('the charts tab: side by side when wide, colour swatch legends, phase bars and the pace', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($, 140)
+  expect((await pane.find({ type: 'Raster', key: 'burnup' }))?.props).toMatchObject({ columns: 69 })
+  expect((await pane.find({ type: 'Raster', key: 'flow' }))?.props).toMatchObject({ columns: 69 })
+  const swatches = await pane.findAll({ text: /^█ $/ })
+  expect(swatches.map(x => (x.props as { color?: string }).color)).toEqual(['#3fbf5a', '#fab219', '#d03b3b', '#4a4f4c'])
+  expect(await pane.find({ text: /^⠒⠒ done 3   ⠒⠒ scope 4   forecast ≈ 12 Oct \(12 Oct–13 Oct\)$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Phases$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Phase 1 · Foundation$/ })).toBeDefined()
+  expect((await pane.find({ type: 'Client', key: 'phase-0' }))?.props).toMatchObject({ module: 'hooks/ui/meter.tsx', props: { done: 2, total: 2 } })
+  expect(await pane.find({ text: /^Phase 2 · Core$/ })).toBeDefined()
+  expect(await pane.find({ text: /^1\/2$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Tasks done per day [▁-█]+ · 3 in 8 days · 0\.38\/day$/ })).toBeDefined()
+  await pane.resize({ columns: 20, rows: 1, in: 'phase-1' })
+  await pane.advance(2000)
+  expect(await pane.find({ text: /^█{10}░{10}$/, in: 'phase-1' })).toBeDefined()
+})

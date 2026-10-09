@@ -16,10 +16,10 @@ import {
   type SourceData,
 } from './lib/history'
 import { historyFromLogs, logsDir, mentions } from './lib/logs'
-import { burnup, flow, revealCells } from './lib/chart'
+import { burnup, chartLegends, flow, revealCells, throughput } from './lib/chart'
 import { timeline, type Seg } from './lib/timeline'
 import { TABS, type Tab } from './ui/tabs'
-import { digestText, reportHtml } from './lib/report'
+import { digestText, reportHtml, sparkline } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
@@ -32,6 +32,7 @@ import {
   bar,
   boardRows,
   openCounts,
+  phaseLabel,
   phaseOf,
   completionToast,
   taskDates,
@@ -1042,79 +1043,144 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
 }
 
 async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
-    const { Box, Text } = $.ui.resolve(e)
-    const snaps = p?.snapshots ?? []
-    const columns = Math.max(24, Math.min(120, e.props.bodyColumns))
-    const up = burnup(snaps, p?.forecast ?? null, columns, 10)
-    const fl = flow(snaps, columns, 8)
-    if (!up || !fl) {
-      const since = snaps[0] ? ` Tracking since ${shortDay(snaps[0].day)}.` : ''
-      return <Text dimColor wrap="wrap">{`Charts need two days of history.${since}`}</Text>
-    }
-    // Pictures on kitty and Ghostty (F3), terminal cells elsewhere (F2); interactive
-    // SVG on desktop, VS Code and mobile (F4).
-    const usePixels = e.surface === 'terminal' && (await read($, pixels))
-    const reveal = await read($, chartReveal)
-    const picture = (key: 'burnup' | 'flow', c: { columns: number; rows: number }, pic: PixelChart | null) => {
-      if (e.surface !== 'terminal' || !pic) return null
-      const { Image } = $.ui.resolve(e)
-      const plotCols = Math.min(255, c.columns - 4)
-      const plotRows = c.rows - 1
-      const labelAt = new Map(pic.ticks.map((t, i) => [Math.round((i * (plotRows - 1)) / (pic.ticks.length - 1)), t]))
-      return (
-        <Box flexDirection="column">
-          <Box flexDirection="row">
-            <Box flexDirection="column" width={4}>
-              {Array.from({ length: plotRows }, (_, r) => (
-                <Text color="subtle">{labelAt.has(r) ? `${String(labelAt.get(r)).padStart(2)} ┤` : '   │'}</Text>
-              ))}
-            </Box>
-            <Image key={key} source={{ png: pic.png }} columns={plotCols} rows={plotRows} alt={pic.alt} />
-          </Box>
-          <Text color="subtle">{`    ${dateRow(pic.dates, plotCols)}`}</Text>
-        </Box>
-      )
-    }
-    const chart = (key: 'burnup' | 'flow', c: { columns: number; rows: number; cells: string }) => {
-      if (e.surface === 'terminal') {
-        if (usePixels) {
-          const w = Math.min(255, c.columns - 4) * CELL_PX.w
-          const h = (c.rows - 1) * CELL_PX.h
-          const fc = p?.forecast ?? null
-          const pic = cachedPixels(key, JSON.stringify([snaps, key === 'burnup' ? fc : null, w, h]), () =>
-            key === 'burnup' ? burnupPixels(snaps, fc, w, h) : flowPixels(snaps, w, h),
-          )
-          const drawn = picture(key, c, pic)
-          if (drawn) return drawn
-        }
-        const { Raster } = $.ui.resolve(e)
-        return <Raster key={key} columns={c.columns} rows={c.rows} cells={revealCells(c.cells, c.columns, c.rows, reveal)} />
-      }
-      const svg = key === 'burnup' ? burnupSvg(snaps, p?.forecast ?? null) : flowSvg(snaps)
-      if (!svg) return null
-      const { Svg } = $.ui.resolve(e)
-      return <Svg source={svg.source} alt={svg.alt} isInteractive />
-    }
+  const { Box, Text } = $.ui.resolve(e) as any
+  const snaps = p?.snapshots ?? []
+  const body = Math.max(24, Math.min(240, e.props.bodyColumns))
+  // Side by side when there is room for two charts of 50 columns, as mockup 12 lays them out.
+  const sideBySide = body >= 104
+  const columns = sideBySide ? Math.floor((body - 2) / 2) : Math.min(120, body)
+  const up = burnup(snaps, p?.forecast ?? null, columns, 10)
+  const fl = flow(snaps, columns, 10)
+  if (!up || !fl) {
+    const since = snaps[0] ? ` Tracking since ${shortDay(snaps[0].day)}.` : ''
+    return <Text dimColor wrap="wrap">{`Charts need two days of history.${since}`}</Text>
+  }
+  // Pictures on kitty and Ghostty (F3), terminal cells elsewhere (F2); interactive
+  // SVG on desktop, VS Code and mobile (F4).
+  const usePixels = e.surface === 'terminal' && (await read($, pixels))
+  const reveal = await read($, chartReveal)
+  const picture = (key: 'burnup' | 'flow', c: { columns: number; rows: number }, pic: PixelChart | null) => {
+    if (e.surface !== 'terminal' || !pic) return null
+    const { Image } = $.ui.resolve(e) as any
+    const plotCols = Math.min(255, c.columns - 4)
+    const plotRows = c.rows - 1
+    const labelAt = new Map(pic.ticks.map((t, i) => [Math.round((i * (plotRows - 1)) / (pic.ticks.length - 1)), t]))
     return (
-      <Box flexDirection="column" gap={1}>
-        <Box flexDirection="column">
-          <Text>
-            <Text color="claude">── </Text>
-            <Text bold>Burn-up</Text> <Text dimColor>scope vs done{p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}</Text>
-          </Text>
-          {chart('burnup', up)}
-          <Text dimColor wrap="wrap">{up.legend}</Text>
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          <Box flexDirection="column" width={4}>
+            {Array.from({ length: plotRows }, (_, r) => (
+              <Text color="subtle">{labelAt.has(r) ? `${String(labelAt.get(r)).padStart(2)} ┤` : '   │'}</Text>
+            ))}
+          </Box>
+          <Image key={key} source={{ png: pic.png }} columns={plotCols} rows={plotRows} alt={pic.alt} />
         </Box>
-        <Box flexDirection="column">
-          <Text>
-            <Text color="claude">── </Text>
-            <Text bold>Flow</Text> <Text dimColor>tasks by state, per day</Text>
-          </Text>
-          {chart('flow', fl)}
-          <Text dimColor wrap="wrap">{fl.legend}</Text>
-        </Box>
+        <Text color="subtle">{`    ${dateRow(pic.dates, plotCols)}`}</Text>
       </Box>
     )
+  }
+  const chart = (key: 'burnup' | 'flow', c: { columns: number; rows: number; cells: string }) => {
+    if (e.surface === 'terminal') {
+      if (usePixels) {
+        const w = Math.min(255, c.columns - 4) * CELL_PX.w
+        const h = (c.rows - 1) * CELL_PX.h
+        const fc = p?.forecast ?? null
+        const pic = cachedPixels(key, JSON.stringify([snaps, key === 'burnup' ? fc : null, w, h]), () =>
+          key === 'burnup' ? burnupPixels(snaps, fc, w, h) : flowPixels(snaps, w, h),
+        )
+        const drawn = picture(key, c, pic)
+        if (drawn) return drawn
+      }
+      const { Raster } = $.ui.resolve(e) as any
+      return <Raster key={key} columns={c.columns} rows={c.rows} cells={revealCells(c.cells, c.columns, c.rows, reveal)} />
+    }
+    const svg = key === 'burnup' ? burnupSvg(snaps, p?.forecast ?? null) : flowSvg(snaps)
+    if (!svg) return null
+    const { Svg } = $.ui.resolve(e) as any
+    return <Svg source={svg.source} alt={svg.alt} isInteractive />
+  }
+  const legends = chartLegends(snaps, p?.forecast ?? null)
+  const legend = (parts: { mark: string; color: string | null; text: string }[]) => (
+    <Text wrap="wrap">
+      {parts.map((x, i) => (
+        <Text>
+          {i > 0 ? '   ' : ''}
+          {x.mark ? <Text color={x.color ?? undefined}>{x.mark} </Text> : ''}
+          <Text dimColor>{x.text}</Text>
+        </Text>
+      ))}
+    </Text>
+  )
+  const block = (key: 'burnup' | 'flow', title: string, sub: string, c: typeof up) => (
+    <Box flexDirection="column" width={sideBySide ? columns : undefined}>
+      <Text>
+        <Text bold>{title}</Text> <Text dimColor>{sub}</Text>
+      </Text>
+      {chart(key, c)}
+      {legends ? legend(key === 'burnup' ? legends.burnup : legends.flow) : <Text dimColor wrap="wrap">{c.legend}</Text>}
+    </Box>
+  )
+  const charts = [
+    block('burnup', 'Burn-up', `scope vs done${p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}`, up),
+    block('flow', 'Flow', 'tasks by state, per day', fl),
+  ]
+  // Phases: one bar each, filling in as the pane opens (mockup 12).
+  const list = p?.list
+  const phases: { name: string; done: number; total: number }[] = []
+  for (const t of list?.tasks ?? []) {
+    if (!t.phase) continue
+    const ph = phases.find(x => x.name === t.phase) ?? (phases.push({ name: t.phase, done: 0, total: 0 }), phases[phases.length - 1]!)
+    ph.total++
+    if (t.status === 'done') ph.done++
+  }
+  const labelW = Math.min(28, Math.max(0, ...phases.map(x => phaseLabel(x.name).length)))
+  const barW = Math.max(8, Math.min(28, body - labelW - 10))
+  const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
+  const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
+  const pace = throughput(snaps)
+  return (
+    <Box flexDirection="column" gap={1}>
+      {sideBySide ? (
+        <Box flexDirection="row" gap={2}>
+          {charts}
+        </Box>
+      ) : (
+        <Box flexDirection="column" gap={1}>
+          {charts}
+        </Box>
+      )}
+      {phases.length > 0 && (
+        <Box flexDirection="column">
+          <Text bold>Phases</Text>
+          {phases.map((ph, i) => (
+            <Box key={`ph${i}`} flexDirection="row" gap={1}>
+              <Box width={labelW}>
+                <Text wrap="truncate-end">{phaseLabel(ph.name)}</Text>
+              </Box>
+              {Client ? (
+                <Client key={`phase-${i}`} module="./ui/meter.tsx" props={{ done: ph.done, total: ph.total }} width={barW} height={1} />
+              ) : (
+                <Text color="success">{bar(ph.done, ph.total, barW)}</Text>
+              )}
+              <Text dimColor>
+                {ph.done}/{ph.total}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+      {pace && (
+        <Text wrap="truncate-end">
+          <Text dimColor>Tasks done per day </Text>
+          <Text color="success">{sparkline(pace.perDay.slice(-30))}</Text>
+          <Text dimColor>
+            {' '}
+            · {pace.done} in {pace.days} day{pace.days === 1 ? '' : 's'} · {pace.rate.toFixed(2)}/day
+          </Text>
+        </Text>
+      )}
+    </Box>
+  )
 }
 
 async function timelineView($: $, e: PaneEvent, p: AsmProject | null) {

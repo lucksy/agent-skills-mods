@@ -230,3 +230,39 @@ export function revealCells(cells: string, columns: number, rows: number, fracti
   }
   return toBase64(bytes)
 }
+
+/** A chart colour as CSS hex, for a Text's `color`. */
+export const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
+
+export type LegendPart = { mark: string; color: string | null; text: string }
+
+/**
+ * The legends under the charts (mockup 12), as coloured marks with words:
+ * `⠒⠒ done 4  ⠒⠒ scope 9  forecast ≈ 23 Oct (19–28 Oct)` and
+ * `█ done 4  █ in progress 1  █ blocked 1  █ to do 3`.
+ */
+export function chartLegends(history: Snapshot[], fc: Forecast | null): { burnup: LegendPart[]; flow: LegendPart[] } | null {
+  const series = daily(history)
+  const last = series[series.length - 1]
+  const first = series[0]
+  if (!last || !first) return null
+  const added = last.total - first.total
+  const burnupParts: LegendPart[] = [
+    { mark: '⠒⠒', color: hex(COLOR.done), text: `done ${last.done}` },
+    { mark: '⠒⠒', color: hex(COLOR.scope), text: `scope ${last.total}${added > 0 ? ` (+${added})` : ''}` },
+  ]
+  if (fc?.kind === 'range') burnupParts.push({ mark: '', color: null, text: `forecast ≈ ${shortDay(fc.median)} (${shortDay(fc.optimistic)}–${shortDay(fc.slow)})` })
+  const c = countsOf(last)
+  const flowParts: LegendPart[] = STATES.map(k => ({ mark: '█', color: hex(COLOR[k]), text: `${STATE_NAME[k]} ${c[k]}` }))
+  return { burnup: burnupParts, flow: flowParts }
+}
+
+/** Tasks done per day over the history: the sparkline's values and the pace (mockup 12). */
+export function throughput(history: Snapshot[]): { perDay: number[]; done: number; days: number; rate: number } | null {
+  const series = daily(history)
+  if (series.length < 2) return null
+  const perDay = series.slice(1).map((s, i) => Math.max(0, s.done - series[i]!.done))
+  const done = series[series.length - 1]!.done - series[0]!.done
+  const days = series.length - 1
+  return { perDay, done, days, rate: done / days }
+}
