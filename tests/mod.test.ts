@@ -29,6 +29,11 @@ function world(
       value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
     })
     // macOS's `open`: what /progress report runs to show the page.
+    // `rm`, as /progress archive runs it.
+    if (e.argv[0] === 'rm') {
+      delete files[e.argv[e.argv.length - 1]!]
+      return out(0, '')
+    }
     if (e.argv[0] === 'open') {
       seen.launched.push(e.argv[1]!)
       return out(0, '')
@@ -948,4 +953,31 @@ test('the spec pane as mockup 8: numbered areas, summaries on the right, framed 
   expect((await pane.find({ type: 'Button', key: 'spec-approve' }))?.props).toMatchObject({ label: 'approve', hotkey: 'a', plain: true })
   expect((await pane.find({ type: 'Button', key: 'spec-edit' }))?.props).toMatchObject({ label: 'edit in $EDITOR', hotkey: 'e' })
   expect((await pane.find({ type: 'Select', key: 'spec-section' }))?.props).toMatchObject({ label: '↵ open section' })
+})
+
+test('/progress archive moves a finished plan to tasks/archive with its history, and a new plan starts clean', async ($, on) => {
+  const done = TODO_TEMPLATE.replace(/- \[ \]/g, '- [x]')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: done, [`${CWD}/tasks/plan.md`]: PLAN_INDEX }
+  world(on, files, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  const out = await $.command.run(run('archive'))
+  expect(out.text).toBe('Archived todo.md, plan.md, history.json to tasks/archive/2026-10-09-api-keys/ (4 of 4 tasks done). /plan can start the next plan.')
+  expect(files[`${CWD}/tasks/archive/2026-10-09-api-keys/todo.md`]).toBe(done)
+  expect(files[`${CWD}/tasks/archive/2026-10-09-api-keys/README.md`]).toMatch(/^# Archived plan: api-keys\n\nArchived 2026-10-09 with 4 of 4 tasks done\./)
+  expect(JSON.parse(files[`${CWD}/tasks/archive/2026-10-09-api-keys/history.json`]!)).toHaveLength(3)
+  expect(files[`${CWD}/tasks/todo.md`]).toBeUndefined()
+  expect(files[`${CWD}/tasks/plan.md`]).toBeUndefined()
+  // The same day again gets its own folder.
+  files[`${CWD}/tasks/todo.md`] = done
+  const again = await $.command.run(run('archive'))
+  expect(again.text).toMatch(/tasks\/archive\/2026-10-09-api-keys-2\//)
+})
+
+test('/progress archive asks before archiving unfinished work; force lists what was left open', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  const out = await $.command.run(run('archive'))
+  expect(out.text).toMatch(/^tasks\/todo\.md still has 3 unfinished tasks \(T2, T3, T4\)\.\nRun `\/progress archive force`/)
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  await $.command.run(run('archive force'))
+  expect(files[`${CWD}/tasks/archive/2026-10-09-api-keys/README.md`]).toMatch(/## Left open\n\n- T2 Prisma schema for keys\n- T3 Issue and revoke keys\n- T4 Rate limit per key\n$/)
 })

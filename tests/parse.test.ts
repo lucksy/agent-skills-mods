@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
+import { archiveDir } from '../hooks/lib/archive'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
@@ -844,5 +845,13 @@ describe('answers as cards (mockup 10)', () => {
     expect(brief).toContain(ANSWER_CARDS)
     expect(brief).toMatch(/- blocked: T4 Rate limit per key, by open question \(tasks\/plan\.md: Q2 \(T4\): Upstash or self-hosted\?\); dependency chain T4 ← T3/)
     expect(ANSWER_CARDS).toMatch(/Checkpoint 1 · 1 task left +from tasks\/todo\.md/)
+  })
+})
+
+describe('archive (/progress archive)', () => {
+  test('a dated folder named after the plan, numbered when taken', async () => {
+    expect(archiveDir('2026-10-10', '# Tasks: API keys\n', null, [])).toBe('tasks/archive/2026-10-10-api-keys')
+    expect(archiveDir('2026-10-10', null, '# Implementation Plan: Notifications\n', ['2026-10-10-notifications'])).toBe('tasks/archive/2026-10-10-notifications-2')
+    expect(archiveDir('2026-10-10', 'no title', null, [])).toBe('tasks/archive/2026-10-10-plan')
   })
 })

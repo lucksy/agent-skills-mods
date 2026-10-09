@@ -24,6 +24,7 @@ import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
+import { archiveDir, archiveReadme } from './lib/archive'
 import { gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
 import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from './lib/format'
@@ -494,6 +495,59 @@ async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
   $.ui.toast(what === 'report' ? text : (text.split('\n').at(-1) ?? text))
 }
 
+/**
+ * `/progress archive` (the guard's way forward): tasks/todo.md and tasks/plan.md
+ * moved into tasks/archive/<date>-<plan>/ with their history, so the next /plan
+ * starts clean. An unfinished plan needs `/progress archive force`.
+ */
+async function archivePlan($: $, force: boolean): Promise<string> {
+  const p = await load($)
+  const cwd = p.cwd
+  const todo = await readText($, `${cwd}/tasks/todo.md`)
+  const plan = await readText($, `${cwd}/tasks/plan.md`)
+  if (todo === null && plan === null) return 'Nothing to archive: there is no tasks/todo.md or tasks/plan.md here.'
+  const list = p.list
+  const open = list ? list.tasks.filter(t => t.status !== 'done') : []
+  if (open.length && !force) {
+    return [
+      `tasks/todo.md still has ${open.length} unfinished task${open.length === 1 ? '' : 's'} (${open.slice(0, 5).map(t => t.id).join(', ')}${open.length > 5 ? ', …' : ''}).`,
+      'Run `/progress archive force` to archive it anyway; the open tasks are listed in the archive.',
+    ].join('\n')
+  }
+  const today = dayOf(await $.clock.now())
+  // A folder is taken when it already holds an archive's README.
+  const taken: string[] = []
+  let dir = archiveDir(today, todo, plan, taken)
+  while (await $.fs.exists(`${cwd}/${dir}/README.md`)) {
+    taken.push(dir.slice('tasks/archive/'.length))
+    dir = archiveDir(today, todo, plan, taken)
+  }
+  const files: string[] = []
+  if (todo !== null) await $.fs.write(`${cwd}/${dir}/todo.md`, todo), files.push('todo.md')
+  if (plan !== null) await $.fs.write(`${cwd}/${dir}/plan.md`, plan), files.push('plan.md')
+  const history = (await $.store.get(`history:${cwd}`)) as Snapshot[] | undefined
+  if (history?.length) await $.fs.write(`${cwd}/${dir}/history.json`, `${JSON.stringify(history, null, 2)}\n`), files.push('history.json')
+  const name = dir.slice('tasks/archive/'.length).replace(/^\d{4}-\d{2}-\d{2}-/, '')
+  await $.fs.write(
+    `${cwd}/${dir}/README.md`,
+    archiveReadme({ dir, today, name, done: list?.done ?? 0, total: list?.total ?? 0, files, open: open.map(t => `${t.id} ${t.title}`) }),
+  )
+  // The originals go; where `rm` is missing, they are left as a one-line pointer.
+  for (const f of ['tasks/todo.md', 'tasks/plan.md']) {
+    if (!(await $.fs.exists(`${cwd}/${f}`))) continue
+    let removed = false
+    try {
+      removed = (await $.process.run(['rm', '--', `${cwd}/${f}`], { timeoutMs: 10_000 })).exitCode === 0
+    } catch {}
+    if (!removed) await $.fs.write(`${cwd}/${f}`, `# Archived\n\nThis plan moved to ${dir}/.\n`)
+  }
+  // A new plan starts its own history.
+  for (const key of [`history:${cwd}`, `doneDays:${cwd}`, sourcesKey(cwd), pendingKey(cwd), factsKey(cwd)]) await $.store.delete(key)
+  await update($, allowOverwrite, () => false)
+  await load($)
+  return `Archived ${files.join(', ')} to ${dir}/ (${list?.done ?? 0} of ${list?.total ?? 0} tasks done). /plan can start the next plan.`
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -564,6 +618,7 @@ export const register: Register = (on, options) => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    if (arg === 'archive' || arg === 'archive force') return reply(await archivePlan($, arg.endsWith('force')))
     if (arg === 'timeline') {
       await showTab($, 'timeline')
       await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
@@ -580,7 +635,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|archive|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
