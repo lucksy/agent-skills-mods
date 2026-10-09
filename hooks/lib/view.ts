@@ -1,4 +1,4 @@
-// Plain-text views of the parsed state: the status entry, /tasks next, the band line
+// Plain-text views of the parsed state: the status entry, /progress next, the band line
 // and the run timeline rows. Every surface draws these, so they are text only.
 
 import type { Spec, Task, TaskList, PlanDoc } from './parse'
@@ -68,7 +68,7 @@ export function bandText(list: TaskList | null): string | undefined {
   return bits.join(' · ')
 }
 
-/** /tasks next: the next unblocked task with its criteria, straight from the parser. */
+/** /progress next: the next unblocked task with its criteria, straight from the parser. */
 export function nextText(list: TaskList | null, plan: PlanDoc | null): string {
   if (!list) {
     return plan?.trackedIn
@@ -137,7 +137,7 @@ export function forecastText(f: Forecast): string {
   if (f.kind === 'done') return 'All tasks done.'
   if (f.kind === 'not-enough') return `ETA: ${f.reason}.`
   const added = f.added > 0 ? ` · +${f.added} added since tracking began` : ''
-  return `ETA ${shortDay(f.median)} (range ${shortDay(f.optimistic)}–${shortDay(f.slow)}, slow case ${shortDay(f.slow)}) · ${f.basis}${added}`
+  return `ETA ${shortDay(f.median)} (fast ${shortDay(f.optimistic)}, slow ${shortDay(f.slow)}) · ${f.basis}${added}`
 }
 
 /** A `[████░░░░]` bar, `width` cells wide. */

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
-import { forecast, record, type Snapshot } from '../hooks/lib/forecast'
+import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
 import { bandText, forecastText, nextText, statusText, timelineRows } from '../hooks/lib/view'
 import { CHECKLIST, PLAN_INDEX, SPEC, TODO_TEMPLATE } from './fixtures'
 
@@ -122,7 +122,7 @@ describe('forecast', () => {
       expect(f.optimistic <= f.median && f.median <= f.slow).toBe(true)
       expect(f.basis).toBe('from 4 tasks in 11 days')
       expect(f.added).toBe(2)
-      expect(forecastText(f)).toMatch(/slow case/)
+      expect(forecastText(f)).toBe(`ETA ${shortDay(f.median)} (fast ${shortDay(f.optimistic)}, slow ${shortDay(f.slow)}) · from 4 tasks in 11 days · +2 added since tracking began`)
     }
   })
 

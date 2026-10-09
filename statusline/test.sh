@@ -36,6 +36,24 @@ mkdir -p "$tmp/build/tasks"; cat > "$tmp/build/tasks/todo.md" <<'EOF'
 EOF
 check mid-build "$tmp/build" '✓spec ✓plan ●build 1/3 ○review ○ship · T2 Prisma schema for keys'
 
+# T2 waits on T3, so the next task is T3, as on the board and band.
+mkdir -p "$tmp/blocked/tasks"; cat > "$tmp/blocked/tasks/todo.md" <<'EOF'
+## Task 1: Scaffold
+- [x] builds
+## Task 2: Usage API
+**Dependencies:** Task 3
+- [ ] GET /usage
+## Task 3: Usage counter
+**Dependencies:** Task 1
+- [ ] counts calls
+EOF
+check blocked "$tmp/blocked" '●build 1/3 ○review ○ship · T3 Usage counter'
+
+# Every open task is blocked: no task is named.
+mkdir -p "$tmp/allblocked/tasks"; printf '## Task 1: A\n**Dependencies:** Task 2\n- [ ] a\n## Task 2: B\n**Dependencies:** T1\n- [ ] b\n' > "$tmp/allblocked/tasks/todo.md"
+out=$(printf '{"workspace":{"current_dir":"%s"}}' "$tmp/allblocked" | ASM_STATUS_PREFIX=0 bash "$script" | sed $'s/\033\\[[0-9;]*m//g')
+if [[ $out == *"●build 0/2 ○review ○ship" ]]; then echo "ok   all-blocked: $out"; else echo "FAIL all-blocked: $out"; fail=1; fi
+
 mkdir -p "$tmp/index/tasks"; cat > "$tmp/index/tasks/plan.md" <<'EOF'
 ### Phase 1: Foundation
 - [x] Task 1: Model

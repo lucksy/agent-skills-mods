@@ -7,7 +7,7 @@ It runs next to agent-skills and changes nothing in it. The skills still write p
 ```
 ╭ Plan ─────────────────────────────────────────────╮
 │ 1/4 done ███████░░░░░░░░░░░░░░░░░░░░░             │
-│ ETA 23 Oct (range 19 Oct–28 Oct, slow case 28 Oct)│
+│ ETA 23 Oct (fast 19 Oct, slow 28 Oct)             │
 │   · from 4 tasks in 11 days · +2 added            │
 │                                                   │
 │ Phase 1: Foundation                               │
@@ -96,7 +96,7 @@ It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 27 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 28 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```

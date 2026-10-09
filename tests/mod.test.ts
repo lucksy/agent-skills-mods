@@ -27,6 +27,7 @@ function world(on: On, files: Record<string, string>) {
   })
   on('tool.call', () => ({ result: 'written' }) as never)
   on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
   return seen
 }
 
@@ -42,6 +43,7 @@ test('write guard refuses a new plan over unfinished tasks', async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   const denied = await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: PLAN_INDEX } as never)
   expect(JSON.stringify(denied)).toMatch(/refused to overwrite .*3 unfinished tasks/)
+  expect(JSON.stringify(denied)).toMatch(/\/progress allow-overwrite/)
 
   const ticked = TODO_TEMPLATE.replace('- [ ] Migration', '- [x] Migration')
   const allowed = await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: ticked } as never)
@@ -55,6 +57,24 @@ test('/progress allow-overwrite lets one overwrite through', async ($, on) => {
   expect(JSON.stringify(first)).not.toMatch(/refused/)
   const second = await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: PLAN_INDEX } as never)
   expect(JSON.stringify(second)).toMatch(/refused/)
+})
+
+test('the overwrite allowance lasts the turn after the command, through subagent turns', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  const write = () =>
+    $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: PLAN_INDEX } as never).then(r => JSON.stringify(r))
+  const turnEnd = (agentId?: string) =>
+    $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer', ...(agentId ? { agentId } : {}) } as never)
+
+  // The command answers on its own, so no turn ends between it and the next prompt.
+  await $.command.run(run('allow-overwrite'))
+  await turnEnd('subagent-1')
+  expect(await write()).not.toMatch(/refused/)
+
+  // Unused, it ends with the person's turn.
+  await $.command.run(run('allow-overwrite'))
+  await turnEnd()
+  expect(await write()).toMatch(/refused/)
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

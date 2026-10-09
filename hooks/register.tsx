@@ -145,10 +145,11 @@ export const register: Register = on => {
     // A refresh that fails must never change the tool's own result.
     .catch(($, e, next) => next(e))
 
-  // Edits made outside the session show after the next turn.
+  // Edits made outside the session show after the next turn. The overwrite allowance
+  // lasts the person's whole turn, so a subagent finishing inside it leaves it alone.
   on('turn.complete', async ($, e, next) => {
     await load($).catch(() => undefined)
-    await update($, allowOverwrite, () => false)
+    if (e.agentId === undefined) await update($, allowOverwrite, () => false)
     return next(e)
   })
 

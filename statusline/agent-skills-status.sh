@@ -23,7 +23,8 @@ if [[ ! -f $spec && ! -f $plan && ! -f $todo ]]; then
 fi
 
 # Same rules as hooks/lib/parse.ts:
-# - "## Task N: title" sections: done when every box in the section is ticked;
+# - "## Task N: title" sections: done when every box in the section is ticked,
+#   blocked while a task named on its **Dependencies:** line isn't done;
 # - "- [ ] Task N: title" lines (the plan's index): done when ticked;
 # - otherwise every checkbox is one item (a free-form checklist).
 # Checkpoint sections never count as tasks. Prints: done total next_id next_title
@@ -32,7 +33,7 @@ read -r done total next_id next_title < <(
   [[ -f $list ]] && awk '
     function close_task() {
       if (cur == "") return
-      n++; id[n] = cur; ttl[n] = title; isdone[n] = (unchecked == 0 && boxes > 0)
+      n++; id[n] = cur; ttl[n] = title; isdone[n] = (unchecked == 0 && boxes > 0); deps[n] = curdeps
       cur = ""
     }
     /^[ \t]*(```|~~~)/ { fence = !fence; next }
@@ -43,8 +44,14 @@ read -r done total next_id next_title < <(
       if (h ~ /^[Tt]ask[ \t]+[0-9]+[ \t]*[:.]/) {
         t = h; sub(/^[Tt]ask[ \t]+/, "", t); num = t; sub(/[^0-9].*$/, "", num)
         sub(/^[0-9]+[ \t]*[:.][ \t]*/, "", t)
-        cur = "T" num; title = t; boxes = 0; unchecked = 0
+        cur = "T" num; title = t; boxes = 0; unchecked = 0; curdeps = ""
       } else if (h ~ /^[Cc]heckpoint/) incp = 1
+      next
+    }
+    /^[ \t]*\*\*[Dd]ependencies:?\*\*/ {
+      if (cur == "") next
+      d = $0; sub(/^[ \t]*\*\*[Dd]ependencies:?\*\*:?/, "", d)
+      while (match(d, /[0-9]+/)) { curdeps = curdeps " T" substr(d, RSTART, RLENGTH); d = substr(d, RSTART + RLENGTH) }
       next
     }
     /^[ \t]*[-*+][ \t]+\[[ xX]\][ \t]/ {
@@ -63,10 +70,15 @@ read -r done total next_id next_title < <(
     END {
       close_task()
       if (n == 0) for (i = 1; i <= m; i++) { n++; id[n] = lid[i]; ttl[n] = lttl[i]; isdone[n] = ldone[i] }
+      # The next task is the first one not done whose known dependencies are all done.
+      for (i = 1; i <= n; i++) { known[id[i]] = 1; if (isdone[i]) fin[id[i]] = 1 }
       d = 0; nid = "-"; nt = "-"
       for (i = 1; i <= n; i++) {
-        if (isdone[i]) d++
-        else if (nid == "-") { nid = id[i]; nt = ttl[i] }
+        if (isdone[i]) { d++; continue }
+        if (nid != "-") continue
+        blocked = 0; k = split(deps[i], dl, " ")
+        for (j = 1; j <= k; j++) if ((dl[j] in known) && !(dl[j] in fin)) blocked = 1
+        if (!blocked) { nid = id[i]; nt = ttl[i] }
       }
       gsub(/[ \t]+/, "_", nt); if (nt == "") nt = "-"
       printf "%d %d %s %s\n", d, n, nid, nt

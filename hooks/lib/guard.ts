@@ -36,6 +36,6 @@ export function denyMessage(path: string, v: Extract<Verdict, { isAllowed: false
     'Per the planning skill, never overwrite an incomplete plan. Options:',
     'update the file in place with Edit (keep the open tasks),',
     'ask the user whether to finish or discard the old plan, or write the new plan elsewhere.',
-    'The user can allow one overwrite with /tasks allow-overwrite.',
+    'The user can allow one overwrite with /progress allow-overwrite.',
   ].join(' ')
 }
