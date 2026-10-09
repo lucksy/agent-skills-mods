@@ -81,8 +81,12 @@ export type ReportInput = ProgressInput & {
   charts: { burnup: { source: string; alt: string } | null; flow: { source: string; alt: string } | null }
 }
 
-/** Days each done task took, in the order they were done: from the task done before it, or from the start of the history. */
-export function daysPerTask(p: ReportInput): { id: string; title: string; day: string; days: number }[] {
+/**
+ * Days each done task took, in the order they were done: from the task done
+ * before it, or from the start of the history. Null for a task already done
+ * when the history starts: how long it took is not known.
+ */
+export function daysPerTask(p: ReportInput): { id: string; title: string; day: string; days: number | null }[] {
   const start = p.snapshots[0]?.day
   const done = (p.list?.tasks ?? [])
     .map(t => ({ t, d: p.dates[t.id] }))
@@ -90,7 +94,7 @@ export function daysPerTask(p: ReportInput): { id: string; title: string; day: s
     .sort((a, b) => a.d.day.localeCompare(b.d.day))
   let prev = start ?? done[0]?.d.day ?? p.today
   return done.map(({ t, d }) => {
-    const days = Math.max(0, dayDiff(prev, d.day))
+    const days = start && d.day <= start ? null : Math.max(0, dayDiff(prev, d.day))
     prev = d.day
     return { id: t.id, title: t.title, day: d.day, days }
   })
@@ -128,12 +132,12 @@ export function reportHtml(p: ReportInput): string {
     : ''
 
   const per = daysPerTask(p)
-  const most = Math.max(1, ...per.map(d => d.days))
-  const perRows = per.length
-    ? `<table class="per">${per
-        .map(d => `<tr><th>${esc(d.id)}</th><td class="t">${esc(d.title)}</td><td class="bar"><span style="width:${Math.round((d.days / most) * 100)}%"></span></td><td class="n">${d.days} d</td><td class="d">${shortDay(d.day)}</td></tr>`)
-        .join('')}</table>`
-    : '<p class="muted">No task finished yet.</p>'
+  const most = Math.max(1, ...per.map(d => d.days ?? 0))
+  const row = (d: (typeof per)[number]) =>
+    d.days === null
+      ? `<tr><th>${esc(d.id)}</th><td class="t">${esc(d.title)}</td><td class="bar muted">done before tracking</td><td class="n">—</td><td class="d">by ${shortDay(d.day)}</td></tr>`
+      : `<tr><th>${esc(d.id)}</th><td class="t">${esc(d.title)}</td><td class="bar"><span style="width:${Math.round((d.days / most) * 100)}%"></span></td><td class="n">${d.days} d</td><td class="d">${shortDay(d.day)}</td></tr>`
+  const perRows = per.length ? `<table class="per">${per.map(row).join('')}</table>` : '<p class="muted">No task finished yet.</p>'
 
   const asks = decisions(p)
   const current = list?.current ? `<p><b>Now:</b> ${esc(list.current.id)} ${esc(list.current.title)}</p>` : ''
@@ -165,11 +169,14 @@ ul{padding-left:20px}footer{margin-top:40px;font-size:.8rem;color:var(--ink2)}
 <div class="figs">${figures}</div>
 ${nowBar}
 ${current}
-${chart('Burn-up', 'scope vs done, dashed = forecast', p.charts.burnup)}
-${chart('Flow', 'tasks by state, per day', p.charts.flow)}
+${
+  p.charts.burnup || p.charts.flow
+    ? chart('Burn-up', 'scope vs done, dashed = forecast', p.charts.burnup) + chart('Flow', 'tasks by state, per day', p.charts.flow)
+    : `<section><h2>Charts</h2><p class="muted">The burn-up and flow charts need two days of history${first ? `; tracking began ${shortDay(first.day)}` : ''}.</p></section>`
+}
 <section><h2>Days per task</h2>${perRows}</section>
 <section><h2>Needs a decision</h2>${asks.length ? `<ul>${asks.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '<p class="muted">Nothing.</p>'}</section>
-<footer>Written by agent-skills-mods from ${esc(p.specFile ?? 'SPEC.md')} and the task list. Hover a chart for each day's numbers.</footer>
+<footer>Written by agent-skills-mods from ${esc(p.specFile ?? 'SPEC.md')} and the task list.${p.charts.burnup ? " Hover a chart for each day's numbers." : ''}</footer>
 </main></body></html>
 `
 }

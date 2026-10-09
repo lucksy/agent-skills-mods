@@ -397,6 +397,18 @@ test('/progress report writes one self-contained page next to the task list', as
   expect(html).toMatch(/<h2>Needs a decision<\/h2><ul><li>approve SPEC\.md<\/li>/)
 })
 
+test('a report from one day of history says why it has no charts, and never claims a task took 0 days', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T2_DONE }
+  world(on, files)
+  await $.command.run(run('report'))
+  const html = files[`${CWD}/tasks/progress-report.html`]!
+  expect(html).not.toMatch(/<svg /)
+  expect(html).toMatch(/The burn-up and flow charts need two days of history; tracking began 9 Oct\./)
+  expect(html).toMatch(/<th>T1<\/th><td class="t">Monorepo scaffold<\/td><td class="bar muted">done before tracking<\/td><td class="n">—<\/td><td class="d">by 9 Oct<\/td>/)
+  expect(html).not.toMatch(/0 d</)
+  expect(html).not.toMatch(/Hover a chart/)
+})
+
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
   const out = await $.command.run(run('next'))
