@@ -76,6 +76,7 @@ declare module 'claude-code' {
       specChoice: string | null
       gateWarned: boolean
       cpWarned: boolean
+      expanded: string | null
       specSection: string | null
       pixels: boolean
       chartReveal: number

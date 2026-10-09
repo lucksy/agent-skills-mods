@@ -1130,3 +1130,23 @@ test('the band warns, one line each, when a task runs long or scope grows', asyn
   expect((await band.find({ text: /^! T3 has run 8d, over twice the usual 3d a task$/ }))?.props).toMatchObject({ color: 'warning' })
   expect(await band.find({ text: /^! scope grew from 3 to 4 tasks \(\+33%\) since 29 Sep$/ })).toBeDefined()
 })
+
+test('the board: click a task to open its boxes, tick one there, click again to close', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  await $.command.run(run(''))
+  const board = await mountBoard($)
+  await board.press({ key: 'task-T2' })
+  expect(await board.find({ text: /^☑ Key table with hashed secret$/ })).toBeDefined()
+  expect(await board.find({ type: 'Button', key: 'box-T2-1' })).toBeDefined()
+  await board.press({ key: 'box-T2-1' })
+  expect(files[`${CWD}/tasks/todo.md`]).toContain('- [x] Migration runs on a clean database')
+  await board.press({ key: 'box-T2-2' })
+  expect(seen.toasts.at(-1)).toMatch(/^♦ Checkpoint reached: After Tasks 1-2/)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* done/)
+  // Opening another task closes the first; pressing it again closes it.
+  await board.press({ key: 'task-T3' })
+  expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeDefined()
+  await board.press({ key: 'task-T3' })
+  expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeUndefined()
+})

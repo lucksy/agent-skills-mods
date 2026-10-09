@@ -28,7 +28,7 @@ import { archiveDir, archiveReadme } from './lib/archive'
 import { diagnose, doctorText } from './lib/doctor'
 import { checkpointWarning, gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
-import { addQuestion, applyEdit, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, type TaskState } from './lib/format'
+import { addQuestion, applyEdit, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './lib/format'
 import {
   bandText,
   bar,
@@ -75,6 +75,8 @@ const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null 
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
 /** Whether the checkpoint gate already raised its toast this turn. */
 const cpWarned = atom({ plugin: 'agent-skills-mods', key: 'cpWarned' } as const, false)
+/** The task opened on the board with a click, its boxes shown to tick. */
+const expanded = atom({ plugin: 'agent-skills-mods', key: 'expanded' } as const, null as string | null)
 /** The spec area opened for reading in the spec pane (A1), by key. */
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
 /** The spec's changes since approval, shown under the spec pane after `/spec-view diff`. */
@@ -716,6 +718,24 @@ async function checkpointGate<R extends { context?: readonly string[] }>($: $, p
   }
 }
 
+/** A box ticked or unticked from the board: written to tasks/todo.md, Status line and toast as for any edit. */
+async function pressBox($: $, id: string, index: number) {
+  const p = await read($, project)
+  if (!p) return
+  const path = `${p.cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text === null) return
+  const toggled = toggleBox(text, id, index)
+  if (toggled === text) return
+  const next = keepFormat ? stampTodo(toggled, dayOf(await $.clock.now()), { changes: await readPending($, p.cwd) }) : toggled
+  await $.fs.write(path, next)
+  if (keepFormat) await $.store.set(pendingKey(p.cwd), {})
+  const before = p.list
+  const after = (await load($)).list
+  const toast = completionToast(before, after)
+  if (toast) $.ui.toast(toast)
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -1211,7 +1231,8 @@ async function showTab($: $, t: Tab) {
 }
 
 async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const open = await read($, expanded)
     const list = p?.list
     if (!list || list.total === 0) {
       return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
@@ -1266,23 +1287,34 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
             )
           ) : (
             <Box key={row.id} flexDirection="column">
-              {line(
-                row.id,
-                <Text inverse={row.id === focused}>
-                  <Text color={color[row.tone]}>{row.glyph}</Text> <Text bold={row.isCurrent}>{row.id}</Text>{' '}
-                  <Text dimColor={row.tone === 'muted' && !row.isCurrent}>{row.title}</Text>
-                </Text>,
-                <Text color={color[row.rightTone]} bold={row.isCurrent}>
-                  {row.right}
-                </Text>,
-                { isCurrent: row.isCurrent },
-              )}
-              {row.under.map(u => (
-                <Text dimColor wrap="truncate-end">
-                  {'  '}
-                  {u.text}
-                </Text>
-              ))}
+              <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                <Button key={`task-${row.id}`} label={`${row.glyph} ${row.id} ${row.title}`} plain onPress={() => void update($, expanded, x => (x === row.id ? null : row.id))}>
+                  <Text inverse={row.id === focused} bold={row.isCurrent}>
+                    <Text color={color[row.tone]}>{row.glyph}</Text> <Text bold={row.isCurrent}>{row.id}</Text>{' '}
+                    <Text dimColor={row.tone === 'muted' && !row.isCurrent}>{row.title}</Text>
+                  </Text>
+                </Button>
+                <Box flexShrink={0}>
+                  <Text color={color[row.rightTone]} bold={row.isCurrent}>
+                    {open === row.id ? '▾ ' : ''}
+                    {row.right}
+                  </Text>
+                </Box>
+              </Box>
+              {open === row.id
+                ? (list.tasks.find(t => t.id === row.id)?.boxes ?? []).map((b, bi) => (
+                    <Box key={`box-${row.id}-${bi}`} paddingLeft={2}>
+                      <Button key={`box-${row.id}-${bi}`} label={`${b.isDone ? '☑' : '☐'} ${b.text}`} plain dimColor={b.isDone} onPress={() => void pressBox($, row.id, bi)}>
+                        <Text color={b.isDone ? 'success' : undefined}>{b.isDone ? '☑' : '☐'}</Text> {b.text}
+                      </Button>
+                    </Box>
+                  ))
+                : row.under.map(u => (
+                    <Text dimColor wrap="truncate-end">
+                      {'  '}
+                      {u.text}
+                    </Text>
+                  ))}
             </Box>
           ),
         )}

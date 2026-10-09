@@ -295,3 +295,19 @@ export function driftedSpec(before: string, after: string): string | null {
   if (was.body.trim() === now.body.trim()) return null
   return setFrontMatter(after, { status: 'draft' })
 }
+
+/** Box `index` (in order, within task `id`'s section) ticked or unticked; the text unchanged when there is no such box. */
+export function toggleBox(text: string, id: string, index: number): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const sec = sections(lines).find(s => s.id === id)
+  if (!sec) return text
+  let n = -1
+  for (let i = sec.heading + 1; i < sec.end; i++) {
+    const m = /^(\s*[-*+]\s+)\[([ xX])\](.*)$/.exec(lines[i]!)
+    if (!m || ++n !== index) continue
+    lines[i] = `${m[1]}[${m[2] === ' ' ? 'x' : ' '}]${m[3]}`
+    return lines.join(eol)
+  }
+  return text
+}

@@ -9,7 +9,7 @@ import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
 import { alerts, ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
-import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask } from '../hooks/lib/format'
+import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask, toggleBox } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -920,5 +920,15 @@ describe('band alerts', () => {
       'scope grew from 3 to 4 tasks (+33%) since 29 Sep',
     ])
     expect(alerts({ list: parseTasks(TODO_T2_DONE), snapshots: [{ day: '2026-10-08', total: 4 }], today: '2026-10-09' })).toEqual([])
+  })
+})
+
+describe('ticking from the board', () => {
+  test('toggles the nth box of a task, both ways', async () => {
+    const once = toggleBox(TODO_TEMPLATE, 'T2', 1)
+    expect(once).toContain('- [x] Migration runs on a clean database')
+    expect(toggleBox(once, 'T2', 1)).toBe(TODO_TEMPLATE)
+    expect(toggleBox(TODO_TEMPLATE, 'T2', 9)).toBe(TODO_TEMPLATE)
+    expect(toggleBox(TODO_TEMPLATE, 'T9', 0)).toBe(TODO_TEMPLATE)
   })
 })
