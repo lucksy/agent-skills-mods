@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
+import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -552,5 +553,23 @@ describe('spec gate (D2)', () => {
     expect(gateWarning({ cwd: '/p', path: '/p/src/a.ts', spec: parseSpec(GOOD_SPEC), specFile: 'SPEC.md', hasPlan: true })).toBe(null)
     expect(gateWarning({ cwd: '/p', path: '/p/src/a.ts', spec: null, specFile: null, hasPlan: false })).toBe(null)
     expect(gateWarning({ cwd: '/p', path: '/p/README.md', spec: draft, specFile: 'SPEC.md', hasPlan: false })).toBe(null)
+  })
+})
+
+describe('spec pane actions (A1)', () => {
+  test('approval goes into front matter, the rest of the file untouched', async () => {
+    expect(withStatus('# Spec: X\n\nbody\n', 'approved')).toBe('---\nstatus: approved\n---\n# Spec: X\n\nbody\n')
+    expect(withStatus('---\nstatus: draft\nowner: me\n---\n# X\n', 'approved')).toBe('---\nstatus: approved\nowner: me\n---\n# X\n')
+    expect(withStatus('---\nowner: me\n---\n# X\n', 'approved')).toBe('---\nowner: me\nstatus: approved\n---\n# X\n')
+    expect(withStatus('---\r\nstatus: approved\r\n---\r\n# X\r\n', 'draft')).toBe('---\r\nstatus: draft\r\n---\r\n# X\r\n')
+    expect(parseSpec(withStatus(SPEC, 'approved')).status).toBe('approved')
+    expect(parseSpec(withStatus(GOOD_SPEC, 'draft')).title).toBe(parseSpec(GOOD_SPEC).title)
+  })
+
+  test('a windowed editor first, without --wait; a terminal editor is skipped for the default app', async () => {
+    expect(editorArgvs({ visual: 'code --wait', editor: 'vim' }, '/p/SPEC.md')[0]).toEqual(['code', '/p/SPEC.md'])
+    expect(editorArgvs({ editor: '/usr/local/bin/zed' }, '/p/SPEC.md')[0]).toEqual(['/usr/local/bin/zed', '/p/SPEC.md'])
+    expect(editorArgvs({ editor: 'nvim' }, '/p/SPEC.md')[0]).toEqual(['open', '/p/SPEC.md'])
+    expect(editorArgvs({}, '/p/SPEC.md')).toHaveLength(3)
   })
 })

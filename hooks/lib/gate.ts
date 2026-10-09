@@ -37,7 +37,7 @@ export function gateWarning(input: { cwd: string; path: string; spec: Spec | nul
     context: [
       `agent-skills-mods spec gate: ${rel} was edited while ${file} is still awaiting approval.`,
       'The spec-driven-development skill asks for the human to approve the spec before implementation starts.',
-      'Pause source changes, summarise what the spec still needs, and ask the user to approve it.',
+      'Pause source changes, summarise what the spec still needs, and ask the user to approve it (the spec pane has an Approve button, or they can say so).',
       'This is a warning only; the edit went through.',
     ].join(' '),
   }

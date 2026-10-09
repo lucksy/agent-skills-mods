@@ -30,6 +30,7 @@ import { burnupSvg, flowSvg } from './lib/svg'
 import { spinnerWord, stepOf, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { gateWarning } from './lib/gate'
+import { editorArgvs, withStatus } from './lib/specedit'
 import {
   bandText,
   bar,
@@ -64,6 +65,8 @@ const specChoice = atom({ plugin: 'agent-skills-mods', key: 'specChoice' } as co
 const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null as string | null)
 /** Whether the spec gate already warned this turn (D2): one toast per turn, not one per edit. */
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
+/** The spec area opened for reading in the spec pane (A1), by key. */
+const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -162,6 +165,32 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
       await update($, failed, f => (isFailed ? task : f === task ? null : f))
     }
   } catch {}
+}
+
+/** The spec pane's Approve and Back to draft buttons (A1): the status in front matter. */
+async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
+  const p = await read($, project)
+  if (!p?.specFile) return
+  const path = `${p.cwd}/${p.specFile}`
+  const text = await readText($, path)
+  if (text === null) return
+  await $.fs.write(path, withStatus(text, status))
+  await load($)
+  $.ui.toast(status === 'approved' ? `✓ ${p.specFile} approved · planning can start` : `○ ${p.specFile} back to draft`)
+}
+
+/** The spec pane's Open in editor button: a windowed $VISUAL/$EDITOR, else the default app. */
+async function openInEditor($: $): Promise<void> {
+  const p = await read($, project)
+  if (!p?.specFile) return
+  const path = `${p.cwd}/${p.specFile}`
+  const env = { visual: await $.env.get('VISUAL'), editor: await $.env.get('EDITOR') }
+  for (const argv of editorArgvs(env, path)) {
+    try {
+      if ((await $.process.run(argv, { timeoutMs: 10_000 })).exitCode === 0) return
+    } catch {}
+  }
+  $.ui.toast(`Could not open ${p.specFile}; it is at ${path}`)
 }
 
 /** The spec pane's picker (A3): show another spec file. */
@@ -520,8 +549,18 @@ export const register: Register = (on, options) => {
   // ----------------------------------------------------------- spec pane (A1, A3)
 
   on('ui.render', { component: 'Pane', requestId: SPEC_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const p = await read($, project)
+    const width = Math.max(20, e.props.bodyColumns)
+    const rule = (label: string, color: string = 'subtle') => (
+      <Text wrap="truncate-end">
+        <Text color={color}>── </Text>
+        <Text bold color={color}>
+          {label}
+        </Text>
+        <Text color="subtle"> {'─'.repeat(Math.max(0, width - label.length - 4))}</Text>
+      </Text>
+    )
     // The mobile app draws no Select yet; there /spec-view <id> picks.
     const picker = (() => {
       if (!p || p.specFiles.length < 2) return null
@@ -541,40 +580,80 @@ export const register: Register = (on, options) => {
     if (!spec) {
       return (
         <Box flexDirection="column">
+          {rule('SPEC', 'claude')}
           <Text>No SPEC.md yet.</Text>
           <Text dimColor>It would be at {p?.cwd ?? '.'}/SPEC.md. Run /spec to write one.</Text>
         </Box>
       )
     }
     const approval = specApproval(spec, !!p?.list)
-    const width = e.props.bodyColumns
     const colWidth = Math.max(12, Math.floor((width - 2) / 3))
     const glyph = { present: '✓', empty: '○', missing: '×' } as const
     const tone = { present: 'success', empty: 'warning', missing: 'error' } as const
-    const column = (head: string, items: string[]) => (
-      <Box flexDirection="column" width={colWidth}>
-        <Text bold>{head}</Text>
+    const present = spec.areas.filter(a => a.state === 'present').length
+    const column = (head: string, color: string, items: string[]) => (
+      <Box flexDirection="column" width={colWidth} borderStyle="round" borderColor={color} paddingX={1}>
+        <Text bold color={color}>
+          {head}
+        </Text>
         {items.length === 0 ? <Text dimColor>none</Text> : items.map(i => <Text wrap="wrap">· {i}</Text>)}
       </Box>
     )
+    const opened = await read($, specSection)
+    const area = spec.areas.find(a => a.key === opened && a.state === 'present')
+    const reader = (() => {
+      if (e.surface === 'mobile') return null
+      const readable = spec.areas.filter(a => a.state === 'present')
+      if (readable.length === 0) return null
+      const { Select, Markdown } = $.ui.resolve(e)
+      return (
+        <Box flexDirection="column">
+          {rule('Read a section')}
+          <Select
+            key="spec-section"
+            label="Section"
+            options={readable.map(a => ({ value: a.key, label: a.label }))}
+            value={area?.key}
+            onSelect={(key: string) => void update($, specSection, () => key)}
+          />
+          {area && (
+            <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+              <Markdown key="spec-section-body" text={area.body} />
+            </Box>
+          )}
+        </Box>
+      )
+    })()
     return (
       <Box flexDirection="column" gap={1}>
         {picker}
         <Box flexDirection="column">
           <Text bold wrap="truncate-end">
+            <Text color="claude">SPEC </Text>
             {spec.title ?? p?.specFile ?? 'SPEC.md'}
             {spec.title && p?.specFile && p.specFile !== 'SPEC.md' ? <Text dimColor> ({p.specFile})</Text> : ''}
           </Text>
-          <Text color={approval === 'approved' ? 'success' : 'permission'}>
-            {approval === 'approved' ? '✓ approved' : '♦ awaiting approval'}
-            <Text dimColor>{spec.status ? ' (front matter)' : approval === 'approved' ? ' (a plan exists)' : ''}</Text>
+          <Text>
+            <Text color={approval === 'approved' ? 'success' : 'permission'} bold>
+              {approval === 'approved' ? '✓ approved' : '♦ awaiting approval'}
+            </Text>
+            <Text dimColor>{spec.status ? ' · front matter' : approval === 'approved' ? ' · a plan exists' : ' · review, then approve'}</Text>
           </Text>
+          <Box flexDirection="row" gap={1}>
+            {approval === 'approved' ? (
+              spec.status === 'approved' && <Button key="spec-draft" label="Back to draft" hotkey="d" dimColor onPress={() => void setApproval($, 'draft')} />
+            ) : (
+              <Button key="spec-approve" label="Approve" hotkey="a" variant="primary" onPress={() => void setApproval($, 'approved')} />
+            )}
+            <Button key="spec-edit" label="Open in editor" hotkey="e" onPress={() => void openInEditor($)} />
+          </Box>
         </Box>
         <Box flexDirection="column">
+          {rule(`Core areas ${present}/${spec.areas.length}`, present === spec.areas.length ? 'success' : 'warning')}
           {spec.areas.map(a => (
             <Text wrap="truncate-end">
               {a.hint ? <Text color="warning">!</Text> : <Text color={tone[a.state]}>{glyph[a.state]}</Text>}{' '}
-              {a.label.padEnd(18)}
+              <Text bold={a.key === area?.key}>{a.label.padEnd(18)}</Text>
               {a.hint ? (
                 <Text color="warning">{a.hint}</Text>
               ) : (
@@ -583,19 +662,25 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
         </Box>
-        <Box flexDirection="row" gap={1}>
-          {column('Always', spec.boundaries.always)}
-          {column('Ask first', spec.boundaries.ask)}
-          {column('Never', spec.boundaries.never)}
+        <Box flexDirection="column">
+          {rule('Boundaries')}
+          <Box flexDirection="row" gap={1}>
+            {column('Always', 'success', spec.boundaries.always)}
+            {column('Ask first', 'warning', spec.boundaries.ask)}
+            {column('Never', 'error', spec.boundaries.never)}
+          </Box>
         </Box>
         {spec.openQuestions.length > 0 && (
           <Box flexDirection="column">
-            <Text bold>Open questions</Text>
+            {rule(`Open questions ${spec.openQuestions.length}`, 'permission')}
             {spec.openQuestions.map(q => (
-              <Text wrap="wrap">♦ {q}</Text>
+              <Text wrap="wrap">
+                <Text color="permission">♦</Text> {q}
+              </Text>
             ))}
           </Box>
         )}
+        {reader}
       </Box>
     )
   })

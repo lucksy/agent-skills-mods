@@ -381,7 +381,7 @@ test('module specs: a picker in the spec pane, /spec-view <id>, and the one the 
   expect(await pane.find({ text: /Should keys expire by default/ })).toBeDefined()
 
   await pane.select({ key: 'spec-file', value: 'SPEC-limits.md' })
-  expect(await pane.find({ text: /^Rate limits \(SPEC-limits\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /SPEC Rate limits \(SPEC-limits\.md\)/ })).toBeDefined()
   expect(await pane.find({ text: /Should keys expire/ })).toBeUndefined()
 
   expect(JSON.stringify(await $.command.run({ command: 'spec-view', args: 'nope', origin: { kind: 'composer' } } as never))).toMatch(
@@ -393,7 +393,7 @@ test('module specs: a picker in the spec pane, /spec-view <id>, and the one the 
   // The agent writes a third spec: the pane shows that one.
   files[`${CWD}/SPEC-billing.md`] = WEAK_SPEC
   await $.tool.call({ tool: 'Write', file_path: `${CWD}/SPEC-billing.md`, content: WEAK_SPEC } as never)
-  expect(await pane.find({ text: /^Webhooks \(SPEC-billing\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /SPEC Webhooks \(SPEC-billing\.md\)/ })).toBeDefined()
   expect(seen.opened).toContain('asm-spec')
 })
 
@@ -654,3 +654,51 @@ test('with specGate on, a source edit before approval warns once a turn and neve
   await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
   expect(seen.toasts).toHaveLength(2)
 })
+
+const mountSpec = ($: Parameters<TestBody>[0], surface: 'terminal' | 'desktop' = 'terminal') =>
+  $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface,
+    component: 'Pane',
+    requestId: 'asm-spec',
+    props: { title: 'x', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 60 } } as never,
+  })
+
+test('the spec pane approves the spec in front matter, and can put it back to draft', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC }
+  const seen = world(on, files)
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  expect(await pane.find({ text: /♦ awaiting approval/ })).toBeDefined()
+  expect(await pane.find({ type: 'Button', key: 'spec-draft' })).toBeUndefined()
+
+  await pane.press({ key: 'spec-approve' })
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\n---\n# Spec: API keys/)
+  expect(seen.toasts).toContain('✓ SPEC.md approved · planning can start')
+  expect(await pane.find({ text: /✓ approved/ })).toBeDefined()
+  expect(JSON.stringify(seen.status.at(-1))).toMatch(/spec ✓ approved/)
+
+  await pane.press({ key: 'spec-draft' })
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: draft\n---/)
+  expect(await pane.find({ type: 'Button', key: 'spec-approve' })).toBeDefined()
+})
+
+test('Open in editor uses the default app when $EDITOR is a terminal editor', async ($, on) => {
+  const seen = world(on, { [`${CWD}/SPEC.md`]: SPEC })
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  await pane.press({ key: 'spec-edit' })
+  expect(seen.launched).toEqual([`${CWD}/SPEC.md`])
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the spec pane reads a section on ${surface}`, async ($, on) => {
+    world(on, { [`${CWD}/SPEC.md`]: GOOD_SPEC })
+    await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+    const pane = await mountSpec($, surface)
+    expect(await pane.find({ type: 'Markdown' })).toBeUndefined()
+    await pane.select({ key: 'spec-section', value: 'commands' })
+    const md = await pane.find({ type: 'Markdown', key: 'spec-section-body' })
+    expect(String((md?.props as { text: string }).text)).toMatch(/pnpm/)
+  })
+}
