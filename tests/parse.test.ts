@@ -4,6 +4,8 @@ import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/par
 import { checkOverwrite } from '../hooks/lib/guard'
 import { archiveDir } from '../hooks/lib/archive'
 import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
+import { criticalPath, graphLines } from '../hooks/lib/graph'
+import { plain } from '../hooks/lib/timeline'
 import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
@@ -930,5 +932,22 @@ describe('ticking from the board', () => {
     expect(toggleBox(once, 'T2', 1)).toBe(TODO_TEMPLATE)
     expect(toggleBox(TODO_TEMPLATE, 'T2', 9)).toBe(TODO_TEMPLATE)
     expect(toggleBox(TODO_TEMPLATE, 'T9', 0)).toBe(TODO_TEMPLATE)
+  })
+})
+
+describe('dependency graph', () => {
+  test('a tree from the tasks that wait on nothing; a second parent points back; the critical path', async () => {
+    const todo = ['## Task 1: A', '- [x] a', '## Task 2: B', '- [ ] b', '**Dependencies:** T1', '## Task 3: C', '- [ ] c', '**Dependencies:** T1', '## Task 4: D', '- [ ] d', '**Dependencies:** T2, T3', '## Task 5: E', '- [ ] e'].join('\n')
+    const list = parseTasks(todo)
+    expect(graphLines(list).map(plain)).toEqual([
+      '✓ T1 A',
+      '├─▶ ◐ T2 B',
+      '│   └─▶ ◌ T4 D',
+      '└─▶ ○ T3 C',
+      '    └─▶ T4 (drawn above)',
+      '',
+      '○ T5 E',
+    ])
+    expect(criticalPath(list)).toEqual(['T2', 'T4'])
   })
 })

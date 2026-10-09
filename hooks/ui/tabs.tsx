@@ -1,14 +1,14 @@
-// The plan pane's tabs (surface module): `[ Timeline ] [ Charts ] [ Tasks ]`,
+// The plan pane's tabs (surface module): `[ Timeline ] [ Charts ] [ Tasks ] [ Graph ]`,
 // switched with ←/→ once the row has the focus, or by a click on a tab. The
 // choice goes to the hooks module, which keeps it and redraws the pane.
 
 import type { ClientModule } from 'claude-code'
 
-export const TABS = ['timeline', 'charts', 'tasks'] as const
+export const TABS = ['timeline', 'charts', 'tasks', 'graph'] as const
 export type Tab = (typeof TABS)[number]
 export type TabsProps = { active: Tab }
 
-const LABEL: Record<Tab, string> = { timeline: 'Timeline', charts: 'Charts', tasks: 'Tasks' }
+const LABEL: Record<Tab, string> = { timeline: 'Timeline', charts: 'Charts', tasks: 'Tasks', graph: 'Graph' }
 
 /** Each tab's columns in the row, for a click: `[ Timeline ]` then one space. */
 export function tabAt(x: number): Tab | null {
@@ -28,7 +28,7 @@ const Tabs: ClientModule<TabsProps, { ready: true }> = (props, surface) => {
     surface.onKey(k => {
       const i = TABS.indexOf(current.get(surface) ?? 'tasks')
       if (k.key === 'left' || k.key === 'right') surface.post({ tab: TABS[(i + (k.key === 'left' ? TABS.length - 1 : 1)) % TABS.length]! })
-      else if (k.key === '1' || k.key === '2' || k.key === '3') surface.post({ tab: TABS[Number(k.key) - 1]! })
+      else if (/^[1-4]$/.test(k.key)) surface.post({ tab: TABS[Number(k.key) - 1]! })
     })
     surface.onPointer(p => {
       if (p.type !== 'down') return

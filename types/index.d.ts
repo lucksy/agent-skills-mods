@@ -80,7 +80,7 @@ declare module 'claude-code' {
       specSection: string | null
       pixels: boolean
       chartReveal: number
-      tab: 'timeline' | 'charts' | 'tasks'
+      tab: 'timeline' | 'charts' | 'tasks' | 'graph'
       specDiff: { file: string; since: string; diff: string } | null
     }
   }

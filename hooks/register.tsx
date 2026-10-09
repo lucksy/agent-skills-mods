@@ -18,6 +18,7 @@ import {
 import { historyFromLogs, logsDir, mentions } from './lib/logs'
 import { burnup, chartLegends, flow, revealCells, throughput } from './lib/chart'
 import { timeline, type Seg } from './lib/timeline'
+import { criticalPath, graphLines } from './lib/graph'
 import { TABS, type Tab } from './ui/tabs'
 import { digestText, reportHtml, sparkline, standupText } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
@@ -752,8 +753,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills plan pane: tasks, or timeline | charts. Also next | digest | report | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|next|digest|report|history|format|allow-overwrite|refresh]',
+      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | history | format | allow-overwrite | refresh',
+      argumentHint: '[timeline|charts|graph|next|digest|report|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -827,6 +828,11 @@ export const register: Register = (on, options) => {
     if (taskVerb) return reply(await setTask($, taskVerb[1]!.toLowerCase(), taskVerb[2]!, taskVerb[3]!.replace(/^["']|["']$/g, '').trim()))
     if (arg === 'doctor' || arg === 'doctor fix') return reply(await doctor($, arg.endsWith('fix')))
     if (arg === 'archive' || arg === 'archive force') return reply(await archivePlan($, arg.endsWith('force')))
+    if (arg === 'graph') {
+      await showTab($, 'graph')
+      await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+      return reply(p.list ? `Dependency graph opened: critical path ${criticalPath(p.list).join(' → ') || 'none, every task is done'}.` : nextText(null, p.plan))
+    }
     if (arg === 'timeline') {
       await showTab($, 'timeline')
       await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
@@ -848,7 +854,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1201,7 +1207,14 @@ async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
   const { Box, Button, Text } = $.ui.resolve(e) as any
   const p = await read($, project)
   const active: Tab = forced ?? (await read($, tab))
-  const view = active === 'timeline' ? await timelineView($, e, p) : active === 'charts' ? await chartsView($, e, p) : await tasksView($, e, p)
+  const view =
+    active === 'timeline'
+      ? await timelineView($, e, p)
+      : active === 'charts'
+        ? await chartsView($, e, p)
+        : active === 'graph'
+          ? await graphView($, e, p)
+          : await tasksView($, e, p)
   if (forced) return view
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
   const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
@@ -1469,6 +1482,47 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
           </Text>
         </Text>
       )}
+    </Box>
+  )
+}
+
+async function graphView($: $, e: PaneEvent, p: AsmProject | null) {
+  const { Box, Text } = $.ui.resolve(e) as any
+  const list = p?.list
+  if (!list || list.total === 0) return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
+  const color = { text: undefined, strong: undefined, muted: 'subtle', done: 'success', run: 'warning', bad: 'error', needsYou: 'permission', accent: 'claude' } as const
+  const line = (l: Seg[], i: number) => (
+    <Text key={i} wrap="truncate-end">
+      {l.length === 0
+        ? ' '
+        : l.map(seg => (
+            <Text color={color[seg.tone]} bold={seg.tone === 'strong'}>
+              {seg.text}
+            </Text>
+          ))}
+    </Text>
+  )
+  const path = criticalPath(list)
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text>
+        <Text bold color="claude">
+          dependencies
+        </Text>
+        <Text dimColor> · each arrow points to a task that waits on the one above</Text>
+      </Text>
+      <Box flexDirection="column">{graphLines(list).map(line)}</Box>
+      {path.length > 0 && (
+        <Text wrap="wrap">
+          <Text bold>Critical path </Text>
+          <Text color="warning">{path.join(' → ')}</Text>
+          <Text dimColor>
+            {' '}
+            · {path.length} unfinished task{path.length === 1 ? '' : 's'} in a row bound the finish date
+          </Text>
+        </Text>
+      )}
+      <Text dimColor>✓ done ◐ current ○ to do ◌ waits ■ blocked</Text>
     </Box>
   )
 }

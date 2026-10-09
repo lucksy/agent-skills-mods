@@ -1150,3 +1150,14 @@ test('the board: click a task to open its boxes, tick one there, click again to 
   await board.press({ key: 'task-T3' })
   expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeUndefined()
 })
+
+test('/progress graph opens the Graph tab with the tree and the critical path', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  const out = await $.command.run(run('graph'))
+  expect(out.text).toBe('Dependency graph opened: critical path T2 → T3.')
+  const pane = await mountBoard($)
+  expect(await pane.find({ text: /^\[ Graph \]$/, in: 'tabs' })).toBeDefined()
+  expect(await pane.find({ text: /^✓ T1 Monorepo scaffold$/ })).toBeDefined()
+  expect(await pane.find({ text: /^├─▶ ◐ T2 Prisma schema for keys$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Critical path T2 → T3 · 2 unfinished tasks in a row bound the finish date$/ })).toBeDefined()
+})
