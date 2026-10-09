@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
+import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
-import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
+import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
   doneDaysFromGit,
@@ -42,13 +42,34 @@ describe('parseTasks', () => {
     expect(list.kind).toBe('tasks')
     expect(list.total).toBe(4)
     expect(list.done).toBe(1)
-    expect(list.tasks.map(t => t.status)).toEqual(['done', 'next', 'blocked', 'todo'])
+    expect(list.tasks.map(t => t.status)).toEqual(['done', 'next', 'waiting', 'todo'])
     expect(list.current?.id).toBe('T2')
     expect(list.tasks[2]?.deps).toEqual(['T2'])
     expect(list.tasks[3]?.deps).toEqual(['T1'])
     expect(list.tasks[1]?.checkpoint?.title).toBe('After Tasks 1-2')
     expect(list.tasks[0]?.phase).toBe('Phase 1: Foundation')
     expect(list.tasks[2]?.phase).toBe('Phase 2: Core')
+  })
+
+  test('waiting is normal; blocked means an open question names the task', async () => {
+    const list = withBlockers(parseTasks(TODO_TEMPLATE), [
+      { file: 'tasks/plan.md', text: 'Upstash or self-hosted Redis for T4?' },
+      { file: 'tasks/plan.md', text: 'Which region?' },
+      { file: 'SPEC.md', text: 'Should Task 1 have used pnpm?' },
+    ])
+    expect(list.tasks.map(t => `${t.id}:${t.status}`)).toEqual(['T1:done', 'T2:next', 'T3:waiting', 'T4:blocked'])
+    expect(list.tasks[3]!.blockedBy).toBe('tasks/plan.md: Upstash or self-hosted Redis for T4?')
+    // Blocking the current task moves "current" on.
+    const t2 = withBlockers(parseTasks(TODO_TEMPLATE), [{ file: 'tasks/plan.md', text: 'Is T2 still needed?' }])
+    expect(t2.current?.id).toBe('T4')
+    const rows = timelineRows(list)
+    expect(rows.filter(r => r.kind === 'task').map(r => (r.kind === 'task' ? `${r.glyph} ${r.id} ${r.detail}` : ''))).toEqual([
+      '✓ T1 3/3',
+      '● T2 1/3',
+      '◌ T3 waits on T2',
+      '■ T4 question: Upstash or self-hosted Redis for T4?',
+    ])
+    expect(snapshotOf('2026-10-09', list)).toEqual({ day: '2026-10-09', done: 1, total: 4, doing: 1, blocked: 1 })
   })
 
   test('plan index: - [ ] Task N lines under phases', async () => {
@@ -159,7 +180,7 @@ describe('history from git (F5)', () => {
     const commits = parseLog(log)
     expect(commits.length).toBe(6)
     expect(snapshotsFromGit(commits, splitBatch(cat), current)).toEqual([
-      { day: '2026-09-29', done: 0, total: 4, doing: 0, blocked: 3 },
+      { day: '2026-09-29', done: 0, total: 4, doing: 0, blocked: 0 },
       { day: '2026-10-03', done: 2, total: 4, doing: 0, blocked: 0 },
       { day: '2026-10-08', done: 3, total: 4, doing: 0, blocked: 0 },
     ])
@@ -473,7 +494,7 @@ describe('views', () => {
       'tasks/todo.md: 1/4 tasks done.',
       '- current: T2 Prisma schema for keys (Phase 1: Foundation); open: Migration runs on a clean database; Tests pass: pnpm test keys',
       '- checkpoint after T2: After Tasks 1-2 (All tests pass; Review with human before proceeding)',
-      '- blocked: T3 Issue and revoke keys, chain T3 ← T2',
+      '- waiting: T3 Issue and revoke keys, chain T3 ← T2',
       '- not started: T4 Rate limit per key',
       '- open question (tasks/plan.md): Upstash or self-hosted Redis?',
     ])

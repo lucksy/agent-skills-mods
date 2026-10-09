@@ -3,7 +3,10 @@
 
 import type { TaskList } from './parse'
 
-/** One day of a task list. `doing` and `blocked` are absent in snapshots stored before 0.5.0. */
+/**
+ * One day of a task list. `doing` and `blocked` are absent in snapshots stored
+ * before 0.5.0; before 0.7.1 `blocked` also counted tasks waiting on another.
+ */
 export type Snapshot = { day: string; done: number; total: number; doing?: number; blocked?: number }
 
 export type Forecast =
@@ -33,8 +36,8 @@ export function snapshotOf(day: string, list: TaskList): Snapshot {
     day,
     done: list.done,
     total: list.total,
-    doing: open.filter(t => t.boxes.some(b => b.isDone)).length,
-    blocked: open.filter(t => t.status === 'blocked' && !t.boxes.some(b => b.isDone)).length,
+    doing: open.filter(t => t.status !== 'blocked' && t.boxes.some(b => b.isDone)).length,
+    blocked: open.filter(t => t.status === 'blocked').length,
   }
 }
 

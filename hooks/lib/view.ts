@@ -5,7 +5,7 @@ import { taskKey, type Spec, type Task, type TaskList, type PlanDoc } from './pa
 import { shortDay, type Forecast } from './forecast'
 import type { Backfill } from './history'
 
-export const GLYPH = { done: '✓', next: '●', todo: '○', blocked: '◌', needsYou: '♦', failed: '×' } as const
+export const GLYPH = { done: '✓', next: '●', todo: '○', waiting: '◌', blocked: '■', needsYou: '♦', failed: '×' } as const
 
 export type Stage = 'spec' | 'plan' | 'build' | 'test' | 'review' | 'ship'
 
@@ -79,9 +79,9 @@ export function nextText(list: TaskList | null, plan: PlanDoc | null): string {
   if (list.total === 0) return 'tasks/todo.md has no tasks yet.'
   const t = list.current
   if (!t) {
-    const blocked = list.tasks.filter(x => x.status === 'blocked')
-    return blocked.length
-      ? `Nothing unblocked. Blocked: ${blocked.map(b => `${b.id} (waits on ${b.deps.join(', ')})`).join('; ')}.`
+    const open = list.tasks.filter(x => x.status === 'blocked' || x.status === 'waiting')
+    return open.length
+      ? `Nothing can start. ${open.map(b => (b.status === 'blocked' ? `${b.id} blocked by ${b.blockedBy}` : `${b.id} waits on ${b.deps.join(', ')}`)).join('; ')}.`
       : `All ${list.total} tasks are done. Next stage: review.`
   }
   const lines = [`Next: ${t.id} ${t.title}${t.phase ? `  (${t.phase})` : ''}`]
@@ -151,7 +151,9 @@ export function timelineRows(list: TaskList, opts: { dates?: Record<string, Task
           ? GLYPH.next
           : t.status === 'blocked'
             ? GLYPH.blocked
-            : GLYPH.todo
+            : t.status === 'waiting'
+              ? GLYPH.waiting
+              : GLYPH.todo
     const left = remaining(t)
     const progress = t.boxes.length > 1 ? `${t.boxes.length - left}/${t.boxes.length}` : ''
     const detail = isFailed
@@ -159,8 +161,10 @@ export function timelineRows(list: TaskList, opts: { dates?: Record<string, Task
       : t.status === 'done'
         ? `${t.boxes.length}/${t.boxes.length}`
         : t.status === 'blocked'
-          ? `waits on ${t.deps.join(', ')}`
-          : progress
+          ? `question: ${t.blockedBy?.replace(/^[^:]+: /, '') ?? ''}`
+          : t.status === 'waiting'
+            ? `waits on ${t.deps.join(', ')}`
+            : progress
     rows.push({ kind: 'task', glyph, id: t.id, title: t.title, detail, status: isFailed ? 'failed' : t.status, date })
     if (t.checkpoint) {
       const isDone = t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone)
@@ -257,7 +261,7 @@ export function completionToast(before: TaskList | null, after: TaskList | null)
   return `${GLYPH.done} ${names} done${title}${next}`
 }
 
-/** `T6 ← T5 ← T4`: from a blocked task down its undone dependencies to one that can start. */
+/** `T6 ← T5 ← T4`: from a waiting task down its undone dependencies to one that can start. */
 export function blockChain(list: TaskList, t: Task): string {
   const byId = new Map(list.tasks.map(x => [x.id, x]))
   const chain = [t.id]
@@ -266,7 +270,7 @@ export function blockChain(list: TaskList, t: Task): string {
     const dep: Task | undefined = cur.deps.map(d => byId.get(d)).find(d => d && d.status !== 'done' && !chain.includes(d.id))
     if (!dep) break
     chain.push(dep.id)
-    cur = dep.status === 'blocked' ? dep : undefined
+    cur = dep.status === 'waiting' ? dep : undefined
   }
   return chain.join(' ← ')
 }
@@ -316,7 +320,10 @@ export function progressBrief(p: BriefInput): string | undefined {
         if (t.checkpoint) out.push(`- checkpoint after ${t.id}: ${t.checkpoint.title} (${t.checkpoint.items.map(b => b.text).join('; ')})`)
       } else if (list.done === list.total) out.push('- all tasks done; next stage is review.')
       for (const b of list.tasks.filter(x => x.status === 'blocked').slice(0, MAX_ROWS)) {
-        out.push(`- blocked: ${b.id} ${b.title}, chain ${blockChain(list, b)}`)
+        out.push(`- blocked: ${b.id} ${b.title}, by open question (${b.blockedBy})`)
+      }
+      for (const b of list.tasks.filter(x => x.status === 'waiting').slice(0, MAX_ROWS)) {
+        out.push(`- waiting: ${b.id} ${b.title}, chain ${blockChain(list, b)}`)
       }
       const todo = list.tasks.filter(x => x.status === 'todo')
       if (todo.length) {

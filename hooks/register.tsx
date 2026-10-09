@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, taskKey, type TaskList } from './lib/parse'
+import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from './lib/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './lib/forecast'
 import {
   CAT_ARGV,
@@ -84,7 +84,9 @@ async function readText($: $, path: string): Promise<string | null> {
 
 /** What the history sources found for a project, kept apart and stored once (F5). */
 type Sources = { git: SourceData; messages: SourceData; logs: SourceData; logsChoice: LogsChoice; gitNote: string | null }
-const sourcesKey = (cwd: string) => `sources:v2:${cwd}`
+// v4: from 0.7.1 a task waiting on another no longer counts as blocked, and no commits
+// yet is told apart from no repository; projects seen by 0.7.0 gather again once.
+const sourcesKey = (cwd: string) => `sources:v4:${cwd}`
 
 /**
  * Git's two sources, once per project: the committed copies of the task list
@@ -94,7 +96,7 @@ async function fromGit($: $, file: string, list: TaskList): Promise<Pick<Sources
   const none = (gitNote: string) => ({ git: emptySource(), messages: emptySource(), gitNote })
   try {
     const log = await $.process.run(logArgv(file), { timeoutMs: 20_000 })
-    if (log.exitCode !== 0) return none('not a git repository')
+    if (log.exitCode !== 0) return none(/does not have any commits/.test(log.stderr) ? 'no commits yet' : 'not a git repository')
     const commits = parseLog(log.stdout)
     let git = emptySource()
     if (commits.length > 0) {
@@ -185,7 +187,7 @@ async function openFile($: $, path: string): Promise<boolean> {
 const backfilling = new Set<string>()
 
 /** Re-reads the three files, records today's snapshot and updates the status entry. */
-async function load($: $): Promise<AsmProject> {
+async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProject> {
   const cwd = await $.session.cwd()
   const names = await $.fs.list(cwd).then(
     entries => entries.filter(f => f.kind === 'file').map(f => f.name),
@@ -203,7 +205,11 @@ async function load($: $): Promise<AsmProject> {
   const plan = planText === null ? null : parsePlan(planText)
   // The task list lives in todo.md; a plan.md alone still carries the phase index.
   const listSource = todoText ?? planText
-  const list = listSource === null ? null : parseTasks(listSource)
+  const questions = [
+    ...(plan?.openQuestions ?? []).map(text => ({ file: 'tasks/plan.md', text })),
+    ...(spec?.openQuestions ?? []).map(text => ({ file: specFile ?? 'SPEC.md', text })),
+  ]
+  const list = listSource === null ? null : withBlockers(parseTasks(listSource), questions)
 
   const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
   let fc: AsmProject['forecast'] = null
@@ -235,12 +241,18 @@ async function load($: $): Promise<AsmProject> {
     const combined = combine(seen, [src.git, logs], src.messages)
     snapshots = combined.snaps
     fc = forecast(snapshots, now)
-    if (sources && isFirst) {
-      // Ask about the session logs only when git left too little for charts or a forecast.
+    // Ask about the session logs only when git left too little for charts or a forecast:
+    // on first sight, and again at a session's start while they had nothing to read,
+    // since the session that wrote the plan logs its edits only after the plugin saw them.
+    const recheck = opts.recheckLogs === true && sources?.logsChoice === 'empty'
+    if (sources && (isFirst || recheck)) {
       const thin = new Set(snapshots.map(s => s.day)).size < 2 || fc.kind === 'not-enough'
       const hasLogs = thin && (await readLogs($, cwd, listFile!).catch(() => [])).length > 0
-      sources = { ...sources, logsChoice: thin ? (hasLogs ? 'ask' : 'empty') : 'unasked' }
-      await $.store.set(sourcesKey(cwd), sources)
+      const logsChoice: LogsChoice = thin ? (hasLogs ? 'ask' : 'empty') : isFirst ? 'unasked' : 'empty'
+      if (isFirst || logsChoice !== sources.logsChoice) {
+        sources = { ...sources, logsChoice }
+        await $.store.set(sourcesKey(cwd), sources)
+      }
     }
     // A task first seen done today is dated today, unless a source saw it done earlier.
     const other = earliestDays(src.git.doneDays, logs.doneDays, src.messages.doneDays)
@@ -290,7 +302,7 @@ export const register: Register = (on, options) => {
       description: 'Open SPEC.md, or a module spec SPEC-<id>.md, as a pane with its six core areas',
       argumentHint: '[module id]',
     })
-    await load($).catch(() => undefined)
+    await load($, { recheckLogs: true }).catch(() => undefined)
     return next(e)
   })
 
@@ -576,7 +588,7 @@ export const register: Register = (on, options) => {
     const rows = timelineRows(list, { dates: p?.dates ?? {}, failed: failedTask })
     const dated = rows.some(r => r.date)
     const date = (d: string) => (dated ? <Text dimColor>{d.padEnd(8)}</Text> : '')
-    const tone = { done: 'success', next: 'warning', blocked: 'error', todo: 'subtle', failed: 'error' } as const
+    const tone = { done: 'success', next: 'warning', waiting: 'subtle', blocked: 'error', todo: 'subtle', failed: 'error' } as const
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
@@ -619,7 +631,7 @@ export const register: Register = (on, options) => {
             ),
           )}
         </Box>
-        <Text dimColor>✓ done ● next ○ to do ◌ waits on a dependency ♦ needs you × tests failed{dated ? ' · ≈ expected' : ''}</Text>
+        <Text dimColor>✓ done ● next ○ to do ◌ waits on another task ■ blocked by a question ♦ needs you × tests failed{dated ? ' · ≈ expected' : ''}</Text>
       </Box>
     )
   })

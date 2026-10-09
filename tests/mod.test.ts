@@ -6,7 +6,7 @@ import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DON
 const CWD = '/p'
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string; messages?: string } | 'no-repo'
+type Git = { log: string; cat: string; messages?: string } | 'no-repo' | 'no-commits'
 
 function world(
   on: On,
@@ -32,12 +32,15 @@ function world(
     }
     seen.git.push(e.argv.slice(0, 2).join(' '))
     if (git === 'no-repo') return out(128, '')
+    if (git === 'no-commits') return { value: { ...out(128, '').value, stderr: "fatal: your current branch 'main' does not have any commits yet" } }
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.cat)
   })
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
   mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home' : undefined }))
   on('fs.exists', (_$, e) => ({ value: e.path in files }))
   on('fs.write', (_$, e) => {
@@ -173,7 +176,7 @@ test('the system prompt carries the parsed progress as its last section, only wh
   expect(last.id).toBe('agent-skills-mods:progress')
   expect(last.scope).toBe('session')
   expect(last.text).toMatch(/tasks\/todo\.md: 1\/4 tasks done/)
-  expect(last.text).toMatch(/blocked: T3 Issue and revoke keys, chain T3 ← T2/)
+  expect(last.text).toMatch(/waiting: T3 Issue and revoke keys, chain T3 ← T2/)
 })
 
 test('no plan, no section', async ($, on) => {
@@ -474,6 +477,23 @@ test('too little git history: the band asks about session logs, and a yes adds t
 
   expect(JSON.stringify(await $.command.run(run('history logs off')))).toMatch(/Session logs are off/)
   expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/History tracked from 9 Oct\./)
+})
+
+test('a new project: no logs when the plan is first written, the question at the next session start', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T2_DONE }
+  world(on, files)
+  await $.command.run(run('refresh'))
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/session logs: no session of this project writes/)
+  // The session that wrote the plan has logged its edits since.
+  files[`${LOGS}/s1.jsonl`] = logEdit('2026-10-09T08:00:00Z', TODO_TEMPLATE, '- [ ] Migration', '- [x] Migration')
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/session logs: not read yet: the band above the prompt asks/)
+})
+
+test('a repository with no commits yet says so', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, 'no-commits')
+  await $.command.run(run('refresh'))
+  expect(JSON.stringify(await $.command.run(run('history')))).toMatch(/History tracked from 9 Oct: no commits yet\./)
 })
 
 test('a No keeps the logs unread and the question away', async ($, on) => {

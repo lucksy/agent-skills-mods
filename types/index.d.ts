@@ -9,7 +9,8 @@ export type AsmTask = {
   phase: string | null
   boxes: AsmBox[]
   deps: string[]
-  status: 'done' | 'next' | 'todo' | 'blocked'
+  status: 'done' | 'next' | 'todo' | 'waiting' | 'blocked'
+  blockedBy?: string
   checkpoint: AsmCheckpoint | null
 }
 export type AsmTaskList = {

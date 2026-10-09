@@ -3,7 +3,11 @@
 
 export type Box = { text: string; isDone: boolean }
 
-export type TaskStatus = 'done' | 'next' | 'todo' | 'blocked'
+/**
+ * `waiting`: a task it depends on is not done yet, the normal state of a plan
+ * under way. `blocked`: an open question names it, so it needs a decision.
+ */
+export type TaskStatus = 'done' | 'next' | 'todo' | 'waiting' | 'blocked'
 
 export type Task = {
   /** `T3`, or `#5` for an item of a plain checklist. */
@@ -14,6 +18,8 @@ export type Task = {
   /** Ids of the tasks this one waits on. */
   deps: string[]
   status: TaskStatus
+  /** The open question that blocks it, with the file it is in (withBlockers). */
+  blockedBy?: string
   /** Set on the last task before a checkpoint. */
   checkpoint: Checkpoint | null
 }
@@ -30,7 +36,7 @@ export type TaskList = {
   checkpoints: Checkpoint[]
   done: number
   total: number
-  /** The first task that is neither done nor blocked. */
+  /** The first task that is neither done, waiting nor blocked. */
   current: Task | null
 }
 
@@ -178,13 +184,30 @@ function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind']):
   let current: Task | null = null
   for (const t of tasks) {
     if (doneIds.has(t.id)) t.status = 'done'
-    else if (t.deps.some(d => known.has(d) && !doneIds.has(d))) t.status = 'blocked'
+    else if (t.blockedBy) t.status = 'blocked'
+    else if (t.deps.some(d => known.has(d) && !doneIds.has(d))) t.status = 'waiting'
     else if (current === null) {
       t.status = 'next'
       current = t
     } else t.status = 'todo'
   }
   return { kind, tasks, checkpoints, done: doneIds.size, total: tasks.length, current }
+}
+
+/** `T6`, `Task 6`, `task #6` named in a question. */
+const TASK_REF = /\b(?:T(\d+)|[Tt]ask\s*#?(\d+))\b/g
+
+/**
+ * The list with every open task an open question names marked blocked, and
+ * the current task moved past them. A question that names no task blocks
+ * nothing; it still waits for a decision.
+ */
+export function withBlockers(list: TaskList, questions: { file: string; text: string }[]): TaskList {
+  const by = new Map<string, string>()
+  for (const q of questions) for (const m of q.text.matchAll(TASK_REF)) by.set(`T${m[1] ?? m[2]}`, `${q.file}: ${q.text}`)
+  if (![...by.keys()].some(id => list.tasks.some(t => t.id === id))) return list
+  const tasks = list.tasks.map(t => ({ ...t, blockedBy: by.get(t.id) }))
+  return finish(tasks, list.checkpoints, list.kind)
 }
 
 /** Tasks still to do, as the write guard counts them. */
