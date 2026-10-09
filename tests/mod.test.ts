@@ -981,3 +981,17 @@ test('/progress archive asks before archiving unfinished work; force lists what 
   await $.command.run(run('archive force'))
   expect(files[`${CWD}/tasks/archive/2026-10-09-api-keys/README.md`]).toMatch(/## Left open\n\n- T2 Prisma schema for keys\n- T3 Issue and revoke keys\n- T4 Rate limit per key\n$/)
 })
+
+test('/progress doctor lists the problems; doctor fix applies the fixable ones', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: '# Spec: X\n## Objective\nx\n' }
+  world(on, files)
+  const out = await $.command.run(run('doctor'))
+  expect(out.text).toMatch(/^! \d+ warnings\n\ntasks\/todo\.md\n/)
+  expect(out.text).toContain('  ! no Status line on T1, T2, T3, T4  (fixable)')
+  expect(out.text).toContain('  ! T3 has no Verification boxes (tests pass, build succeeds)')
+  expect(out.text).toContain('  ! Commands section is missing')
+  const fixed = await $.command.run(run('doctor fix'))
+  expect(fixed.text).toMatch(/^Fixed tasks\/todo\.md, SPEC\.md\./)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/\*\*Status:\*\* todo/)
+  expect(fixed.text).not.toMatch(/fixable/)
+})

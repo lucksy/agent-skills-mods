@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { archiveDir } from '../hooks/lib/archive'
+import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
@@ -853,5 +854,27 @@ describe('archive (/progress archive)', () => {
     expect(archiveDir('2026-10-10', '# Tasks: API keys\n', null, [])).toBe('tasks/archive/2026-10-10-api-keys')
     expect(archiveDir('2026-10-10', null, '# Implementation Plan: Notifications\n', ['2026-10-10-notifications'])).toBe('tasks/archive/2026-10-10-notifications-2')
     expect(archiveDir('2026-10-10', 'no title', null, [])).toBe('tasks/archive/2026-10-10-plan')
+  })
+})
+
+describe('/progress doctor', () => {
+  const base = { plan: null, specs: [], today: '2026-10-09', keepFormat: true }
+  test('duplicate numbers, unknown and self dependencies, loops, empty tasks', async () => {
+    const todo = ['## Task 1: A', '- [ ] a', '**Dependencies:** T1', '## Task 2: B', '- [ ] b', '**Dependencies:** T3', '## Task 3: C', '- [ ] c', '**Dependencies:** T2, T9', '## Task 2: D'].join('\n')
+    const msgs = diagnose({ ...base, todo, keepFormat: false }).map(f => `${f.level} ${f.message}`)
+    expect(msgs).toContain('error T2 is used by 2 task headings; give each task its own number')
+    expect(msgs).toContain('error T1 depends on itself')
+    expect(msgs).toContain('error T3 depends on T9, which is not in the list')
+    expect(msgs.some(m => /^error dependency loop T3 → T2 → T3|^error dependency loop T2 → T3 → T2/.test(m))).toBe(true)
+    expect(cycles([{ id: 'T1', deps: ['T2'] }, { id: 'T2', deps: ['T1'] }])).toHaveLength(1)
+  })
+
+  test('format problems are fixable; a clean project says so', async () => {
+    const findings = diagnose({ ...base, todo: TODO_TEMPLATE })
+    expect(findings.filter(f => f.isFixable).map(f => f.message)).toEqual(['no Status line on T1, T2, T3, T4', 'no plan/created front matter'])
+    expect(doctorText(findings)).toMatch(/Run `\/progress doctor fix` to apply the fixable ones\.$/)
+    expect(doctorText([])).toBe('✓ No problems found in SPEC.md, tasks/plan.md or tasks/todo.md.')
+    const plan = diagnose({ ...base, todo: null, plan: '# Plan\n## Open Questions\n- Upstash or self-host?\n- Q2 (T4): rate?\n' })
+    expect(plan.map(f => f.message)).toContain('1 open question without a Q<n> number, e.g. "Upstash or self-host?"')
   })
 })

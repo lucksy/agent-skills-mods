@@ -25,6 +25,7 @@ import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, 
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { archiveDir, archiveReadme } from './lib/archive'
+import { diagnose, doctorText } from './lib/doctor'
 import { gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
 import { applyEdit, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from './lib/format'
@@ -548,6 +549,39 @@ async function archivePlan($: $, force: boolean): Promise<string> {
   return `Archived ${files.join(', ')} to ${dir}/ (${list?.done ?? 0} of ${list?.total ?? 0} tasks done). /plan can start the next plan.`
 }
 
+/** `/progress doctor [fix]`: problems in the task files, plan and specs; `fix` applies the fixable ones. */
+async function doctor($: $, fix: boolean): Promise<string> {
+  const p = await load($)
+  const cwd = p.cwd
+  const today = dayOf(await $.clock.now())
+  const read = async (f: string) => readText($, `${cwd}/${f}`)
+  const gather = async () => ({
+    todo: await read('tasks/todo.md'),
+    plan: await read('tasks/plan.md'),
+    specs: (await Promise.all(p.specFiles.map(async file => ({ file, text: await read(file) })))).filter((x): x is { file: string; text: string } => x.text !== null),
+    today,
+    keepFormat,
+  })
+  let input = await gather()
+  if (fix) {
+    const fixed: string[] = []
+    if (input.todo !== null) {
+      const next = stampTodo(input.todo, today, { plan: planName(input.todo) })
+      if (next !== input.todo) await $.fs.write(`${cwd}/tasks/todo.md`, next), fixed.push('tasks/todo.md')
+    }
+    for (const [file, text] of [['tasks/plan.md', input.plan] as const, ...input.specs.map(x => [x.file, x.text] as const)]) {
+      if (text === null) continue
+      const next = stampDoc(text, today)
+      if (next !== text) await $.fs.write(`${cwd}/${file}`, next), fixed.push(file)
+    }
+    await load($)
+    input = await gather()
+    const rest = diagnose(input)
+    return `${fixed.length ? `Fixed ${fixed.join(', ')}.` : 'Nothing fixable to change.'}\n\n${doctorText(rest)}`
+  }
+  return doctorText(diagnose(input))
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -618,6 +652,7 @@ export const register: Register = (on, options) => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    if (arg === 'doctor' || arg === 'doctor fix') return reply(await doctor($, arg.endsWith('fix')))
     if (arg === 'archive' || arg === 'archive force') return reply(await archivePlan($, arg.endsWith('force')))
     if (arg === 'timeline') {
       await showTab($, 'timeline')
@@ -635,7 +670,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|archive|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|digest|report|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
