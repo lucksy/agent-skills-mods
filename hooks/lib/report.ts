@@ -221,3 +221,54 @@ export function standupText(p: ProgressInput & { dates: Record<string, { day: st
   lines.push(`Progress: ${list.done}/${list.total} tasks${p.forecast?.kind === 'range' ? ` · ETA ${shortDay(p.forecast.median)}` : ''}`)
   return lines.join('\n')
 }
+
+// ------------------------------------------------------------------ headline figures (desktop mockup)
+
+export type Figure = { label: string; value: string; unit?: string; sub: string }
+
+/** The four figures over the charts: done, forecast, scope change, needs a decision. */
+export function headline(p: ProgressInput): Figure[] {
+  const list = p.list
+  const fc = p.forecast
+  const first = p.snapshots[0]
+  const added = list && first ? list.total - first.total : 0
+  const needs = decisions(p)
+  return [
+    { label: 'Done', value: String(list?.done ?? 0), unit: `of ${list?.total ?? 0}`, sub: list && list.total ? `${Math.round((list.done / list.total) * 100)}%` : 'no tasks yet' },
+    fc?.kind === 'range'
+      ? { label: 'Forecast', value: `≈ ${shortDay(fc.median)}`, sub: `range ${shortDay(fc.optimistic)}–${shortDay(fc.slow)}` }
+      : { label: 'Forecast', value: fc?.kind === 'done' ? 'done' : '—', sub: fc?.kind === 'not-enough' ? 'needs 3 tasks done' : fc?.kind === 'done' ? 'all tasks done' : 'no history yet' },
+    { label: 'Scope change', value: `${added > 0 ? '+' : ''}${added}`, unit: 'tasks', sub: first ? `since ${shortDay(first.day)}` : 'since today' },
+    { label: 'Needs a decision', value: String(needs.length), sub: needs[0] ?? 'nothing waiting' },
+  ]
+}
+
+/** Tasks by state now, for the now-bar: done, in progress, blocked, to do (waiting counts as to do). */
+export function nowCounts(list: TaskList): { done: number; doing: number; blocked: number; todo: number } {
+  const done = list.tasks.filter(t => t.status === 'done').length
+  const doing = list.tasks.filter(t => t.status !== 'done' && t.status !== 'blocked' && (t.id === list.current?.id || t.state?.status === 'in progress')).length
+  const blocked = list.tasks.filter(t => t.status === 'blocked').length
+  return { done, doing, blocked, todo: list.total - done - doing - blocked }
+}
+
+/**
+ * Days per task for the bars under the charts: from Status-line dates where
+ * the task has them, else from the order tasks were done; the current task
+ * with its days so far.
+ */
+export function taskDays(p: ReportInput): { id: string; title: string; days: number; isRunning: boolean }[] {
+  const list = p.list
+  if (!list) return []
+  const fromOrder = new Map(daysPerTask(p).map(x => [x.id, x.days]))
+  const out: { id: string; title: string; days: number; isRunning: boolean }[] = []
+  for (const t of list.tasks) {
+    const st = t.state
+    if (t.status === 'done') {
+      const d = st?.started && st.done ? dayDiff(st.started, st.done) : fromOrder.get(t.id)
+      if (d !== null && d !== undefined) out.push({ id: t.id, title: t.title, days: Math.max(0, d), isRunning: false })
+    } else if (st?.status === 'in progress' && st.started) {
+      out.push({ id: t.id, title: t.title, days: Math.max(0, dayDiff(st.started, p.today)), isRunning: true })
+    }
+  }
+  return out
+}

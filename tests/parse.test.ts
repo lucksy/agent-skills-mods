@@ -27,7 +27,7 @@ import {
 } from '../hooks/lib/history'
 import { historyFromLogs, logsDir, textAfter } from '../hooks/lib/logs'
 import { spinnerWord, stepOf } from '../hooks/lib/steps'
-import { digestText, sparkline } from '../hooks/lib/report'
+import { digestText, headline, nowCounts, sparkline } from '../hooks/lib/report'
 import { burnupSvg, flowSvg } from '../hooks/lib/svg'
 import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../hooks/lib/chart'
 import { meterCells } from '../hooks/ui/meter'
@@ -949,5 +949,19 @@ describe('dependency graph', () => {
       '○ T5 E',
     ])
     expect(criticalPath(list)).toEqual(['T2', 'T4'])
+  })
+})
+
+describe('headline figures', () => {
+  test('done, forecast, scope change, needs a decision; and the now counts', async () => {
+    const list = parseTasks(TODO_TEMPLATE)
+    const figs = headline({ spec: null, list, plan: null, forecast: { kind: 'not-enough', reason: 'x' }, snapshots: [{ day: '2026-10-01', done: 0, total: 3 }] })
+    expect(figs.map(f => `${f.label}: ${f.value}${f.unit ? ` ${f.unit}` : ''} (${f.sub})`)).toEqual([
+      'Done: 1 of 4 (25%)',
+      'Forecast: — (needs 3 tasks done)',
+      'Scope change: +1 tasks (since 1 Oct)',
+      'Needs a decision: 0 (nothing waiting)',
+    ])
+    expect(nowCounts(list)).toEqual({ done: 1, doing: 1, blocked: 0, todo: 2 })
   })
 })

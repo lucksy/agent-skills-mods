@@ -16,11 +16,11 @@ import {
   type SourceData,
 } from './lib/history'
 import { historyFromLogs, logsDir, mentions } from './lib/logs'
-import { burnup, chartLegends, flow, revealCells, throughput } from './lib/chart'
+import { burnup, chartLegends, COLOR, flow, hex, revealCells, throughput } from './lib/chart'
 import { timeline, type Seg } from './lib/timeline'
 import { criticalPath, graphLines } from './lib/graph'
 import { TABS, type Tab } from './ui/tabs'
-import { digestText, reportHtml, sparkline, standupText } from './lib/report'
+import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
@@ -1441,8 +1441,48 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
   const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
   const pace = throughput(snaps)
+  // The desktop mockup's figures, now-bar and days per task, on every surface.
+  const figures = p ? headline(p) : []
+  const counts = list ? nowCounts(list) : null
+  const barWidth = Math.max(10, Math.min(60, body - 2))
+  const seg = (n: number) => (counts && list && list.total ? Math.round((n / list.total) * barWidth) : 0)
+  const today = dayOf(await $.clock.now())
+  const perTask = p ? taskDays({ ...p, today, charts: { burnup: null, flow: null } }) : []
+  const maxDays = Math.max(1, ...perTask.map(x => x.days))
+  const nameW = Math.min(26, Math.max(0, ...perTask.map(x => `${x.id} ${x.title}`.length)))
+  const figureW = Math.max(16, Math.floor((body - 6) / 4))
   return (
     <Box flexDirection="column" gap={1}>
+      {figures.length > 0 && (
+        <Box flexDirection="row" gap={2} flexWrap="wrap">
+          {figures.map(f => (
+            <Box key={f.label} flexDirection="column" width={figureW}>
+              <Text dimColor>{f.label.toUpperCase()}</Text>
+              <Text>
+                <Text bold>{f.value}</Text>
+                {f.unit ? <Text dimColor> {f.unit}</Text> : ''}
+              </Text>
+              <Text dimColor wrap="truncate-end">
+                {f.sub}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+      {counts && list && list.total > 0 && (
+        <Box flexDirection="column">
+          <Text bold>Now</Text>
+          <Text>
+            <Text color={hex(COLOR.done)}>{'█'.repeat(seg(counts.done))}</Text>
+            <Text color={hex(COLOR.doing)}>{'█'.repeat(seg(counts.doing))}</Text>
+            <Text color={hex(COLOR.blocked)}>{'█'.repeat(seg(counts.blocked))}</Text>
+            <Text color={hex(COLOR.todo)}>{'█'.repeat(Math.max(0, barWidth - seg(counts.done) - seg(counts.doing) - seg(counts.blocked)))}</Text>
+          </Text>
+          <Text dimColor>
+            done {counts.done} · in progress {counts.doing} · blocked {counts.blocked} · to do {counts.todo}
+          </Text>
+        </Box>
+      )}
       {sideBySide ? (
         <Box flexDirection="row" gap={2}>
           {charts}
@@ -1469,6 +1509,21 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
                 {ph.done}/{ph.total}
               </Text>
             </Box>
+          ))}
+        </Box>
+      )}
+      {perTask.length > 0 && (
+        <Box flexDirection="column">
+          <Text bold>Days per task</Text>
+          {perTask.map(x => (
+            <Text key={`d-${x.id}`} wrap="truncate-end">
+              {`${x.id} ${x.title}`.slice(0, nameW).padEnd(nameW)}{' '}
+              <Text color={x.isRunning ? 'warning' : 'success'}>{'█'.repeat(Math.max(1, Math.round((x.days / maxDays) * Math.max(6, Math.min(30, body - nameW - 14)))))}</Text>
+              <Text dimColor>
+                {' '}
+                {x.days}d{x.isRunning ? ' so far' : ''}
+              </Text>
+            </Text>
           ))}
         </Box>
       )}

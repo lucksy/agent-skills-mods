@@ -1161,3 +1161,17 @@ test('/progress graph opens the Graph tab with the tree and the critical path', 
   expect(await pane.find({ text: /^├─▶ ◐ T2 Prisma schema for keys$/ })).toBeDefined()
   expect(await pane.find({ text: /^Critical path T2 → T3 · 2 unfinished tasks in a row bound the finish date$/ })).toBeDefined()
 })
+
+test('the charts tab opens with the four figures, the now-bar and days per task', async ($, on) => {
+  const todo = TODO_T3_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** done · started 2026-10-04 · done 2026-10-06').replace('## Task 4: Rate limit per key', '## Task 4: Rate limit per key\n**Status:** in progress · started 2026-10-08')
+  world(on, { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/plan.md`]: '# Plan\n## Open Questions\n- Q2 (T9): later?\n' }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($, 100)
+  for (const label of ['DONE', 'FORECAST', 'SCOPE CHANGE', 'NEEDS A DECISION']) expect(await pane.find({ text: new RegExp(`^${label}$`) })).toBeDefined()
+  expect(await pane.find({ text: /^3 of 4$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Q2 \(T9\): later\?$/ })).toBeDefined()
+  expect(await pane.find({ text: /^done 3 · in progress 1 · blocked 0 · to do 0$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Days per task$/ })).toBeDefined()
+  expect(await pane.find({ text: /^T3 Issue and revoke keys +█+ 2d$/ })).toBeDefined()
+  expect(await pane.find({ text: /^T4 Rate limit per key +█+ 1d so far$/ })).toBeDefined()
+})
