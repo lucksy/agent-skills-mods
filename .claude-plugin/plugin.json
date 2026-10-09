@@ -1,6 +1,6 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, and a guard that refuses overwriting an unfinished plan.",
   "author": {
     "name": "lucksy"
@@ -21,6 +21,12 @@
       "type": "boolean",
       "title": "Spinner in plan terms",
       "description": "Replace the spinner's random word with what the agent is doing in plan terms, such as \"Building T4\" or \"Testing T4\".",
+      "default": false
+    },
+    "specGate": {
+      "type": "boolean",
+      "title": "Spec gate warning",
+      "description": "Warn (never block) when source files change while SPEC.md is still awaiting approval.",
       "default": false
     }
   }

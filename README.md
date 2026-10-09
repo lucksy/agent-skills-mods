@@ -57,6 +57,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Stage in the footer** | When an agent-skills skill loads, its stage (spec, plan, build, test, review, ship) and the current task are added to the hint line (`· build T2`) and to the mode labels. Claude Code's own text stays. | Hint line and mode labels |
 | **Spinner in plan terms** | Off by default. Turned on with the `planSpinner` option, the spinner's random word becomes the task and step: `Working on T4` until the agent takes a step, then `Building T4` for source edits, `Testing T4` for a test command, `Committing T4` for `git commit`. | The spinner, while a turn runs |
 | **Plan guard** | Puts the planning skill's rule *"Never overwrite an incomplete plan"* into practice. A `Write` to `tasks/plan.md` or `tasks/todo.md` is refused when it would drop or rename a task that isn't finished. Edits that tick boxes, add tasks or reword around the open ones still go through. | On every `Write` |
+| **Spec gate** | Off by default. Turned on with the `specGate` option, an edit to a source file while the spec still awaits approval raises one toast a turn (`♦ Spec gate · src/keys.ts changed while SPEC.md awaits approval`) and tells the model to pause and ask for approval. Specs, plans, docs and Markdown files don't count. It warns and never blocks. | Toast, and a note to the model after the edit |
 
 ### Commands
 
@@ -73,7 +74,12 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress refresh` | Re-reads the files and prints the status |
 | `/spec-view [id]` | Opens the spec pane. `/spec-view auth` shows `SPEC-auth.md`. Without a spec it says where the file would go. |
 
-Option: `planSpinner` (boolean, default off), set in `/config` or under `pluginConfigs` in settings.
+Options, set in `/config` or under `pluginConfigs` in settings:
+
+| Option | Default | |
+|---|---|---|
+| `planSpinner` | off | Spinner in plan terms |
+| `specGate` | off | Warn when source files change before the spec is approved |
 
 The board command is `/progress` because Claude Code already has a built-in `/tasks`.
 
@@ -110,7 +116,7 @@ It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 70 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 74 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```

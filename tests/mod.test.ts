@@ -626,3 +626,31 @@ test('other skills leave the footer alone', async ($, on) => {
   await $.ui.render({ surface: 'terminal', component: 'PromptHint', requestId: 'h', props: { isDraft: false, isWorking: false, hint: '?' } })
   expect(tail).toBe(undefined)
 })
+
+test('spec gate is off by default: source edits before approval say nothing', async ($, on) => {
+  const seen = world(on, { [`${CWD}/SPEC.md`]: SPEC })
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts).toEqual([])
+})
+
+test('with specGate on, a source edit before approval warns once a turn and never blocks', { options: { specGate: true } }, async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC }
+  const seen = world(on, files)
+  await $.command.run(run('refresh'))
+  const first = await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect('deny' in first && first.deny).toBeFalsy()
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/src/limits.ts`, content: 'x' } as never)
+  // Docs and the spec itself are not source.
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/README.md`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts).toEqual(['♦ Spec gate · src/keys.ts changed while SPEC.md awaits approval'])
+
+  // A new turn warns again; an approved spec warns no more.
+  await $.turn.complete({ answer: 'done' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts).toHaveLength(2)
+  files[`${CWD}/SPEC.md`] = SPEC.replace('status: draft', 'status: approved')
+  await $.turn.complete({ answer: 'done' } as never)
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  expect(seen.toasts).toHaveLength(2)
+})

@@ -69,6 +69,7 @@ declare module 'claude-code' {
       step: { step: 'build' | 'test' | 'commit'; task: string | null } | null
       failed: string | null
       specChoice: string | null
+      gateWarned: boolean
     }
   }
 }

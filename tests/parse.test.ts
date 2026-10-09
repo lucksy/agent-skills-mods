@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
+import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -527,5 +528,29 @@ describe('views', () => {
       '● T3',
       '○ T4',
     ])
+  })
+})
+
+describe('spec gate (D2)', () => {
+  test('source files are code, not specs, plans or docs', async () => {
+    expect(isSourceFile('/p', '/p/src/keys.ts')).toBe(true)
+    expect(isSourceFile('/p', 'services/gateway/main.py')).toBe(true)
+    expect(isSourceFile('/p', '/p/SPEC.md')).toBe(false)
+    expect(isSourceFile('/p', '/p/tasks/todo.md')).toBe(false)
+    expect(isSourceFile('/p', '/p/specs/auth.md')).toBe(false)
+    expect(isSourceFile('/p', '/p/docs/adr/001.json')).toBe(false)
+    expect(isSourceFile('/p', '/elsewhere/x.ts')).toBe(false)
+  })
+
+  test('warns only while a spec awaits approval', async () => {
+    const draft = parseSpec(SPEC)
+    const w = gateWarning({ cwd: '/p', path: '/p/src/keys.ts', spec: draft, specFile: 'SPEC.md', hasPlan: false })
+    expect(w?.toast).toBe('♦ Spec gate · src/keys.ts changed while SPEC.md awaits approval')
+    expect(w?.context).toMatch(/warning only; the edit went through/)
+    // Approved in front matter, inferred from a plan, no spec, or not source: nothing.
+    expect(gateWarning({ cwd: '/p', path: '/p/src/a.ts', spec: parseSpec(SPEC.replace('status: draft', 'status: approved')), specFile: 'SPEC.md', hasPlan: false })).toBe(null)
+    expect(gateWarning({ cwd: '/p', path: '/p/src/a.ts', spec: parseSpec(GOOD_SPEC), specFile: 'SPEC.md', hasPlan: true })).toBe(null)
+    expect(gateWarning({ cwd: '/p', path: '/p/src/a.ts', spec: null, specFile: null, hasPlan: false })).toBe(null)
+    expect(gateWarning({ cwd: '/p', path: '/p/README.md', spec: draft, specFile: 'SPEC.md', hasPlan: false })).toBe(null)
   })
 })

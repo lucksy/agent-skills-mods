@@ -29,6 +29,7 @@ import { digestText, reportHtml } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
 import { spinnerWord, stepOf, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
+import { gateWarning } from './lib/gate'
 import {
   bandText,
   bar,
@@ -61,6 +62,8 @@ const failed = atom({ plugin: 'agent-skills-mods', key: 'failed' } as const, nul
 const specChoice = atom({ plugin: 'agent-skills-mods', key: 'specChoice' } as const, null as string | null)
 /** The task the last prompt asked about, highlighted on the board (C1). */
 const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null as string | null)
+/** Whether the spec gate already warned this turn (D2): one toast per turn, not one per edit. */
+const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -280,6 +283,25 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
   return value
 }
 
+/**
+ * The spec gate (D2): a source edit while the spec awaits approval. The model is
+ * told on every such edit; the person gets one toast a turn. Never blocks.
+ */
+async function specGate<R extends { context?: readonly string[] }>($: $, path: string, result: R): Promise<R> {
+  try {
+    const p = (await read($, project)) ?? (await load($))
+    const warning = gateWarning({ cwd: p.cwd, path, spec: p.spec, specFile: p.specFile, hasPlan: !!p.list })
+    if (!warning) return result
+    if (!(await read($, gateWarned))) {
+      await update($, gateWarned, () => true)
+      $.ui.toast(warning.toast)
+    }
+    return { ...result, context: [...(result.context ?? []), warning.context] }
+  } catch {
+    return result
+  }
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -390,6 +412,9 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     await trackStep($, e, result)
     const path = 'file_path' in e && typeof e.file_path === 'string' ? e.file_path : null
+    if (path && EDIT_TOOLS.has(String(e.tool)) && !result.isError && !result.deny && options.specGate === true && !WATCHED.test(path)) {
+      return specGate($, path, result)
+    }
     if (!path || !EDIT_TOOLS.has(String(e.tool)) || !WATCHED.test(path) || result.isError) return result
     // A refresh that fails must never change the tool's own result.
     try {
@@ -422,6 +447,7 @@ export const register: Register = (on, options) => {
     if (e.agentId === undefined) {
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
+      await update($, gateWarned, () => false)
     }
     return next(e)
   })
