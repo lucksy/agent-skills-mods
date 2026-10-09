@@ -22,7 +22,7 @@ import { spinnerWord, stepOf } from '../hooks/lib/steps'
 import { digestText, sparkline } from '../hooks/lib/report'
 import { burnupSvg, flowSvg } from '../hooks/lib/svg'
 import { burnup, COLOR, daily, flow, toBase64 } from '../hooks/lib/chart'
-import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
+import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../hooks/lib/view'
 import {
   CHECKLIST,
   GOOD_SPEC,
@@ -571,5 +571,27 @@ describe('spec pane actions (A1)', () => {
     expect(editorArgvs({ editor: '/usr/local/bin/zed' }, '/p/SPEC.md')[0]).toEqual(['/usr/local/bin/zed', '/p/SPEC.md'])
     expect(editorArgvs({ editor: 'nvim' }, '/p/SPEC.md')[0]).toEqual(['open', '/p/SPEC.md'])
     expect(editorArgvs({}, '/p/SPEC.md')).toHaveLength(3)
+  })
+})
+
+describe('module specs under specs/ (A3)', () => {
+  test('SPEC.md first, root module specs, then specs/<module>.md; READMEs are not specs', async () => {
+    expect(specFiles(['SPEC-b.md', 'README.md', 'SPEC.md'], ['payments.md', 'README.md', 'auth.md', 'notes.txt'])).toEqual([
+      'SPEC.md',
+      'SPEC-b.md',
+      'specs/auth.md',
+      'specs/payments.md',
+    ])
+  })
+
+  test('/spec-view arguments and written paths', async () => {
+    expect(specCandidates('auth')).toEqual(['specs/auth.md', 'SPEC-auth.md'])
+    expect(specCandidates('SPEC-auth.md')).toEqual(['SPEC-auth.md'])
+    expect(specCandidates('auth.md')).toEqual(['auth.md', 'specs/auth.md'])
+    expect(specCandidates('specs/auth.md')).toEqual(['specs/auth.md'])
+    expect(specOfPath('/p/specs/auth.md')).toBe('specs/auth.md')
+    expect(specOfPath('/p/SPEC-auth.md')).toBe('SPEC-auth.md')
+    expect(specOfPath('/p/specs/README.md')).toBe(null)
+    expect(specOfPath('/p/src/auth.md')).toBe(null)
   })
 })

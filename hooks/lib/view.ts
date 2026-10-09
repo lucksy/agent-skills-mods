@@ -180,14 +180,40 @@ export function timelineRows(list: TaskList, opts: { dates?: Record<string, Task
   return rows
 }
 
-/** Spec files at the project root: SPEC.md first, then module specs `SPEC-<id>.md` (A3). */
+/**
+ * Spec files (A3): SPEC.md first, then module specs at the root (`SPEC-<id>.md`),
+ * then those of a capability map under `specs/` (`specs/<module>.md`).
+ */
 export const SPEC_FILE = /^SPEC(-[\w.-]+)?\.md$/
-export function specFiles(names: string[]): string[] {
-  return names.filter(n => SPEC_FILE.test(n)).sort((a, b) => (a === 'SPEC.md' ? -1 : b === 'SPEC.md' ? 1 : a.localeCompare(b)))
+const MODULE_SPEC = /^[\w.-]+\.md$/
+const NOT_A_SPEC = /^(readme|index|_index|template)\.md$/i
+export function specFiles(names: string[], specsDir: string[] = []): string[] {
+  const root = names.filter(n => SPEC_FILE.test(n)).sort((a, b) => (a === 'SPEC.md' ? -1 : b === 'SPEC.md' ? 1 : a.localeCompare(b)))
+  const modules = specsDir.filter(n => MODULE_SPEC.test(n) && !NOT_A_SPEC.test(n)).sort((a, b) => a.localeCompare(b))
+  return [...root, ...modules.map(n => `specs/${n}`)]
 }
 
-/** `/spec-view auth` → SPEC-auth.md; a full file name is taken as given. */
-export const specFileFor = (arg: string) => (/\.md$/i.test(arg) ? arg : `SPEC-${arg}.md`)
+/**
+ * The files `/spec-view <arg>` may mean, best first: a file name as given,
+ * else `specs/<arg>.md` and `SPEC-<arg>.md`.
+ */
+export function specCandidates(arg: string): string[] {
+  const a = arg.trim().replace(/^\.\//, '')
+  if (/\.md$/i.test(a)) return a.includes('/') || SPEC_FILE.test(a) ? [a] : [a, `specs/${a}`]
+  return [`specs/${a}.md`, `SPEC-${a}.md`]
+}
+
+/** `/spec-view auth` → SPEC-auth.md, as the error names it when nothing matches. */
+export const specFileFor = (arg: string) => specCandidates(arg).at(-1)!
+
+/** A path the agent wrote that is a spec: the file as the pane names it, or null. */
+export function specOfPath(path: string): string | null {
+  const p = path.replace(/\\/g, '/')
+  const root = /(?:^|\/)(SPEC(-[\w.-]+)?\.md)$/.exec(p)
+  if (root) return root[1]!
+  const mod = /(?:^|\/)specs\/([\w.-]+\.md)$/.exec(p)
+  return mod && !NOT_A_SPEC.test(mod[1]!) ? `specs/${mod[1]}` : null
+}
 
 /** The forecast line (G3): a range with its basis, or why there is none. */
 export function forecastText(f: Forecast): string {

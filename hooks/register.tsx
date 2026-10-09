@@ -43,8 +43,10 @@ import {
   historyText,
   nextText,
   specApproval,
+  specCandidates,
   specFileFor,
   specFiles,
+  specOfPath,
   stageOfSkill,
   statusText,
   timelineRows,
@@ -73,7 +75,7 @@ const BOARD_PANE = 'asm-board'
 const CHARTS_PANE = 'asm-charts'
 /** Where /progress report writes its page (G1), next to the task list it reports on. */
 const REPORT_FILE = 'tasks/progress-report.html'
-const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|tasks[\\/](plan|todo)\.md)$/
+const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/](plan|todo)\.md)$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
 type $ = EngineInterface
@@ -225,7 +227,11 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
     entries => entries.filter(f => f.kind === 'file').map(f => f.name),
     () => [] as string[],
   )
-  const files = specFiles(names)
+  const specsDir = await $.fs.list(`${cwd}/specs`).then(
+    entries => entries.filter(f => f.kind === 'file').map(f => f.name),
+    () => [] as string[],
+  )
+  const files = specFiles(names, specsDir)
   const choice = await read($, specChoice)
   const specFile = choice && files.includes(choice) ? choice : (files[0] ?? null)
   const [specText, todoText, planText] = await Promise.all([
@@ -350,7 +356,7 @@ export const register: Register = (on, options) => {
     })
     await $.command.register({
       name: 'spec-view',
-      description: 'Open SPEC.md, or a module spec SPEC-<id>.md, as a pane with its six core areas',
+      description: 'Open SPEC.md, or a module spec (specs/<id>.md or SPEC-<id>.md), as a pane with its six core areas',
       argumentHint: '[module id]',
     })
     await load($, { recheckLogs: true }).catch(() => undefined)
@@ -362,11 +368,11 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'spec-view' }, async ($, e) => {
     const arg = e.args.trim()
     if (arg) {
-      const file = specFileFor(arg)
       const p = await load($)
-      if (!p.specFiles.includes(file)) {
+      const file = specCandidates(arg).find(f => p.specFiles.includes(f))
+      if (!file) {
         const here = p.specFiles.length ? ` Specs here: ${p.specFiles.join(', ')}.` : ''
-        return reply(`No ${file} in ${p.cwd}.${here}`)
+        return reply(`No ${specFileFor(arg)} in ${p.cwd}.${here}`)
       }
       await update($, specChoice, () => file)
     }
@@ -451,9 +457,9 @@ export const register: Register = (on, options) => {
       const after = (await load($)).list
       const toast = GUARDED.test(path) ? completionToast(before, after) : undefined
       if (toast) $.ui.toast(toast)
-      const spec = /(?:^|[\\/])(SPEC(-[\w.-]+)?\.md)$/.exec(path)
+      const spec = specOfPath(path)
       if (spec) {
-        await update($, specChoice, () => spec[1]!)
+        await update($, specChoice, () => spec)
         await load($)
         void $.ui.open({ id: SPEC_PANE, title: 'Spec' })
       }

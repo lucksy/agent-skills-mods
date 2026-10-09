@@ -702,3 +702,20 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(String((md?.props as { text: string }).text)).toMatch(/pnpm/)
   })
 }
+
+test('module specs from a capability map: specs/<module>.md in the picker, by /spec-view and when written', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/specs/limits.md`]: GOOD_SPEC }
+  world(on, files)
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  expect((await pane.find({ type: 'Select', key: 'spec-file' }))?.props).toMatchObject({
+    options: [{ value: 'SPEC.md' }, { value: 'specs/limits.md' }],
+  })
+  const reply = await $.command.run({ command: 'spec-view', args: 'limits', origin: { kind: 'composer' } } as never)
+  expect(JSON.stringify(reply)).toMatch(/Spec pane opened: specs\/limits\.md/)
+  expect(await pane.find({ text: /Rate limits \(specs\/limits\.md\)/ })).toBeDefined()
+
+  files[`${CWD}/specs/hooks.md`] = WEAK_SPEC
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/specs/hooks.md`, content: WEAK_SPEC } as never)
+  expect(await pane.find({ text: /Webhooks \(specs\/hooks\.md\)/ })).toBeDefined()
+})
