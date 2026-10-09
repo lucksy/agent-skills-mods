@@ -9,7 +9,7 @@ const CWD = '/p'
 const clocks = new WeakMap<object, ReturnType<typeof mock.clock>>()
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string; messages?: string; named?: string } | 'no-repo' | 'no-commits'
+type Git = { log: string; cat: string; messages?: string; named?: string; diff?: string; revList?: string } | 'no-repo' | 'no-commits'
 
 function world(
   on: On,
@@ -42,6 +42,8 @@ function world(
     if (git === 'no-repo') return out(128, '')
     if (git === 'no-commits') return { value: { ...out(128, '').value, stderr: "fatal: your current branch 'main' does not have any commits yet" } }
     if (e.argv[1] === 'log' && e.argv.includes('--format=%h %as %s')) return out(0, git.named ?? '')
+    if (e.argv[1] === 'diff') return out(0, git.diff ?? '')
+    if (e.argv[1] === 'rev-list' && e.argv.includes('-1')) return out(0, git.revList ?? '')
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.cat)
   })
@@ -1039,4 +1041,23 @@ test('/progress task T3: state, boxes by kind, dependencies both ways, checkpoin
   expect(out).toContain('Commits naming T3\n  a1b2c3d 8 Oct  T3: issue keys\n  d4e5f6a 7 Oct  Task 3 wip')
   expect(out).not.toContain('T30')
   expect((await $.command.run(run('task 9'))).text).toMatch(/^No T9 in tasks\/todo\.md\./)
+})
+
+test('/spec-view diff: the spec since its approval, in the reply and as a diff in the pane', async ($, on) => {
+  const spec = SPEC.replace('status: draft', 'status: approved\napproved: 2026-10-01')
+  const diff = '--- a/SPEC.md\n+++ b/SPEC.md\n@@ -6,1 +6,2 @@\n Developers create and revoke API keys from the console.\n+Keys expire after 90 days.'
+  world(on, { [`${CWD}/SPEC.md`]: spec }, { log: '', cat: '', diff, revList: 'abcdef1234567\n' })
+  const out = (await $.command.run({ command: 'spec-view', args: 'diff', origin: { kind: 'composer' } } as never)) as { text: string }
+  expect(out.text).toMatch(/^SPEC\.md since its approval on 1 Oct \(abcdef1\): \+1 −0 lines\. The spec pane shows the diff\./)
+  expect(out.text).toContain('```diff\n--- a/SPEC.md')
+  const pane = await mountSpec($)
+  expect((await pane.find({ type: 'Code' }))?.props).toMatchObject({ format: 'diff' })
+  // Opening the pane plainly clears it.
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  expect(await pane.find({ type: 'Code' })).toBeUndefined()
+})
+
+test('/spec-view diff with nothing changed, and without git', async ($, on) => {
+  world(on, { [`${CWD}/SPEC.md`]: SPEC }, { log: '', cat: '', diff: '' })
+  expect(JSON.stringify(await $.command.run({ command: 'spec-view', args: 'diff', origin: { kind: 'composer' } } as never))).toMatch(/SPEC\.md has not changed since its last commit\./)
 })

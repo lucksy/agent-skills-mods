@@ -74,6 +74,8 @@ const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null 
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
 /** The spec area opened for reading in the spec pane (A1), by key. */
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
+/** The spec's changes since approval, shown under the spec pane after `/spec-view diff`. */
+const specDiff = atom({ plugin: 'agent-skills-mods', key: 'specDiff' } as const, null as { file: string; since: string; diff: string } | null)
 /** Whether this terminal draws pictures (F3), read from its environment at session start. */
 const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, false)
 /** How much of the cell charts is drawn (0 to 1): they sweep in left to right when the pane opens. */
@@ -624,6 +626,41 @@ async function setTask($: $, verb: string, rawId: string, why: string): Promise<
   return said
 }
 
+/**
+ * `/spec-view diff`: what changed in the spec since it was approved (the last
+ * commit of it on or before the approval day), or since its last commit.
+ */
+async function specChanges($: $): Promise<string> {
+  const p = await load($)
+  if (!p.spec || !p.specFile) return `No SPEC.md in ${p.cwd}.`
+  const file = p.specFile
+  const run = (argv: string[]) => $.process.run(argv, { timeoutMs: 15_000 }).catch(() => null)
+  let base = 'HEAD'
+  let since = 'its last commit'
+  if (p.spec.approvedOn) {
+    const r = await run(['git', 'rev-list', '-1', `--before=${p.spec.approvedOn}T23:59:59`, 'HEAD', '--', file])
+    if (r && r.exitCode === 0 && r.stdout.trim()) {
+      base = r.stdout.trim()
+      since = `its approval on ${shortDay(p.spec.approvedOn)} (${base.slice(0, 7)})`
+    }
+  }
+  const d = await run(['git', 'diff', '--no-color', base, '--', file])
+  if (!d || d.exitCode !== 0) {
+    await update($, specDiff, () => null)
+    return `Can't diff ${file}: ${d ? 'git has no commit of it to compare with' : 'git is not available'}.`
+  }
+  const diff = d.stdout.trimEnd()
+  if (!diff) {
+    await update($, specDiff, () => null)
+    return `${file} has not changed since ${since}.`
+  }
+  const added = diff.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++')).length
+  const removed = diff.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---')).length
+  await update($, specDiff, () => ({ file, since, diff }))
+  void $.ui.open({ id: SPEC_PANE, title: 'Spec' })
+  return `${file} since ${since}: +${added} −${removed} lines. The spec pane shows the diff.\n\n\`\`\`diff\n${diff}\n\`\`\``
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -644,8 +681,8 @@ export const register: Register = (on, options) => {
     })
     await $.command.register({
       name: 'spec-view',
-      description: 'Open SPEC.md, or a module spec (specs/<id>.md or SPEC-<id>.md), as a pane with its six core areas',
-      argumentHint: '[module id]',
+      description: 'Open SPEC.md, or a module spec (specs/<id>.md or SPEC-<id>.md), as a pane with its six core areas; diff shows its changes since approval',
+      argumentHint: '[module id | diff]',
     })
     const style = options.chartStyle
     const canDraw = await (async () => {
@@ -669,6 +706,8 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'spec-view' }, async ($, e) => {
     const arg = e.args.trim()
+    if (arg === 'diff') return reply(await specChanges($))
+    if (arg === '') await update($, specDiff, () => null)
     if (arg) {
       const p = await load($)
       const file = specCandidates(arg).find(f => p.specFiles.includes(f))
@@ -958,6 +997,8 @@ export const register: Register = (on, options) => {
     const readable = spec.areas.filter(a => a.state === 'present')
     const Select = e.surface === 'mobile' ? null : $.ui.resolve(e as typeof e & { surface: 'terminal' }).Select
     const Markdown = $.ui.resolve(e).Markdown
+    const Code = $.ui.resolve(e).Code
+    const changes = await read($, specDiff)
     const approvedNote = spec.approvedOn ? ` ${shortDay(spec.approvedOn)}` : ''
     return (
       <Box flexDirection="column">
@@ -1026,6 +1067,14 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} marginTop={1}>
             <Text bold>{area.label}</Text>
             <Markdown key="spec-section-body" text={area.body} />
+          </Box>
+        )}
+        {changes && changes.file === p?.specFile && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text>
+              <Text bold>Changes</Text> <Text dimColor>since {changes.since}</Text>
+            </Text>
+            <Code source={changes.diff} format="diff" wrap="truncate-end" />
           </Box>
         )}
       </Box>

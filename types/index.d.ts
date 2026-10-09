@@ -79,6 +79,7 @@ declare module 'claude-code' {
       pixels: boolean
       chartReveal: number
       tab: 'timeline' | 'charts' | 'tasks'
+      specDiff: { file: string; since: string; diff: string } | null
     }
   }
 }
