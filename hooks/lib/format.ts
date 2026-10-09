@@ -281,3 +281,17 @@ export function addQuestion(planText: string | null, id: string, why: string): {
   const insertAt = head.index + head[0].length + body.replace(/\s*$/, '').length
   return { text: `${base.slice(0, insertAt)}\n${line}${base.slice(insertAt)}`, q }
 }
+
+/**
+ * Spec drift: the new text of an approved spec whose content changed goes
+ * back to `status: draft`. The `approved` date stays as the last approval, so
+ * `/spec-view diff` compares against it. Null when nothing drifted.
+ */
+export function driftedSpec(before: string, after: string): string | null {
+  const was = readFrontMatter(before)
+  if ((was.fields.status ?? '').toLowerCase() !== 'approved') return null
+  const now = readFrontMatter(after)
+  if ((now.fields.status ?? '').toLowerCase() !== 'approved') return null
+  if (was.body.trim() === now.body.trim()) return null
+  return setFrontMatter(after, { status: 'draft' })
+}

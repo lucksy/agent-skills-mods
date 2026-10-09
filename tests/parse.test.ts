@@ -9,7 +9,7 @@ import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
 import { ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
-import { addQuestion, applyEdit, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask } from '../hooks/lib/format'
+import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask } from '../hooks/lib/format'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -898,5 +898,15 @@ describe('checkpoint gate', () => {
     const w = checkpointWarning({ cwd: '/p', path: '/p/src/a.ts', list: parseTasks(TODO_T2_DONE) })
     expect(w?.context).toMatch(/still waits for review: All tests pass; Review with human before proceeding\./)
     expect(checkpointWarning({ cwd: '/p', path: '/p/tasks/todo.md', list: parseTasks(TODO_T2_DONE) })).toBe(null)
+  })
+})
+
+describe('spec drift', () => {
+  test('an approved spec whose content changes goes back to draft, keeping its approval date', async () => {
+    const approved = '---\nstatus: approved\napproved: 2026-10-01\n---\n# Spec: X\nbody\n'
+    expect(driftedSpec(approved, approved.replace('body', 'body changed'))).toBe('---\nstatus: draft\napproved: 2026-10-01\n---\n# Spec: X\nbody changed\n')
+    expect(driftedSpec(approved, approved)).toBe(null)
+    expect(driftedSpec(approved, approved.replace('2026-10-01', '2026-10-02'))).toBe(null)
+    expect(driftedSpec(approved.replace('approved\n', 'draft\n'), 'x')).toBe(null)
   })
 })

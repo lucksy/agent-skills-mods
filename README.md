@@ -61,6 +61,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Plan guard** | Puts the planning skill's rule *"Never overwrite an incomplete plan"* into practice. A `Write` to `tasks/plan.md` or `tasks/todo.md` is refused when it would drop or rename a task that isn't finished. Edits that tick boxes, add tasks or reword around the open ones still go through. | On every `Write` |
 | **Spec gate** | Off by default. Turned on with the `specGate` option, an edit to a source file while the spec still awaits approval raises one toast a turn (`♦ Spec gate · src/keys.ts changed while SPEC.md awaits approval`) and tells the model to pause and ask for approval. Specs, plans, docs and Markdown files don't count. It warns and never blocks. | Toast, and a note to the model after the edit |
 | **Checkpoint gate** | Off by default. With `checkpointGate` on, an edit to a source file while a reached checkpoint still has open review items raises one toast a turn (`♦ Checkpoint gate · src/keys.ts changed before "After Tasks 1-2" was reviewed`) and tells the agent to stop, run the checks and ask you to review. Never blocks. | Toast, and a note to the model after the edit |
+| **Spec drift** | When the agent changes an approved spec, it goes back to `status: draft` in the same edit, keeping its last approval date. A toast says so (`○ SPEC.md changed after approval: back to draft · /spec-view diff shows what changed`) and the agent is told to ask you to approve again. Needs `progressFormat`. | Toast, and a note to the model |
 
 ### Commands
 
@@ -178,7 +179,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 132 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 134 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

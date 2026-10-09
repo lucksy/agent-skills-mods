@@ -1082,3 +1082,14 @@ test('the checkpoint gate is off by default', async ($, on) => {
   await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
   expect(seen.toasts.filter(t => t.includes('gate'))).toEqual([])
 })
+
+test('spec drift: an agent edit to an approved spec puts it back to draft and says so', async ($, on) => {
+  const spec = SPEC.replace('status: draft', 'status: approved\napproved: 2026-10-01\ncreated: 2026-09-30')
+  const seen = world(on, { [`${CWD}/SPEC.md`]: spec })
+  const result = await $.tool.call({ tool: 'Edit', file_path: `${CWD}/SPEC.md`, old_string: 'Should keys expire by default?', new_string: 'Keys expire after 90 days.' } as never)
+  const call = seen.calls.at(-1) as { new_string: string }
+  expect(call.new_string).toContain('status: draft')
+  expect(call.new_string).toContain('Keys expire after 90 days.')
+  expect(seen.toasts).toContain('○ SPEC.md changed after approval: back to draft · /spec-view diff shows what changed')
+  expect(JSON.stringify(result)).toMatch(/back to status: draft/)
+})

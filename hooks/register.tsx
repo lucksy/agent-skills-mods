@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { AsmProject } from '../types'
 import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from './lib/parse'
@@ -28,7 +28,7 @@ import { archiveDir, archiveReadme } from './lib/archive'
 import { diagnose, doctorText } from './lib/doctor'
 import { checkpointWarning, gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
-import { addQuestion, applyEdit, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, type TaskState } from './lib/format'
+import { addQuestion, applyEdit, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, type TaskState } from './lib/format'
 import {
   bandText,
   bar,
@@ -206,6 +206,31 @@ async function readPending($: $, cwd: string): Promise<Record<string, Partial<Ta
 /** A spec or plan document whose front matter the format keeps. */
 const FORMAT_DOC = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/]plan\.md)$/
 const TODO_FILE = /(^|[\\/])tasks[\\/]todo\.md$/
+
+/** A tool result with a note for the model after it; a refusal is left as it is. */
+function withNote<R extends ToolCallResult>(r: R, note: string | null): R {
+  if (!note || r.deny !== undefined) return r
+  return { ...r, context: [...(r.context ?? []), note] } as R
+}
+
+/** A spec file, as opposed to the plan: what spec drift watches. */
+const SPEC_DOC = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md)$/
+
+/**
+ * Spec drift: an agent edit that changes an approved spec puts it back to
+ * draft, with a toast for the person and a note for the agent.
+ */
+async function drift($: $, path: string, before: string | null, after: string): Promise<{ text: string; note: string | null }> {
+  if (!keepFormat || before === null || !SPEC_DOC.test(path)) return { text: after, note: null }
+  const next = driftedSpec(before, after)
+  if (next === null) return { text: after, note: null }
+  const file = specOfPath(path) ?? path
+  $.ui.toast(`○ ${file} changed after approval: back to draft · /spec-view diff shows what changed`)
+  return {
+    text: next,
+    note: `agent-skills-mods: ${file} was approved, and this edit changed it, so it is back to status: draft. Tell the user what changed and ask them to approve it again before building on the change.`,
+  }
+}
 
 /** A file's new text with the progress format kept: Status lines and front matter (E1). */
 async function formatted($: $, path: string, text: string): Promise<string> {
@@ -800,8 +825,9 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const write = async () => {
-      const content = await formatted($, e.file_path, e.content).catch(() => e.content)
-      return next(content === e.content ? e : { ...e, content })
+      const d = await drift($, e.file_path, await readText($, e.file_path), e.content).catch(() => ({ text: e.content, note: null }))
+      const content = await formatted($, e.file_path, d.text).catch(() => d.text)
+      return withNote(await next(content === e.content ? e : { ...e, content }), d.note)
     }
     if (!GUARDED.test(e.file_path)) return write()
     const old = await readText($, e.file_path)
@@ -823,9 +849,10 @@ export const register: Register = (on, options) => {
     const before = await readText($, e.file_path)
     const after = before === null ? null : applyEdit(before, e.old_string, e.new_string, e.replace_all === true)
     if (before === null || after === null) return next(e)
-    const stamped = await formatted($, e.file_path, after)
+    const d = await drift($, e.file_path, before, after)
+    const stamped = await formatted($, e.file_path, d.text)
     const edit = stamped === after ? null : editBetween(before, stamped)
-    return next(edit ? { ...e, ...edit, replace_all: false } : e)
+    return withNote(await next(edit ? { ...e, ...edit, replace_all: false } : e), d.note)
   }).catch(($, e, next) => (next.called ? undefined : next(e)) as never)
 
   // ----------------------------------------------------------- after each tool call: refresh (A1, B1) and step (H3, F1)
