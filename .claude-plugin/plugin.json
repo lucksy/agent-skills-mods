@@ -1,6 +1,6 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, and a guard that refuses overwriting an unfinished plan.",
   "author": {
     "name": "lucksy"
@@ -51,6 +51,12 @@
       "title": "Checkpoint gate warning",
       "description": "Warn (never block) when source files change while a reached checkpoint still waits for your review.",
       "default": false
+    },
+    "notifications": {
+      "type": "boolean",
+      "title": "Native notifications",
+      "description": "Send a notification through your notification channel when a checkpoint is reached, the last task is done, or a test run fails on the current task.",
+      "default": true
     }
   }
 }

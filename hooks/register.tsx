@@ -157,7 +157,9 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
     await update($, step, () => ({ step: s, task }))
     if (s === 'test' && task) {
       const isFailed = result.isError === true
+      const wasFailed = (await read($, failed)) === task
       await update($, failed, f => (isFailed ? task : f === task ? null : f))
+      if (isFailed && !wasFailed) notify($, `Tests failed on ${task}`, `${p?.list?.current?.title ?? task}: the last test run failed.`)
     }
     if (p && s === 'test') {
       const counts = testCounts(String((result as { text?: unknown }).text ?? ''))
@@ -192,6 +194,15 @@ async function countCommits($: $, cwd: string, since: string, force = false) {
     if (out.exitCode === 0 && Number.isFinite(n)) await setFacts($, cwd, x => ({ ...x, commits: n, commitsDay: today }))
     else await setFacts($, cwd, x => ({ ...x, commitsDay: today }))
   } catch {}
+}
+
+/** Whether native notifications are on (the `notifications` option), set at register. */
+let notifyOn = true
+
+/** A native notification through the person's own channel, for the moments that need them. Never throws. */
+function notify($: $, title: string, text: string) {
+  if (!notifyOn) return
+  void $.ui.notify(text, { title: `agent-skills · ${title}` }).catch(() => undefined)
 }
 
 /** Whether the plugin keeps the progress format (the `progressFormat` option), set at register. */
@@ -716,6 +727,7 @@ const reply = (text: string) => ({ text })
 
 export const register: Register = (on, options) => {
   keepFormat = options.progressFormat !== false
+  notifyOn = options.notifications !== false
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
@@ -874,6 +886,9 @@ export const register: Register = (on, options) => {
       const after = (await load($)).list
       const toast = GUARDED.test(path) ? completionToast(before, after) : undefined
       if (toast) $.ui.toast(toast)
+      // The moments that need a person: a checkpoint to review, or the whole plan done.
+      if (toast?.startsWith('♦ Checkpoint reached')) notify($, 'Checkpoint reached', toast.replace(/^♦ Checkpoint reached: /, ''))
+      else if (toast && after && after.total > 0 && after.done === after.total) notify($, 'All tasks done', `${after.total} of ${after.total} tasks done. Next: /review.`)
       const spec = specOfPath(path)
       if (spec) {
         await update($, specChoice, () => spec)

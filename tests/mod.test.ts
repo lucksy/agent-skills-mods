@@ -18,7 +18,7 @@ function world(
   stored: Record<string, unknown> = {},
   surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
 ) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[] }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
     return { value: { isCopied: true } }
@@ -73,6 +73,10 @@ function world(
   on('ui.status', (_$, e) => {
     seen.status.push(e)
     return { value: undefined }
+  })
+  on('ui.notify', (_$, e) => {
+    seen.notified.push(`${e.title ?? ''}: ${e.text}`)
+    return { value: { isSent: true, channel: 'terminal_bell' } } as never
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
@@ -1092,4 +1096,28 @@ test('spec drift: an agent edit to an approved spec puts it back to draft and sa
   expect(call.new_string).toContain('Keys expire after 90 days.')
   expect(seen.toasts).toContain('○ SPEC.md changed after approval: back to draft · /spec-view diff shows what changed')
   expect(JSON.stringify(result)).toMatch(/back to status: draft/)
+})
+
+test('notifications: a checkpoint reached, the last task done, a test run failing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  await $.command.run(run('refresh'))
+  files[`${CWD}/tasks/todo.md`] = TODO_T2_DONE
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'x', new_string: 'y' } as never)
+  expect(seen.notified).toEqual(['agent-skills · Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human before proceeding'])
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test # FAIL' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test # FAIL' } as never)
+  expect(seen.notified.filter(n => n.includes('Tests failed'))).toHaveLength(1)
+  files[`${CWD}/tasks/todo.md`] = TODO_TEMPLATE.replace(/- \[ \]/g, '- [x]')
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'x', new_string: 'y' } as never)
+  expect(seen.notified.at(-1)).toBe('agent-skills · All tasks done: 4 of 4 tasks done. Next: /review.')
+})
+
+test('with notifications off, nothing is sent', { options: { notifications: false } }, async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  await $.command.run(run('refresh'))
+  files[`${CWD}/tasks/todo.md`] = TODO_T2_DONE
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'x', new_string: 'y' } as never)
+  expect(seen.notified).toEqual([])
 })
