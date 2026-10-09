@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
+import { mergeHistory, parseLog, snapshotsFromGit, splitBatch } from '../hooks/lib/history'
 import { bandText, blockChain, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
 import {
   CHECKLIST,
@@ -13,6 +14,8 @@ import {
   TODO_T2_DONE,
   TODO_T3_DONE,
   TODO_TEMPLATE,
+  TODO_NONE_DONE,
+  gitOutput,
   WEAK_SPEC,
 } from './fixtures'
 
@@ -121,6 +124,44 @@ describe('checkOverwrite', () => {
   test('a finished plan may be replaced', async () => {
     const done = TODO_TEMPLATE.replace(/- \[ \]/g, '- [x]')
     expect(checkOverwrite(done, PLAN_INDEX).isAllowed).toBe(true)
+  })
+})
+
+describe('history from git (F5)', () => {
+  const current = parseTasks(TODO_T3_DONE)
+
+  test('one snapshot per day from its last commit, stopping at an older plan', async () => {
+    const { log, cat } = gitOutput([
+      ['2026-10-08', TODO_T3_DONE],
+      ['2026-10-03', TODO_T2_DONE],
+      ['2026-10-03', TODO_TEMPLATE],
+      ['2026-09-29', TODO_NONE_DONE],
+      ['2026-09-20', PLAN_INDEX],
+      ['2026-09-10', TODO_NONE_DONE],
+    ])
+    const commits = parseLog(log)
+    expect(commits.length).toBe(6)
+    expect(snapshotsFromGit(commits, splitBatch(cat), current)).toEqual([
+      { day: '2026-09-29', done: 0, total: 4 },
+      { day: '2026-10-03', done: 2, total: 4 },
+      { day: '2026-10-08', done: 3, total: 4 },
+    ])
+  })
+
+  test('a commit without the file ends the walk; the mod\'s own snapshots win a shared day', async () => {
+    const { log, cat } = gitOutput([
+      ['2026-10-08', TODO_T3_DONE],
+      ['2026-10-01', null],
+      ['2026-09-29', TODO_NONE_DONE],
+    ])
+    expect(splitBatch(cat)).toEqual([TODO_T3_DONE, null, TODO_NONE_DONE])
+    const fromGit = snapshotsFromGit(parseLog(log), splitBatch(cat), current)
+    expect(fromGit).toEqual([{ day: '2026-10-08', done: 3, total: 4 }])
+    const stored = [{ day: '2026-10-08', done: 4, total: 4 }]
+    expect(mergeHistory(stored, [{ day: '2026-10-02', done: 1, total: 4 }, ...fromGit])).toEqual([
+      { day: '2026-10-02', done: 1, total: 4 },
+      { day: '2026-10-08', done: 4, total: 4 },
+    ])
   })
 })
 

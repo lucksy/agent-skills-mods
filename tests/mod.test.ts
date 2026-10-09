@@ -1,13 +1,23 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SPEC, TODO_TEMPLATE, TODO_T2_DONE, PLAN_INDEX, WEAK_SPEC } from './fixtures'
+import { SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
 
 const CWD = '/p'
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-function world(on: On, files: Record<string, string>) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[] }
+type Git = { log: string; cat: string } | 'no-repo'
+
+function world(on: On, files: Record<string, string>, git: Git = 'no-repo') {
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[] }
+  on('process.run', (_$, e) => {
+    seen.git.push(e.argv.slice(0, 2).join(' '))
+    const out = (exitCode: number, stdout: string) => ({
+      value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    })
+    if (git === 'no-repo') return out(128, '')
+    return out(0, e.argv[1] === 'log' ? git.log : git.cat)
+  })
   mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') })
   mock.store(on)
   on('session.cwd', () => ({ value: CWD }))
@@ -97,6 +107,7 @@ test('an agent edit that finishes a task raises one toast; a stray edit raises n
   const seen = world(on, files)
   const edit = () => $.tool.call({ tool: 'Edit', file_path: `${CWD}/tasks/todo.md`, old_string: 'a', new_string: 'b' } as never)
   await $.command.run(run('refresh'))
+  seen.toasts.length = 0 // the first load's history toast
   files[`${CWD}/tasks/todo.md`] = TODO_T2_DONE
   await edit()
   expect(seen.toasts).toEqual(['♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human before proceeding'])
@@ -157,6 +168,41 @@ test('a prompt about a task reloads the files and focuses the board on it', asyn
 
   await $.prompt.submit({ text: 'run the linter', wait: false, origin: { kind: 'composer' } } as never)
   expect(seen.opened).toEqual(['asm-board'])
+})
+
+const mountBoard = ($: Parameters<TestBody>[0]) =>
+  $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-board',
+    props: { title: 'x', isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+
+test('history is rebuilt from git once, so the first day already has an ETA', async ($, on) => {
+  const git = gitOutput([
+    ['2026-10-08', TODO_T3_DONE],
+    ['2026-10-03', TODO_T2_DONE],
+    ['2026-09-29', TODO_NONE_DONE],
+    ['2026-09-20', PLAN_INDEX],
+  ])
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, git)
+  await $.command.run(run('refresh'))
+  await $.command.run(run('refresh'))
+  expect(seen.git).toEqual(['git log', 'git cat-file'])
+  expect(seen.toasts).toEqual(['Progress history rebuilt from git: 3 days since 29 Sep'])
+  const board = await mountBoard($)
+  expect(await board.find({ text: /from 3 tasks in 10 days/ })).toBeDefined()
+  expect(await board.find({ text: /History rebuilt from commits of tasks\/todo\.md back to 29 Sep/ })).toBeDefined()
+})
+
+test('without git the history starts today and the board says so', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run('refresh'))
+  expect(seen.toasts).toEqual(['No git history for tasks/todo.md (not a git repository): tracking progress from today'])
+  const board = await mountBoard($)
+  expect(await board.find({ text: /not enough history/ })).toBeDefined()
+  expect(await board.find({ text: /History tracked from 9 Oct: not a git repository/ })).toBeDefined()
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

@@ -3,6 +3,7 @@
 
 import type { Spec, Task, TaskList, PlanDoc } from './parse'
 import { shortDay, type Forecast } from './forecast'
+import type { Backfill } from './history'
 
 export const GLYPH = { done: '✓', next: '●', todo: '○', blocked: '◌', needsYou: '♦' } as const
 
@@ -138,6 +139,12 @@ export function forecastText(f: Forecast): string {
   if (f.kind === 'not-enough') return `ETA: ${f.reason}.`
   const added = f.added > 0 ? ` · +${f.added} added since tracking began` : ''
   return `ETA ${shortDay(f.median)} (fast ${shortDay(f.optimistic)}, slow ${shortDay(f.slow)}) · ${f.basis}${added}`
+}
+
+/** Where the forecast's history starts (F5). */
+export function historyNote(h: Backfill, file: string | null): string {
+  if (h.source === 'git') return `History rebuilt from commits of ${file ?? 'the task list'} back to ${shortDay(h.since)}.`
+  return `History tracked from ${shortDay(h.since)}: ${h.reason}.`
 }
 
 /** A `[████░░░░]` bar, `width` cells wide. */

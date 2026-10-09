@@ -42,6 +42,11 @@ export type AsmProject = {
   listFile: string | null
   plan: AsmPlan | null
   forecast: AsmForecast | null
+  /** Where the history behind the forecast starts: rebuilt from git, or from the day the mod first saw the plan. */
+  history:
+    | { source: 'git'; days: number; since: string }
+    | { source: 'none'; reason: string; since: string }
+    | null
 }
 
 declare module 'claude-code' {

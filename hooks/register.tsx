@@ -2,8 +2,18 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks } from './lib/parse'
-import { dayOf, forecast, record, type Snapshot } from './lib/forecast'
+import { parsePlan, parseSpec, parseTasks, type TaskList } from './lib/parse'
+import { dayOf, forecast, record, shortDay, type Snapshot } from './lib/forecast'
+import {
+  CAT_ARGV,
+  catInput,
+  logArgv,
+  mergeHistory,
+  parseLog,
+  snapshotsFromGit,
+  splitBatch,
+  type Backfill,
+} from './lib/history'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import {
   bandText,
@@ -12,6 +22,7 @@ import {
   progressBrief,
   taskInPrompt,
   forecastText,
+  historyNote,
   nextText,
   specApproval,
   stageOfSkill,
@@ -44,6 +55,30 @@ async function readText($: $, path: string): Promise<string | null> {
   }
 }
 
+/**
+ * Rebuilds the snapshots a project had before the mod saw it (F5): two git
+ * calls, once per project. Without git the history starts today, and says so.
+ */
+async function backfill($: $, file: string, list: TaskList, today: string): Promise<{ note: Backfill; snaps: Snapshot[] }> {
+  const none = (reason: string) => ({ note: { source: 'none', reason, since: today } as const, snaps: [] })
+  try {
+    const log = await $.process.run(logArgv(file), { timeoutMs: 20_000 })
+    if (log.exitCode !== 0) return none('not a git repository')
+    const commits = parseLog(log.stdout)
+    if (commits.length === 0) return none(`${file} has no commits`)
+    const cat = await $.process.run(CAT_ARGV, { stdin: catInput(commits, file), timeoutMs: 20_000 })
+    const snaps = cat.exitCode === 0 ? snapshotsFromGit(commits, splitBatch(cat.stdout), list) : []
+    const first = snaps[0]
+    if (!first) return none(`no commit of ${file} holds this plan`)
+    return { note: { source: 'git', days: snaps.length, since: first.day }, snaps }
+  } catch {
+    return none('git is not available')
+  }
+}
+
+/** Projects whose backfill is running, so a second load does not start another. */
+const backfilling = new Set<string>()
+
 /** Re-reads the three files, records today's snapshot and updates the status entry. */
 async function load($: $): Promise<AsmProject> {
   const cwd = await $.session.cwd()
@@ -58,18 +93,38 @@ async function load($: $): Promise<AsmProject> {
   const listSource = todoText ?? planText
   const list = listSource === null ? null : parseTasks(listSource)
 
+  const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
   let fc: AsmProject['forecast'] = null
+  let backfilled: Backfill | null = null
   if (list && list.total > 0) {
     const now = await $.clock.now()
     const key = `history:${cwd}`
-    const history = ((await $.store.get(key)) as Snapshot[] | undefined) ?? []
+    const noteKey = `backfill:${cwd}`
+    let history = ((await $.store.get(key)) as Snapshot[] | undefined) ?? []
+    let note = ((await $.store.get(noteKey)) as Backfill | undefined) ?? null
+    if (!note && listFile && !backfilling.has(cwd)) {
+      backfilling.add(cwd)
+      try {
+        const found = await backfill($, listFile, list, dayOf(now))
+        note = found.note
+        history = mergeHistory(((await $.store.get(key)) as Snapshot[] | undefined) ?? [], found.snaps)
+        await $.store.set(noteKey, note)
+        $.ui.toast(
+          note.source === 'git'
+            ? `Progress history rebuilt from git: ${note.days} day${note.days === 1 ? '' : 's'} since ${shortDay(note.since)}`
+            : `No git history for ${listFile} (${note.reason}): tracking progress from today`,
+        )
+      } finally {
+        backfilling.delete(cwd)
+      }
+    }
     const next = record(history, { day: dayOf(now), done: list.done, total: list.total })
     await $.store.set(key, next)
     fc = forecast(next, now)
+    backfilled = note
   }
 
-  const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
-  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc }
+  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled }
   await update($, project, () => value)
   $.ui.status(statusText(spec, list))
   return value
@@ -306,6 +361,7 @@ export const register: Register = on => {
               {forecastText(p.forecast)}
             </Text>
           )}
+          {p?.history && <Text dimColor>{historyNote(p.history, p.listFile)}</Text>}
           {list.kind === 'checklist' && <Text dimColor>Plain checklist: no "## Task N:" headings found.</Text>}
           {p?.plan?.trackedIn && <Text dimColor>Tasks tracked in {p.plan.trackedIn}</Text>}
         </Box>
