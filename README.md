@@ -63,7 +63,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 
 | Command | |
 |---|---|
-| `/progress` | Opens the task board |
+| `/progress` | Opens the task board. Its buttons: **Charts** (`g`), **Report** (`r`), **Copy digest** (`c`); the charts pane has **Board** (`b`) in place of Charts. |
 | `/progress charts` | Opens the burn-up and flow charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
@@ -152,7 +152,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 98 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 99 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

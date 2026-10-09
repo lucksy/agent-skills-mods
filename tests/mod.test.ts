@@ -808,3 +808,22 @@ test('/progress charts sweeps the cell charts in from the left', async ($, on) =
   await clocks.get(seen)!.advance(500)
   expect((await plot()).length).toBeGreaterThan(10)
 })
+
+test('the board and charts carry Report, Copy digest and a switch to the other pane', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }
+  const seen = world(on, files, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.command.run(run(''))
+  const board = await mountBoard($)
+  await board.press({ key: 'digest' })
+  expect(seen.copied).toHaveLength(1)
+  expect(seen.toasts.at(-1)).toBe('Copied to the clipboard.')
+  await board.press({ key: 'report' })
+  expect(files[`${CWD}/tasks/progress-report.html`]).toMatch(/^<!doctype html>/i)
+  expect(seen.launched).toEqual([`${CWD}/tasks/progress-report.html`])
+  await board.press({ key: 'to-charts' })
+  expect(seen.opened.at(-1)).toBe('asm-charts')
+  const charts = await mountCharts($)
+  await charts.press({ key: 'to-board' })
+  expect(seen.opened.at(-1)).toBe('asm-board')
+  expect((await charts.find({ type: 'Button', key: 'report' }))?.props).toMatchObject({ hotkey: 'r' })
+})

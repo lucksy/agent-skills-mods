@@ -327,6 +327,37 @@ async function specGate<R extends { context?: readonly string[] }>($: $, path: s
   }
 }
 
+/** `/progress digest` and the panes' Copy digest button (G2). */
+async function copyDigest($: $, p: AsmProject): Promise<string> {
+  const text = digestText(p)
+  const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
+  return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
+}
+
+/** `/progress report` and the panes' Report button (G1). */
+async function writeReport($: $, p: AsmProject): Promise<string> {
+  if (!p.list || p.list.total === 0) return 'No task list yet, so there is nothing to report.'
+  const path = `${p.cwd}/${REPORT_FILE}`
+  const html = reportHtml({
+    ...p,
+    today: dayOf(await $.clock.now()),
+    charts: { burnup: burnupSvg(p.snapshots, p.forecast), flow: flowSvg(p.snapshots) },
+    historyLine: p.history ? historyNote(p.history, p.listFile) : undefined,
+  })
+  await $.fs.write(path, html)
+  const size = `${Math.round(html.length / 1024)} KB`
+  return (await openFile($, path))
+    ? `Wrote ${REPORT_FILE} (${size}) and opened it in your browser. It is one self-contained page, so it also opens offline or as an email attachment.`
+    : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`
+}
+
+/** The board's and charts' Report and Copy digest buttons: the command's work, its outcome as a toast. */
+async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
+  const p = await load($)
+  const text = what === 'report' ? await writeReport($, p) : await copyDigest($, p)
+  $.ui.toast(what === 'report' ? text : (text.split('\n').at(-1) ?? text))
+}
+
 /** `build T4` while building or testing, the stage alone otherwise. */
 async function stageLabel($: $): Promise<string | null> {
   const s = await read($, stage)
@@ -402,28 +433,8 @@ export const register: Register = (on, options) => {
       const days = new Set(p.snapshots.map(s => s.day)).size
       return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
     }
-    if (arg === 'digest') {
-      const text = digestText(p)
-      const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
-      return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
-    }
-    if (arg === 'report') {
-      if (!p.list || p.list.total === 0) return reply('No task list yet, so there is nothing to report.')
-      const path = `${p.cwd}/${REPORT_FILE}`
-      const html = reportHtml({
-        ...p,
-        today: dayOf(await $.clock.now()),
-        charts: { burnup: burnupSvg(p.snapshots, p.forecast), flow: flowSvg(p.snapshots) },
-        historyLine: p.history ? historyNote(p.history, p.listFile) : undefined,
-      })
-      await $.fs.write(path, html)
-      const size = `${Math.round(html.length / 1024)} KB`
-      return reply(
-        (await openFile($, path))
-          ? `Wrote ${REPORT_FILE} (${size}) and opened it in your browser. It is one self-contained page, so it also opens offline or as an email attachment.`
-          : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`,
-      )
-    }
+    if (arg === 'digest') return reply(await copyDigest($, p))
+    if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
     if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|history|allow-overwrite|refresh]`)
@@ -723,7 +734,7 @@ export const register: Register = (on, options) => {
   // ----------------------------------------------------------- task board + run timeline (B1, F1, G3)
 
   on('ui.render', { component: 'Pane', requestId: BOARD_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const p = await read($, project)
     const list = p?.list
     if (!list || list.total === 0) {
@@ -788,6 +799,11 @@ export const register: Register = (on, options) => {
             ),
           )}
         </Box>
+        <Box flexDirection="row" gap={1}>
+          <Button key="to-charts" label="Charts" hotkey="g" dimColor onPress={() => void sweepCharts($).then(() => $.ui.open({ id: CHARTS_PANE, title: 'Charts' }))} />
+          <Button key="report" label="Report" hotkey="r" dimColor onPress={() => void paneAction($, 'report')} />
+          <Button key="digest" label="Copy digest" hotkey="c" dimColor onPress={() => void paneAction($, 'digest')} />
+        </Box>
         <Text wrap="wrap">
           <Text color="success">✓</Text>
           <Text dimColor> done </Text>
@@ -811,7 +827,7 @@ export const register: Register = (on, options) => {
   // ----------------------------------------------------------- charts (F2)
 
   on('ui.render', { component: 'Pane', requestId: CHARTS_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const p = await read($, project)
     const snaps = p?.snapshots ?? []
     const columns = Math.max(24, Math.min(120, e.props.bodyColumns))
@@ -882,6 +898,11 @@ export const register: Register = (on, options) => {
           </Text>
           {chart('flow', fl)}
           <Text dimColor wrap="wrap">{fl.legend}</Text>
+        </Box>
+        <Box flexDirection="row" gap={1}>
+          <Button key="to-board" label="Board" hotkey="b" dimColor onPress={() => void $.ui.open({ id: BOARD_PANE, title: 'Plan' })} />
+          <Button key="report" label="Report" hotkey="r" dimColor onPress={() => void paneAction($, 'report')} />
+          <Button key="digest" label="Copy digest" hotkey="c" dimColor onPress={() => void paneAction($, 'digest')} />
         </Box>
       </Box>
     )
