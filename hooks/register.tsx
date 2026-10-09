@@ -34,6 +34,8 @@ import {
   bar,
   areaSummary,
   boardRows,
+  commitsNaming,
+  taskDetail,
   openCounts,
   phaseLabel,
   phaseOf,
@@ -692,6 +694,20 @@ export const register: Register = (on, options) => {
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
     if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    const one = /^task\s+#?(t?\d+)$/i.exec(e.args.trim())
+    if (one) {
+      const id = /^\d+$/.test(one[1]!) ? `T${one[1]}` : one[1]!.toUpperCase()
+      if (!p.list?.tasks.some(t => t.id === id)) return reply(`No ${id} in ${p.listFile ?? 'tasks/todo.md'}.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`)
+      const n = id.slice(1)
+      const log = await $.process
+        .run(['git', 'log', '--max-count=300', '--format=%h %as %s', `--grep=T${n}`, `--grep=Task ${n}`, '-i'], { timeoutMs: 10_000 })
+        .catch(() => null)
+      const commits = log && log.exitCode === 0 ? commitsNaming(log.stdout, id) : []
+      await update($, focus, () => id)
+      await showTab($, 'tasks')
+      void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+      return reply(taskDetail(p.list, id, { today: dayOf(await $.clock.now()), dates: p.dates, commits })!)
+    }
     const taskVerb = /^(start|done|block|unblock)\s+#?(t?\d+)\s*(.*)$/i.exec(e.args.trim())
     if (taskVerb) return reply(await setTask($, taskVerb[1]!.toLowerCase(), taskVerb[2]!, taskVerb[3]!.replace(/^["']|["']$/g, '').trim()))
     if (arg === 'doctor' || arg === 'doctor fix') return reply(await doctor($, arg.endsWith('fix')))
@@ -717,7 +733,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

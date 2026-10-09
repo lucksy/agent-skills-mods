@@ -554,3 +554,63 @@ export function areaSummary(a: { key: string; state: string; body: string; hint:
   }
   return { text: '', isWeak: false }
 }
+
+// ------------------------------------------------------------------ one task in detail (/progress task T4)
+
+const DAY_OF = (d: string) => Date.parse(`${d}T00:00:00Z`)
+
+/**
+ * Everything about one task: state, boxes by kind, what it waits on and what
+ * waits on it, the checkpoint after it, days spent, the expected date, and the
+ * commits that name it.
+ */
+export function taskDetail(list: TaskList, id: string, opts: { today: string; dates: Record<string, TaskDate>; commits: { hash: string; day: string; subject: string }[] }): string | null {
+  const t = list.tasks.find(x => x.id === id)
+  if (!t) return null
+  const st = t.state
+  const glyph = { done: GLYPH.done, next: '◐', todo: GLYPH.todo, waiting: GLYPH.waiting, blocked: GLYPH.blocked }[t.status]
+  const word = { done: 'done', next: 'current', todo: 'to do', waiting: 'waiting', blocked: 'blocked' }[t.status]
+  const lines = [`${glyph} ${t.id} ${t.title}${t.phase ? `  ·  ${phaseLabel(t.phase)}` : ''}`]
+  const facts = [word]
+  if (st?.step && t.status !== 'done') facts.push(`step ${st.step}`)
+  if (st?.started) {
+    const end = st.done ?? opts.today
+    const n = Math.max(0, Math.round((DAY_OF(end) - DAY_OF(st.started)) / 86_400_000))
+    facts.push(`started ${shortDay(st.started)}`, t.status === 'done' ? `took ${n}d` : `${n}d so far`)
+  }
+  const d = opts.dates[t.id]
+  if (d) facts.push(d.isEstimate ? `expected ≈${shortDay(d.day)}` : `done ${shortDay(d.day)}`)
+  lines.push(facts.join(' · '))
+  const groups: [string, number[]][] = [
+    ['Acceptance criteria', t.boxes.map((_, i) => i).filter(i => (t.kinds?.[i] ?? 'criteria') === 'criteria')],
+    ['Verification', t.boxes.map((_, i) => i).filter(i => t.kinds?.[i] === 'verification')],
+  ]
+  for (const [label, idx] of groups) {
+    if (!idx.length) continue
+    lines.push('', `${label} ${idx.filter(i => t.boxes[i]!.isDone).length}/${idx.length}`)
+    for (const i of idx) lines.push(`  ${t.boxes[i]!.isDone ? '☑' : '☐'} ${t.boxes[i]!.text}`)
+  }
+  const byId = new Map(list.tasks.map(x => [x.id, x]))
+  if (t.deps.length) lines.push('', `Waits on: ${t.deps.map(x => `${x} ${byId.get(x)?.status === 'done' ? '✓' : (byId.get(x)?.status ?? '?')}`).join(', ')}`)
+  const after = list.tasks.filter(x => x.deps.includes(t.id)).map(x => x.id)
+  if (after.length) lines.push(`${after.length === 1 ? 'Waits on it' : 'Wait on it'}: ${after.join(', ')}`)
+  if (t.blockedBy) lines.push(`Blocked by: ${t.blockedBy}`)
+  if (t.checkpoint) lines.push(`Then checkpoint: ${t.checkpoint.title} (${t.checkpoint.items.map(b => b.text).join(' · ')})`)
+  if (opts.commits.length) {
+    lines.push('', `Commits naming ${t.id}`)
+    for (const c of opts.commits.slice(0, 8)) lines.push(`  ${c.hash} ${shortDay(c.day)}  ${c.subject}`)
+    if (opts.commits.length > 8) lines.push(`  and ${opts.commits.length - 8} more`)
+  }
+  return lines.join('\n')
+}
+
+/** Commits from `git log --format=%h %as %s` whose subject names the task (`T4`, `Task 4`). */
+export function commitsNaming(out: string, id: string): { hash: string; day: string; subject: string }[] {
+  const n = id.slice(1)
+  const re = new RegExp(`\\b(?:T${n}|[Tt]ask\\s*#?${n})\\b`)
+  return out
+    .split('\n')
+    .map(l => /^([0-9a-f]{4,40}) (\d{4}-\d{2}-\d{2}) (.*)$/.exec(l.trim()))
+    .filter((m): m is RegExpExecArray => !!m && re.test(m[3]!))
+    .map(m => ({ hash: m[1]!, day: m[2]!, subject: m[3]! }))
+}

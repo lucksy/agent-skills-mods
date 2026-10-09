@@ -9,7 +9,7 @@ const CWD = '/p'
 const clocks = new WeakMap<object, ReturnType<typeof mock.clock>>()
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string; messages?: string } | 'no-repo' | 'no-commits'
+type Git = { log: string; cat: string; messages?: string; named?: string } | 'no-repo' | 'no-commits'
 
 function world(
   on: On,
@@ -41,6 +41,7 @@ function world(
     seen.git.push(e.argv.slice(0, 2).join(' '))
     if (git === 'no-repo') return out(128, '')
     if (git === 'no-commits') return { value: { ...out(128, '').value, stderr: "fatal: your current branch 'main' does not have any commits yet" } }
+    if (e.argv[1] === 'log' && e.argv.includes('--format=%h %as %s')) return out(0, git.named ?? '')
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.cat)
   })
@@ -1023,4 +1024,19 @@ test('/progress standup: done since the last working day, today, blocked, decisi
   expect(out.text).toMatch(/\nNeeds a decision: Q2 \(T9\): later\?\n/)
   expect(out.text).toMatch(/Progress: 3\/4 tasks/)
   expect(seen.copied[0]).toBe(lines.slice(0, lines.indexOf('')).join('\n'))
+})
+
+test('/progress task T3: state, boxes by kind, dependencies both ways, checkpoint, commits; the board focuses it', async ($, on) => {
+  const todo = TODO_CP_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · started 2026-10-07 · step test').replace('**Dependencies:** 1', '**Dependencies:** T3')
+  const msg = (h: string, d: string, s: string) => `${h} ${d} ${s}`
+  const named = [msg('a1b2c3d', '2026-10-08', 'T3: issue keys'), msg('d4e5f6a', '2026-10-07', 'Task 3 wip'), msg('0a0a0a0', '2026-10-06', 'T30 unrelated')].join('\n')
+  world(on, { [`${CWD}/tasks/todo.md`]: todo }, { log: '', cat: '', messages: '', named })
+  const out = (await $.command.run(run('task T3'))).text!
+  expect(out.split('\n').slice(0, 2)).toEqual(['◐ T3 Issue and revoke keys  ·  Phase 2 · Core', 'current · step test · started 7 Oct · 2d so far'])
+  expect(out).toContain('Acceptance criteria 0/1\n  ☐ POST /keys returns the secret once')
+  expect(out).toContain('Waits on: T2 ✓')
+  expect(out).toContain('Waits on it: T4')
+  expect(out).toContain('Commits naming T3\n  a1b2c3d 8 Oct  T3: issue keys\n  d4e5f6a 7 Oct  Task 3 wip')
+  expect(out).not.toContain('T30')
+  expect((await $.command.run(run('task 9'))).text).toMatch(/^No T9 in tasks\/todo\.md\./)
 })

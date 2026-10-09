@@ -74,6 +74,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress history` | Lists the history sources and what each added |
 | `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
 | `/progress next` | Prints the next unblocked task with its criteria and any checkpoint after it. It comes straight from the parser and costs no model tokens. |
+| `/progress task T4` | One task in detail: state, step, days spent or expected date, acceptance and verification boxes apart, what it waits on and what waits on it, the checkpoint after it, and the commits that name it. The board focuses it. |
 | `/progress start T4` · `done T4` · `block T6 "why"` · `unblock T6` | Sets a task's state yourself: in progress from today, every box ticked, blocked with a numbered question added to `tasks/plan.md` (`- Q3 (T6): why`), or unblocked. Written into its Status line. |
 | `/progress allow-overwrite` | Lets the next turn overwrite an unfinished plan once |
 | `/progress archive` / `archive force` | Moves the plan to `tasks/archive/<date>-<plan>/` (todo.md, plan.md, history.json and a README of what was left open) so the next `/plan` starts clean. An unfinished plan needs `force`. |
@@ -174,7 +175,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 126 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 127 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
