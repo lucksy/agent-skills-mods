@@ -411,7 +411,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     if (options.planSpinner !== true || e.props.message !== null) return next(e)
     const s = await read($, step)
-    return s ? next({ ...e, props: { ...e.props, word: spinnerWord(s.step, s.task) } }) : next(e)
+    const word = s ? spinnerWord(s.step, s.task) : spinnerWord(null, (await read($, project))?.list?.current?.id ?? null)
+    return word ? next({ ...e, props: { ...e.props, word } }) : next(e)
   })
 
   // Edits made outside the session show after the next turn. The overwrite allowance

@@ -309,21 +309,32 @@ test('with planSpinner on, the spinner says the step and task; a failed test run
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   const { words, draw } = spinnerWords(on)
   await $.command.run(run('refresh'))
+  // Reading and thinking take no step: the task alone.
+  await $.tool.call({ tool: 'Bash', command: 'cat SPEC.md' } as never)
+  await draw($)
   await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
   await draw($)
   await $.tool.call({ tool: 'Bash', command: 'pnpm test keys # FAIL' } as never)
   await draw($)
-  expect(words).toEqual(['Building T2', 'Testing T2'])
+  expect(words).toEqual(['Working on T2', 'Building T2', 'Testing T2'])
 
   const board = await mountBoard($)
   expect(await board.find({ text: /× T2 Prisma schema for keys · tests failed/ })).toBeDefined()
   await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
   expect(await board.find({ text: /× T2/ })).toBeUndefined()
 
-  // The turn's end clears the step: the next turn starts with the engine's word.
+  // The turn's end clears the step: the next turn starts on the task again.
   await $.turn.complete({ answer: 'done' } as never)
   await draw($)
-  expect(words[2]).toBe('Sauteing')
+  expect(words[3]).toBe('Working on T2')
+})
+
+test('with planSpinner on and no plan, the random word stays', { options: { planSpinner: true } }, async ($, on) => {
+  world(on, {})
+  const { words, draw } = spinnerWords(on)
+  await $.command.run(run('refresh'))
+  await draw($)
+  expect(words).toEqual(['Sauteing'])
 })
 
 test('planSpinner is off by default: the random word stays', async ($, on) => {

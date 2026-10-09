@@ -23,5 +23,11 @@ export function stepOf(tool: string, input: { command?: unknown; file_path?: unk
 
 const VERB: Record<Step, string> = { build: 'Building', test: 'Testing', commit: 'Committing' }
 
-/** The spinner's word: `Building T4`, or the verb alone with no plan. */
-export const spinnerWord = (step: Step, task: string | null) => (task ? `${VERB[step]} ${task}` : VERB[step])
+/**
+ * The spinner's word: `Building T4` once the turn took a step, `Working on T4`
+ * before it has, the verb alone with no plan, and null with neither.
+ */
+export function spinnerWord(step: Step | null, task: string | null): string | null {
+  if (step) return task ? `${VERB[step]} ${task}` : VERB[step]
+  return task ? `Working on ${task}` : null
+}

@@ -299,6 +299,8 @@ describe('timeline dates and steps (F1, H3)', () => {
     expect(stepOf('Read', { file_path: '/p/src/keys.ts' })).toBe(null)
     expect(spinnerWord('test', 'T4')).toBe('Testing T4')
     expect(spinnerWord('build', null)).toBe('Building')
+    expect(spinnerWord(null, 'T4')).toBe('Working on T4')
+    expect(spinnerWord(null, null)).toBe(null)
   })
 })
 
