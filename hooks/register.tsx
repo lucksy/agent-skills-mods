@@ -27,6 +27,7 @@ import { historyFromLogs, logsDir, mentions } from './lib/logs'
 import { burnup, flow } from './lib/chart'
 import { digestText, reportHtml } from './lib/report'
 import { burnupSvg, flowSvg } from './lib/svg'
+import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
 import { spinnerWord, stepOf, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { gateWarning } from './lib/gate'
@@ -69,6 +70,8 @@ const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null 
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
 /** The spec area opened for reading in the spec pane (A1), by key. */
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
+/** Whether this terminal draws pictures (F3), read from its environment at session start. */
+const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, false)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -359,6 +362,20 @@ export const register: Register = (on, options) => {
       description: 'Open SPEC.md, or a module spec (specs/<id>.md or SPEC-<id>.md), as a pane with its six core areas',
       argumentHint: '[module id]',
     })
+    const style = options.chartStyle
+    const canDraw = await (async () => {
+      try {
+        return drawsPixels({
+          term: await $.env.get('TERM'),
+          termProgram: await $.env.get('TERM_PROGRAM'),
+          kitty: await $.env.get('KITTY_WINDOW_ID'),
+          tmux: await $.env.get('TMUX'),
+        })
+      } catch {
+        return false
+      }
+    })()
+    await update($, pixels, () => (style === 'pixels' ? true : style === 'cells' ? false : canDraw))
     await load($, { recheckLogs: true }).catch(() => undefined)
     return next(e)
   })
@@ -767,9 +784,41 @@ export const register: Register = (on, options) => {
       const since = snaps[0] ? ` Tracking since ${shortDay(snaps[0].day)}.` : ''
       return <Text dimColor wrap="wrap">{`Charts need two days of history.${since}`}</Text>
     }
-    // Terminal cells there (F2); interactive SVG on desktop, VS Code and mobile (F4).
+    // Pictures on kitty and Ghostty (F3), terminal cells elsewhere (F2); interactive
+    // SVG on desktop, VS Code and mobile (F4).
+    const usePixels = e.surface === 'terminal' && (await read($, pixels))
+    const picture = (key: 'burnup' | 'flow', c: { columns: number; rows: number }, pic: PixelChart | null) => {
+      if (e.surface !== 'terminal' || !pic) return null
+      const { Image } = $.ui.resolve(e)
+      const plotCols = Math.min(255, c.columns - 4)
+      const plotRows = c.rows - 1
+      const labelAt = new Map(pic.ticks.map((t, i) => [Math.round((i * (plotRows - 1)) / (pic.ticks.length - 1)), t]))
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="row">
+            <Box flexDirection="column" width={4}>
+              {Array.from({ length: plotRows }, (_, r) => (
+                <Text color="subtle">{labelAt.has(r) ? `${String(labelAt.get(r)).padStart(2)} ┤` : '   │'}</Text>
+              ))}
+            </Box>
+            <Image key={key} source={{ png: pic.png }} columns={plotCols} rows={plotRows} alt={pic.alt} />
+          </Box>
+          <Text color="subtle">{`    ${dateRow(pic.dates, plotCols)}`}</Text>
+        </Box>
+      )
+    }
     const chart = (key: 'burnup' | 'flow', c: { columns: number; rows: number; cells: string }) => {
       if (e.surface === 'terminal') {
+        if (usePixels) {
+          const w = Math.min(255, c.columns - 4) * CELL_PX.w
+          const h = (c.rows - 1) * CELL_PX.h
+          const fc = p?.forecast ?? null
+          const pic = cachedPixels(key, JSON.stringify([snaps, key === 'burnup' ? fc : null, w, h]), () =>
+            key === 'burnup' ? burnupPixels(snaps, fc, w, h) : flowPixels(snaps, w, h),
+          )
+          const drawn = picture(key, c, pic)
+          if (drawn) return drawn
+        }
         const { Raster } = $.ui.resolve(e)
         return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
       }

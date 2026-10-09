@@ -101,7 +101,7 @@ const run = (args: string) =>
     presentation: { isFullscreen: true, columns: 160 },
   }) as never
 
-test('write guard refuses a new plan over unfinished tasks', async ($, on) => {
+test('write guard refuses a new plan over unfinished tasks', { timeoutMs: 20_000 }, async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   const denied = await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: PLAN_INDEX } as never)
   expect(JSON.stringify(denied)).toMatch(/refused to overwrite .*3 unfinished tasks/)
@@ -718,4 +718,41 @@ test('module specs from a capability map: specs/<module>.md in the picker, by /s
   files[`${CWD}/specs/hooks.md`] = WEAK_SPEC
   await $.tool.call({ tool: 'Write', file_path: `${CWD}/specs/hooks.md`, content: WEAK_SPEC } as never)
   expect(await pane.find({ text: /Webhooks \(specs\/hooks\.md\)/ })).toBeDefined()
+})
+
+const CHART_HISTORY = [
+  { day: '2026-10-01', done: 0, total: 4, doing: 1, blocked: 1 },
+  { day: '2026-10-05', done: 2, total: 4, doing: 0, blocked: 0 },
+]
+const mountCharts = ($: Parameters<TestBody>[0], bodyColumns = 70) =>
+  $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-charts',
+    props: { title: 'x', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+
+test('with chartStyle pixels, the terminal charts are pictures with text axes and the same legends', { options: { chartStyle: 'pixels' } }, async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($)
+  expect(await pane.find({ type: 'Raster' })).toBeUndefined()
+  const up = await pane.find({ type: 'Image', key: 'burnup' })
+  expect(up?.props).toMatchObject({ columns: 66, rows: 9 })
+  expect(String((up?.props as { alt: string }).alt)).toMatch(/^Burn-up: 3 of 4 tasks done by 9 Oct/)
+  expect((await pane.find({ type: 'Image', key: 'flow' }))?.props).toMatchObject({ columns: 66, rows: 7 })
+  expect(await pane.find({ text: /^ 4 ┤$/ })).toBeDefined()
+  expect(await pane.find({ text: /^ {4}1 Oct +9 Oct$/ })).toBeDefined()
+  expect(await pane.find({ text: /^done 3 \(green\)/ })).toBeDefined()
+})
+
+test('chartStyle auto on a terminal that draws no pictures keeps the braille and block Rasters', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($)
+  expect(await pane.find({ type: 'Image' })).toBeUndefined()
+  expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
 })

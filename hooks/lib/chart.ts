@@ -40,10 +40,11 @@ export function daily(history: Snapshot[]): Snapshot[] {
 /** A grid of `[codePoint, foreground, background]` cells, packed as a Raster's `cells`. */
 class Grid {
   readonly words: Uint32Array
-  constructor(
-    readonly columns: number,
-    readonly rows: number,
-  ) {
+  readonly columns: number
+  readonly rows: number
+  constructor(columns: number, rows: number) {
+    this.columns = columns
+    this.rows = rows
     this.words = new Uint32Array(columns * rows * 3)
     for (let i = 0; i < columns * rows; i++) this.set(i % columns, Math.floor(i / columns), 0x20, COLOR.none)
   }

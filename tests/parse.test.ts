@@ -4,6 +4,7 @@ import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/par
 import { checkOverwrite } from '../hooks/lib/guard'
 import { gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
+import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
 import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
 import {
   combine,
@@ -593,5 +594,49 @@ describe('module specs under specs/ (A3)', () => {
     expect(specOfPath('/p/SPEC-auth.md')).toBe('SPEC-auth.md')
     expect(specOfPath('/p/specs/README.md')).toBe(null)
     expect(specOfPath('/p/src/auth.md')).toBe(null)
+  })
+})
+
+describe('pixel charts (F3)', () => {
+  const fromB64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0))
+  const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer).getUint32(at)
+  const history = [
+    { day: '2026-10-01', done: 0, total: 4, doing: 1, blocked: 1 },
+    { day: '2026-10-05', done: 2, total: 5, doing: 1, blocked: 0 },
+  ]
+
+  test('a PNG: signature, IHDR with the size, then IDAT and an IEND with its known CRC', async () => {
+    const png = encodePng(3, 2, new Uint8Array(3 * 2 * 4).fill(200))
+    expect([...png.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    expect(String.fromCharCode(...png.slice(12, 16))).toBe('IHDR')
+    expect([u32(png, 16), u32(png, 20)]).toEqual([3, 2])
+    expect(String.fromCharCode(...png.slice(37, 41))).toBe('IDAT')
+    expect(u32(png, png.length - 4)).toBe(0xae426082)
+  })
+
+  test('charts paint at the asked size, small enough to send, with ticks, dates and alt text', async () => {
+    const fc = { kind: 'range' as const, optimistic: '2026-10-12', median: '2026-10-15', slow: '2026-10-20', basis: 'x', added: 1 }
+    const up = burnupPixels(history, fc, 480, 144)!
+    const png = fromB64(up.png)
+    expect([u32(png, 16), u32(png, 20)]).toEqual([480, 144])
+    expect(png.length).toBeLessThan(480 * 144) // far under the raw 4 bytes a pixel
+    expect(up.ticks).toEqual([5, 3, 0])
+    expect(up.dates.map(d => d.label)).toEqual(['1 Oct', '5 Oct', '20 Oct'])
+    expect(up.alt).toBe('Burn-up: 2 of 5 tasks done by 5 Oct, forecast 15 Oct (12 Oct to 20 Oct).')
+    expect(flowPixels(history, 480, 112)!.alt).toBe('Flow on 5 Oct: 2 done, 1 in progress, 0 blocked, 2 to do.')
+    expect(burnupPixels(history.slice(0, 1), null, 480, 144)).toBe(null)
+  })
+
+  test('date row: centred where each falls, never overlapping', async () => {
+    expect(dateRow([{ label: '1 Oct', at: 0 }, { label: '20 Oct', at: 1 }], 20)).toBe('1 Oct         20 Oct')
+    expect(dateRow([{ label: '1 Oct', at: 0 }, { label: '2 Oct', at: 0.05 }], 20)).toBe('1 Oct')
+  })
+
+  test('kitty and Ghostty draw pictures; tmux and other terminals do not', async () => {
+    expect(drawsPixels({ term: 'xterm-kitty' })).toBe(true)
+    expect(drawsPixels({ termProgram: 'ghostty' })).toBe(true)
+    expect(drawsPixels({ term: 'xterm-256color', kitty: '1' })).toBe(true)
+    expect(drawsPixels({ term: 'xterm-ghostty', tmux: '/tmp/tmux-501/default,1,0' })).toBe(false)
+    expect(drawsPixels({ term: 'xterm-256color', termProgram: 'Apple_Terminal' })).toBe(false)
   })
 })

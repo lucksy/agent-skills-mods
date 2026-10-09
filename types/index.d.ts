@@ -71,6 +71,7 @@ declare module 'claude-code' {
       specChoice: string | null
       gateWarned: boolean
       specSection: string | null
+      pixels: boolean
     }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, and a guard that refuses overwriting an unfinished plan.",
   "author": {
     "name": "lucksy"
@@ -28,6 +28,17 @@
       "title": "Spec gate warning",
       "description": "Warn (never block) when source files change while SPEC.md is still awaiting approval.",
       "default": false
+    },
+    "chartStyle": {
+      "type": "string",
+      "title": "Terminal chart style",
+      "description": "auto: pictures on kitty and Ghostty, braille and block characters elsewhere. pixels: always pictures. cells: always characters.",
+      "options": [
+        "auto",
+        "pixels",
+        "cells"
+      ],
+      "default": "auto"
     }
   }
 }
