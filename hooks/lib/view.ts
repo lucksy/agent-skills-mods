@@ -1,11 +1,11 @@
 // Plain-text views of the parsed state: the status entry, /progress next, the band line
 // and the run timeline rows. Every surface draws these, so they are text only.
 
-import type { Spec, Task, TaskList, PlanDoc } from './parse'
+import { taskKey, type Spec, type Task, type TaskList, type PlanDoc } from './parse'
 import { shortDay, type Forecast } from './forecast'
 import type { Backfill } from './history'
 
-export const GLYPH = { done: '✓', next: '●', todo: '○', blocked: '◌', needsYou: '♦' } as const
+export const GLYPH = { done: '✓', next: '●', todo: '○', blocked: '◌', needsYou: '♦', failed: '×' } as const
 
 export type Stage = 'spec' | 'plan' | 'build' | 'test' | 'review' | 'ship'
 
@@ -96,30 +96,72 @@ export function nextText(list: TaskList | null, plan: PlanDoc | null): string {
 }
 
 export type TimelineRow =
-  | { kind: 'phase'; text: string }
-  | { kind: 'task'; glyph: string; id: string; title: string; detail: string; status: Task['status'] }
-  | { kind: 'checkpoint'; glyph: string; text: string }
+  | { kind: 'phase'; text: string; date: string }
+  | { kind: 'task'; glyph: string; id: string; title: string; detail: string; status: Task['status'] | 'failed'; date: string }
+  | { kind: 'checkpoint'; glyph: string; text: string; date: string }
 
-/** The run timeline (F1): phases, tasks and checkpoints in plan order. */
-export function timelineRows(list: TaskList): TimelineRow[] {
-  const rows: TimelineRow[] = []
-  let phase: string | null = null
+/** A task's day: when it was done, or `≈` when the forecast expects it. */
+export type TaskDate = { day: string; isEstimate: boolean }
+
+const DAY_MS = 86_400_000
+
+/**
+ * The date column (F1): the day each done task was first seen done, and for
+ * the open ones, in plan order, the day the median pace reaches them.
+ */
+export function taskDates(list: TaskList, doneDays: Record<string, string>, fc: Forecast | null, today: string): Record<string, TaskDate> {
+  const dates: Record<string, TaskDate> = {}
   for (const t of list.tasks) {
-    if (t.phase && t.phase !== phase) {
-      phase = t.phase
-      rows.push({ kind: 'phase', text: t.phase })
+    const day = doneDays[taskKey(t)]
+    if (t.status === 'done' && day) dates[t.id] = { day, isEstimate: false }
+  }
+  if (fc?.kind !== 'range') return dates
+  const open = list.tasks.filter(t => t.status !== 'done')
+  const days = Math.max(1, Math.round((Date.parse(`${fc.median}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / DAY_MS))
+  open.forEach((t, i) => {
+    const at = Date.parse(`${today}T00:00:00Z`) + Math.ceil(((i + 1) * days) / open.length) * DAY_MS
+    dates[t.id] = { day: new Date(at).toISOString().slice(0, 10), isEstimate: true }
+  })
+  return dates
+}
+
+const dateText = (d: TaskDate | undefined) => (d ? `${d.isEstimate ? '≈' : ''}${shortDay(d.day)}` : '')
+
+/**
+ * The run timeline (F1): phases, tasks and checkpoints in plan order. A task
+ * whose last test run failed is marked ×; a phase is dated by its last task.
+ */
+export function timelineRows(list: TaskList, opts: { dates?: Record<string, TaskDate>; failed?: string | null } = {}): TimelineRow[] {
+  const dates = opts.dates ?? {}
+  const rows: TimelineRow[] = []
+  let phase = null as Extract<TimelineRow, { kind: 'phase' }> | null
+  for (const t of list.tasks) {
+    if (t.phase && t.phase !== phase?.text) {
+      phase = { kind: 'phase', text: t.phase, date: '' }
+      rows.push(phase)
     }
-    const glyph = t.status === 'done' ? GLYPH.done : t.status === 'next' ? GLYPH.next : t.status === 'blocked' ? GLYPH.blocked : GLYPH.todo
+    const date = dateText(dates[t.id])
+    if (phase && date) phase.date = date
+    const isFailed = t.status !== 'done' && opts.failed === t.id
+    const glyph = isFailed
+      ? GLYPH.failed
+      : t.status === 'done'
+        ? GLYPH.done
+        : t.status === 'next'
+          ? GLYPH.next
+          : t.status === 'blocked'
+            ? GLYPH.blocked
+            : GLYPH.todo
     const left = remaining(t)
-    const detail =
-      t.status === 'done'
+    const progress = t.boxes.length > 1 ? `${t.boxes.length - left}/${t.boxes.length}` : ''
+    const detail = isFailed
+      ? ['tests failed', progress].filter(Boolean).join(' · ')
+      : t.status === 'done'
         ? `${t.boxes.length}/${t.boxes.length}`
         : t.status === 'blocked'
           ? `waits on ${t.deps.join(', ')}`
-          : t.boxes.length > 1
-            ? `${t.boxes.length - left}/${t.boxes.length}`
-            : ''
-    rows.push({ kind: 'task', glyph, id: t.id, title: t.title, detail, status: t.status })
+          : progress
+    rows.push({ kind: 'task', glyph, id: t.id, title: t.title, detail, status: isFailed ? 'failed' : t.status, date })
     if (t.checkpoint) {
       const isDone = t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone)
       const isDue = t.status === 'done' && !isDone
@@ -127,11 +169,21 @@ export function timelineRows(list: TaskList): TimelineRow[] {
         kind: 'checkpoint',
         glyph: isDone ? GLYPH.done : isDue ? GLYPH.needsYou : GLYPH.todo,
         text: `Checkpoint: ${t.checkpoint.title}${isDue ? ' (needs you)' : ''}`,
+        date,
       })
     }
   }
   return rows
 }
+
+/** Spec files at the project root: SPEC.md first, then module specs `SPEC-<id>.md` (A3). */
+export const SPEC_FILE = /^SPEC(-[\w.-]+)?\.md$/
+export function specFiles(names: string[]): string[] {
+  return names.filter(n => SPEC_FILE.test(n)).sort((a, b) => (a === 'SPEC.md' ? -1 : b === 'SPEC.md' ? 1 : a.localeCompare(b)))
+}
+
+/** `/spec-view auth` → SPEC-auth.md; a full file name is taken as given. */
+export const specFileFor = (arg: string) => (/\.md$/i.test(arg) ? arg : `SPEC-${arg}.md`)
 
 /** The forecast line (G3): a range with its basis, or why there is none. */
 export function forecastText(f: Forecast): string {
@@ -162,7 +214,7 @@ export function bar(done: number, total: number, width: number): string {
  */
 export function completionToast(before: TaskList | null, after: TaskList | null): string | undefined {
   if (!before || !after) return undefined
-  const key = (t: Task) => `${t.id}|${t.title}`
+  const key = taskKey
   const wasDone = new Set(before.tasks.filter(t => t.status === 'done').map(key))
   const known = new Set(before.tasks.map(key))
   const finished = after.tasks.filter(t => t.status === 'done' && known.has(key(t)) && !wasDone.has(key(t)))
@@ -200,6 +252,8 @@ export type BriefInput = {
   /** The file the task list came from. */
   listFile: string | null
   forecast: Forecast | null
+  /** The spec file shown: SPEC.md, or a module spec such as SPEC-auth.md (A3). */
+  specFile?: string | null
 }
 
 const MAX_ROWS = 12
@@ -221,9 +275,9 @@ export function progressBrief(p: BriefInput): string | undefined {
     const weak = spec.areas.filter(a => a.hint).map(a => `${a.label}: ${a.hint}`)
     const gaps = spec.areas.filter(a => a.state !== 'present').map(a => `${a.label} ${a.state}`)
     out.push(
-      `SPEC.md: ${approval === 'approved' ? 'approved' : 'awaiting approval'}${gaps.length ? `; ${gaps.join(', ')}` : ''}${weak.length ? `; weak: ${weak.join('; ')}` : ''}.`,
+      `${p.specFile ?? 'SPEC.md'}: ${approval === 'approved' ? 'approved' : 'awaiting approval'}${gaps.length ? `; ${gaps.join(', ')}` : ''}${weak.length ? `; weak: ${weak.join('; ')}` : ''}.`,
     )
-    for (const q of spec.openQuestions.slice(0, 5)) out.push(`- open question (SPEC.md): ${q}`)
+    for (const q of spec.openQuestions.slice(0, 5)) out.push(`- open question (${p.specFile ?? 'SPEC.md'}): ${q}`)
   }
   if (list && listFile) {
     if (list.total === 0) out.push(`${listFile}: no tasks yet.`)

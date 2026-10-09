@@ -2,7 +2,7 @@
 // day, so a mod installed mid-project has a pace to forecast from on day one.
 
 import { dayOf, snapshotOf, type Snapshot } from './forecast'
-import { parseTasks, type Task, type TaskList } from './parse'
+import { parseTasks, taskKey, type TaskList } from './parse'
 
 /** Newest commits read; a long project keeps its recent pace, which is what the forecast weighs. */
 export const MAX_COMMITS = 200
@@ -49,27 +49,41 @@ export function splitBatch(out: string): (string | null)[] {
   return texts.map(t => (t === null ? t : t.replace(/\n$/, '')))
 }
 
-const key = (t: Task) => `${t.id}|${t.title}`
-
 /**
- * A daily snapshot from each day's last commit, oldest first. Walking back
- * stops where the file did not exist or held another plan: most of its tasks
- * missing from the current list.
+ * The committed copies of the current plan, newest first, each with its day.
+ * Walking back stops where the file did not exist or held another plan: most
+ * of its tasks missing from the current list.
  */
-export function snapshotsFromGit(commits: Commit[], texts: (string | null)[], current: TaskList): Snapshot[] {
-  const known = new Set(current.tasks.map(key))
-  const byDay = new Map<string, Snapshot>()
+function samePlan(commits: Commit[], texts: (string | null)[], current: TaskList): { day: string; list: TaskList }[] {
+  const known = new Set(current.tasks.map(taskKey))
+  const out: { day: string; list: TaskList }[] = []
   for (const [i, commit] of commits.entries()) {
     const text = texts[i]
     if (text === null || text === undefined) break
     const list = parseTasks(text)
     if (list.total === 0) break
-    const shared = list.tasks.filter(t => known.has(key(t))).length
+    const shared = list.tasks.filter(t => known.has(taskKey(t))).length
     if (shared * 2 < list.tasks.length) break
-    const day = dayOf(commit.ms)
-    if (!byDay.has(day)) byDay.set(day, snapshotOf(day, list))
+    out.push({ day: dayOf(commit.ms), list })
   }
+  return out
+}
+
+/** A daily snapshot from each day's last commit, oldest first. */
+export function snapshotsFromGit(commits: Commit[], texts: (string | null)[], current: TaskList): Snapshot[] {
+  const byDay = new Map<string, Snapshot>()
+  for (const { day, list } of samePlan(commits, texts, current)) if (!byDay.has(day)) byDay.set(day, snapshotOf(day, list))
   return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day))
+}
+
+/** The day each task was first committed as done (F1's date column), by task key. */
+export function doneDaysFromGit(commits: Commit[], texts: (string | null)[], current: TaskList): Record<string, string> {
+  const days: Record<string, string> = {}
+  // Newest first, so the oldest commit that shows a task done writes last.
+  for (const { day, list } of samePlan(commits, texts, current)) {
+    for (const t of list.tasks) if (t.status === 'done') days[taskKey(t)] = day
+  }
+  return days
 }
 
 /** What the mod saw itself wins over git: it includes edits never committed. */

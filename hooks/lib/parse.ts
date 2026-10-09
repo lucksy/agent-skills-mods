@@ -20,6 +20,9 @@ export type Task = {
 
 export type Checkpoint = { title: string; items: Box[] }
 
+/** A task's identity across edits and plans: its id and its title together. */
+export const taskKey = (t: Task) => `${t.id}|${t.title}`
+
 export type TaskList = {
   /** `tasks`: `## Task N:` sections or `- [ ] Task N:` lines. `checklist`: plain boxes. */
   kind: 'tasks' | 'checklist' | 'empty'

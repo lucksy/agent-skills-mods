@@ -1,11 +1,27 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, and a guard that refuses overwriting an unfinished plan.",
-  "author": { "name": "lucksy" },
+  "author": {
+    "name": "lucksy"
+  },
   "homepage": "https://github.com/lucksy/agent-skills-mods",
   "repository": "https://github.com/lucksy/agent-skills-mods",
   "license": "MIT",
-  "keywords": ["agent-skills", "mods", "spec", "plan", "progress"],
-  "types": "./types/index.d.ts"
+  "keywords": [
+    "agent-skills",
+    "mods",
+    "spec",
+    "plan",
+    "progress"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "planSpinner": {
+      "type": "boolean",
+      "title": "Spinner in plan terms",
+      "description": "Replace the spinner's random word with what the agent is doing in plan terms, such as \"Building T4\" or \"Testing T4\".",
+      "default": false
+    }
+  }
 }

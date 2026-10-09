@@ -49,6 +49,11 @@ export type AsmProject = {
     | null
   /** One per day, oldest first: what the charts draw (F2). */
   snapshots: { day: string; done: number; total: number; doing?: number; blocked?: number }[]
+  /** By task id: the day it was done, or the day the forecast expects it (F1). */
+  dates: Record<string, { day: string; isEstimate: boolean }>
+  /** The spec file shown (A3), and every spec file at the root: SPEC.md first, then SPEC-<id>.md. */
+  specFile: string | null
+  specFiles: string[]
 }
 
 declare module 'claude-code' {
@@ -58,6 +63,9 @@ declare module 'claude-code' {
       stage: 'spec' | 'plan' | 'build' | 'test' | 'review' | 'ship' | null
       allowOverwrite: boolean
       focus: string | null
+      step: { step: 'build' | 'test' | 'commit'; task: string | null } | null
+      failed: string | null
+      specChoice: string | null
     }
   }
 }

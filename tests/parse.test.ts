@@ -3,9 +3,12 @@ import { describe, expect, test } from 'claude-code/testing'
 import { parsePlan, parseSpec, parseTasks } from '../hooks/lib/parse'
 import { checkOverwrite } from '../hooks/lib/guard'
 import { forecast, record, shortDay, type Snapshot } from '../hooks/lib/forecast'
-import { mergeHistory, parseLog, snapshotsFromGit, splitBatch } from '../hooks/lib/history'
+import { doneDaysFromGit, mergeHistory, parseLog, snapshotsFromGit, splitBatch } from '../hooks/lib/history'
+import { spinnerWord, stepOf } from '../hooks/lib/steps'
+import { digestText, sparkline } from '../hooks/lib/report'
+import { burnupSvg, flowSvg } from '../hooks/lib/svg'
 import { burnup, COLOR, daily, flow, toBase64 } from '../hooks/lib/chart'
-import { bandText, blockChain, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
+import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows } from '../hooks/lib/view'
 import {
   CHECKLIST,
   GOOD_SPEC,
@@ -167,6 +170,87 @@ describe('history from git (F5)', () => {
   })
 })
 
+describe('timeline dates and steps (F1, H3)', () => {
+  test('the day each task was first committed done', async () => {
+    const { log, cat } = gitOutput([
+      ['2026-10-08', TODO_T3_DONE],
+      ['2026-10-03', TODO_T2_DONE],
+      ['2026-10-01', TODO_TEMPLATE],
+      ['2026-09-29', TODO_NONE_DONE],
+    ])
+    expect(doneDaysFromGit(parseLog(log), splitBatch(cat), parseTasks(TODO_T3_DONE))).toEqual({
+      'T1|Monorepo scaffold': '2026-10-01',
+      'T2|Prisma schema for keys': '2026-10-03',
+      'T3|Issue and revoke keys': '2026-10-08',
+    })
+  })
+
+  test('done days, then ≈ days for open tasks at the median pace; × for a failed test run', async () => {
+    const list = parseTasks(TODO_T2_DONE)
+    const fc = { kind: 'range', optimistic: '2026-10-11', median: '2026-10-13', slow: '2026-10-19', basis: '', added: 0 } as const
+    const dates = taskDates(list, { 'T1|Monorepo scaffold': '2026-10-01', 'T2|Prisma schema for keys': '2026-10-03' }, fc, '2026-10-09')
+    expect(dates).toEqual({
+      T1: { day: '2026-10-01', isEstimate: false },
+      T2: { day: '2026-10-03', isEstimate: false },
+      T3: { day: '2026-10-11', isEstimate: true },
+      T4: { day: '2026-10-13', isEstimate: true },
+    })
+    expect(taskDates(list, {}, null, '2026-10-09')).toEqual({})
+    const rows = timelineRows(list, { dates, failed: 'T3' })
+    expect(rows.map(r => [r.kind, r.date, r.kind === 'task' ? `${r.glyph} ${r.id} ${r.detail}` : r.text])).toEqual([
+      ['phase', '3 Oct', 'Phase 1: Foundation'],
+      ['task', '1 Oct', '✓ T1 3/3'],
+      ['task', '3 Oct', '✓ T2 3/3'],
+      ['checkpoint', '3 Oct', 'Checkpoint: After Tasks 1-2 (needs you)'],
+      ['phase', '≈13 Oct', 'Phase 2: Core'],
+      ['task', '≈11 Oct', '× T3 tests failed'],
+      ['task', '≈13 Oct', '○ T4 '],
+    ])
+  })
+
+  test('tool calls as build, test and commit', async () => {
+    expect(stepOf('Edit', { file_path: '/p/src/keys.ts' })).toBe('build')
+    expect(stepOf('Write', { file_path: '/p/tasks/todo.md' })).toBe(null)
+    expect(stepOf('Edit', { file_path: '/p/SPEC-auth.md' })).toBe(null)
+    expect(stepOf('Bash', { command: 'pnpm --filter gateway test' })).toBe('test')
+    expect(stepOf('Bash', { command: 'npx vitest run keys' })).toBe('test')
+    expect(stepOf('Bash', { command: 'cd api && go test ./...' })).toBe('test')
+    expect(stepOf('Bash', { command: 'git add -A && git commit -m "T3"' })).toBe('commit')
+    expect(stepOf('Bash', { command: 'ls src' })).toBe(null)
+    expect(stepOf('Read', { file_path: '/p/src/keys.ts' })).toBe(null)
+    expect(spinnerWord('test', 'T4')).toBe('Testing T4')
+    expect(spinnerWord('build', null)).toBe('Building')
+  })
+})
+
+describe('digest (G2)', () => {
+  test('four lines: progress, forecast, this week, decisions', async () => {
+    const snapshots = [
+      { day: '2026-09-30', done: 0, total: 4 },
+      { day: '2026-10-03', done: 0, total: 4 },
+      { day: '2026-10-05', done: 1, total: 5 },
+      { day: '2026-10-08', done: 1, total: 4 },
+      { day: '2026-10-09', done: 1, total: 4 },
+    ]
+    const text = digestText({
+      spec: parseSpec(SPEC),
+      list: parseTasks(TODO_TEMPLATE),
+      plan: parsePlan(PLAN_INDEX),
+      forecast: { kind: 'not-enough', reason: 'not enough history (1 of 3 tasks done since tracking began)' },
+      snapshots,
+    })
+    expect(text.split('\n')).toEqual([
+      'API keys: 1/4 tasks done (25%) · now T2 Prisma schema for keys',
+      'ETA: not enough history (1 of 3 tasks done since tracking began).',
+      // 3–4 Oct nothing done yet, 5–9 Oct one task.
+      'This week ▁▁█████ +1 done (3 Oct–9 Oct)',
+      'Needs a decision: Upstash or self-hosted Redis?; approve SPEC.md; Should keys expire by default?',
+    ])
+    expect(sparkline([1, 1, 1])).toBe('▁▁▁')
+    expect(sparkline([0, 2, 4])).toBe('▁▅█')
+  })
+})
+
 describe('charts (F2)', () => {
   const history = [
     { day: '2026-09-29', done: 0, total: 6, doing: 1, blocked: 2 },
@@ -212,6 +296,23 @@ describe('charts (F2)', () => {
     expect(colors[5]![4]![1]).toBe(COLOR.doing)
     expect(glyphs[7]).toMatch(/29 Sep.*9 Oct/)
     expect(c.legend).toBe('9 Oct: 5 done · 1 in progress · 0 blocked · 2 to do (bottom to top: green, amber, red, grey)')
+  })
+
+  test('SVG for desktop (F4): a tooltip per day, direct labels, a legend, both themes', async () => {
+    const fc = forecast(history, Date.parse('2026-10-09T10:00:00Z'))
+    const up = burnupSvg(history, fc)!
+    expect(up.source.length).toBeLessThan(131072)
+    expect(up.source.match(/<title>/g)?.length).toBe(11)
+    expect(up.source).toMatch(/<title>1 Oct: 0 done of 6<\/title>/)
+    expect(up.source).toMatch(/>done 5<\/text>/)
+    expect(up.source).toMatch(/>scope 8<\/text>/)
+    expect(up.source).toMatch(/>ETA \d+ \w{3}<\/text>/)
+    expect(up.source).toMatch(/prefers-color-scheme:dark/)
+    expect(up.alt).toMatch(/^Burn-up: 5 of 8 tasks done by 9 Oct, from 6 in scope on 29 Sep, forecast/)
+    const fl = flowSvg(history)!
+    expect(fl.source).toMatch(/>in progress 1<\/text>/)
+    expect(fl.alt).toBe('Flow on 9 Oct: 5 done, 1 in progress, 0 blocked, 2 to do.')
+    expect(burnupSvg(history.slice(0, 1), null)).toBe(null)
   })
 
   test('no chart from under two days, and base64 as the Raster expects', async () => {

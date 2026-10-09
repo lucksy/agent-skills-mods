@@ -1,7 +1,7 @@
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
+import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput } from './fixtures'
 
 const CWD = '/p'
 
@@ -9,7 +9,11 @@ const CWD = '/p'
 type Git = { log: string; cat: string } | 'no-repo'
 
 function world(on: On, files: Record<string, string>, git: Git = 'no-repo', stored: Record<string, unknown> = {}) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[] }
+  on('ui.copy', (_$, e) => {
+    seen.copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
   on('process.run', (_$, e) => {
     seen.git.push(e.argv.slice(0, 2).join(' '))
     const out = (exitCode: number, stdout: string) => ({
@@ -22,6 +26,17 @@ function world(on: On, files: Record<string, string>, git: Git = 'no-repo', stor
   mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
   on('fs.exists', (_$, e) => ({ value: e.path in files }))
+  on('fs.write', (_$, e) => {
+    files[e.path] = e.text
+    return { value: undefined }
+  })
+  on('fs.list', (_$, e) => {
+    const dir = `${e.path ?? CWD}/`
+    const names = Object.keys(files)
+      .filter(f => f.startsWith(dir) && !f.slice(dir.length).includes('/'))
+      .map(f => f.slice(dir.length))
+    return { value: names.map(name => ({ name, kind: 'file', size: files[dir + name]!.length })) as never }
+  })
   on('fs.read', (_$, e) => {
     const text = files[e.path]
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
@@ -39,7 +54,12 @@ function world(on: On, files: Record<string, string>, git: Git = 'no-repo', stor
     seen.opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('tool.call', () => ({ result: 'written' }) as never)
+  // A Bash command with FAIL in it fails, as a failing test run does.
+  on('tool.call', (_$, e) =>
+    (e.tool === 'Bash' && /FAIL/.test(String((e as { command?: string }).command))
+      ? { result: 'Exit code 1', isError: true }
+      : { result: 'written' }) as never,
+  )
   on('skill.prompt', (_$, e) => ({ text: e.text }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
@@ -205,7 +225,7 @@ test('without git the history starts today and the board says so', async ($, on)
   expect(await board.find({ text: /History tracked from 9 Oct: not a git repository/ })).toBeDefined()
 })
 
-test('/progress charts draws a Raster per chart on the terminal, the numbers alone elsewhere', async ($, on) => {
+test('/progress charts draws each surface its own tier: Rasters on the terminal, interactive SVG on desktop', async ($, on) => {
   const history = [
     { day: '2026-10-01', done: 0, total: 4, doing: 1, blocked: 1 },
     { day: '2026-10-05', done: 2, total: 4, doing: 0, blocked: 0 },
@@ -235,6 +255,10 @@ test('/progress charts draws a Raster per chart on the terminal, the numbers alo
 
   const desk = await mount('desktop', 70)
   expect(await desk.find({ type: 'Raster' })).toBeUndefined()
+  const svgs = await desk.findAll({ type: 'Svg' })
+  expect(svgs.map(s => s.props.isInteractive)).toEqual([true, true])
+  expect(String(svgs[0]!.props.alt)).toMatch(/^Burn-up: 3 of 4 tasks done by 9 Oct/)
+  expect(String(svgs[1]!.props.source)).toMatch(/<title>5 Oct: 2 done · 0 in progress · 0 blocked · 2 to do<\/title>/)
   expect(await desk.find({ text: /^done 3 \(green\)/ })).toBeDefined()
 })
 
@@ -250,6 +274,127 @@ test('charts wait for two days of history', async ($, on) => {
     props: { title: 'x', isFocused: false, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
   })
   expect(await pane.find({ text: /Charts need two days of history\. Tracking since 9 Oct/ })).toBeDefined()
+})
+
+/** Records the word each Spinner draw reaches the engine with; register before the test's first `$` call. */
+function spinnerWords(on: On) {
+  const words: unknown[] = []
+  on('ui.render', { component: 'Spinner' }, ($x, e) => {
+    words.push(e.props.word)
+    return $x.ui.resolve(e).Text({ children: 'x' })
+  })
+  const draw = ($: Parameters<TestBody>[0]) =>
+    $.ui.render({ surface: 'terminal', component: 'Spinner', requestId: 's', props: { word: 'Sauteing', message: null, suffix: '…', mode: 'tool-use' } })
+  return { words, draw }
+}
+
+test('with planSpinner on, the spinner says the step and task; a failed test run marks the task ×', { options: { planSpinner: true } }, async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  const { words, draw } = spinnerWords(on)
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await draw($)
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test keys # FAIL' } as never)
+  await draw($)
+  expect(words).toEqual(['Building T2', 'Testing T2'])
+
+  const board = await mountBoard($)
+  expect(await board.find({ text: /× T2 Prisma schema for keys · tests failed/ })).toBeDefined()
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
+  expect(await board.find({ text: /× T2/ })).toBeUndefined()
+
+  // The turn's end clears the step: the next turn starts with the engine's word.
+  await $.turn.complete({ answer: 'done' } as never)
+  await draw($)
+  expect(words[2]).toBe('Sauteing')
+})
+
+test('planSpinner is off by default: the random word stays', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  const { words, draw } = spinnerWords(on)
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await draw($)
+  expect(words).toEqual(['Sauteing'])
+})
+
+test('the timeline dates done tasks from git and expected ones with ≈', async ($, on) => {
+  const many = Array.from({ length: 8 }, (_, i) => `## Task ${i + 1}: Step ${i + 1}\n- [${i < 5 ? 'x' : ' '}] work\n`).join('\n')
+  const at = (n: number) => many.replace(/- \[x\]/g, (m, off) => (many.slice(0, off).split('- [x]').length - 1 < n ? m : '- [ ]'))
+  const git = gitOutput([
+    ['2026-10-08', at(5)],
+    ['2026-10-05', at(3)],
+    ['2026-10-01', at(1)],
+    ['2026-09-28', at(0)],
+  ])
+  world(on, { [`${CWD}/tasks/todo.md`]: many }, git)
+  await $.command.run(run('refresh'))
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^1 Oct\s+ ✓ T1 Step 1/ })).toBeDefined()
+  expect(await board.find({ text: /^8 Oct\s+ ✓ T5 Step 5/ })).toBeDefined()
+  expect(await board.find({ text: /^≈\d+ Oct\s+ ● T6 Step 6/ })).toBeDefined()
+  expect(await board.find({ text: /≈ expected/ })).toBeDefined()
+})
+
+test('module specs: a picker in the spec pane, /spec-view <id>, and the one the agent writes', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/SPEC-limits.md`]: GOOD_SPEC }
+  const seen = world(on, files)
+  const reply = await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  expect(JSON.stringify(reply)).toMatch(/Spec pane opened: SPEC\.md \(2 specs/)
+  const pane = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-spec',
+    props: { title: 'x', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
+  })
+  const select = await pane.find({ type: 'Select', key: 'spec-file' })
+  expect(select?.props).toMatchObject({ value: 'SPEC.md', options: [{ value: 'SPEC.md' }, { value: 'SPEC-limits.md' }] })
+  expect(await pane.find({ text: /Should keys expire by default/ })).toBeDefined()
+
+  await pane.select({ key: 'spec-file', value: 'SPEC-limits.md' })
+  expect(await pane.find({ text: /^Rate limits \(SPEC-limits\.md\)/ })).toBeDefined()
+  expect(await pane.find({ text: /Should keys expire/ })).toBeUndefined()
+
+  expect(JSON.stringify(await $.command.run({ command: 'spec-view', args: 'nope', origin: { kind: 'composer' } } as never))).toMatch(
+    /No SPEC-nope\.md in \/p\. Specs here: SPEC\.md, SPEC-limits\.md/,
+  )
+  await $.command.run({ command: 'spec-view', args: 'SPEC.md', origin: { kind: 'composer' } } as never)
+  expect((await pane.find({ type: 'Select', key: 'spec-file' }))?.props).toMatchObject({ value: 'SPEC.md' })
+
+  // The agent writes a third spec: the pane shows that one.
+  files[`${CWD}/SPEC-billing.md`] = WEAK_SPEC
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/SPEC-billing.md`, content: WEAK_SPEC } as never)
+  expect(await pane.find({ text: /^Webhooks \(SPEC-billing\.md\)/ })).toBeDefined()
+  expect(seen.opened).toContain('asm-spec')
+})
+
+test('/progress digest copies four lines and shows them', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
+  const reply = JSON.stringify(await $.command.run(run('digest')))
+  expect(seen.copied.length).toBe(1)
+  expect(seen.copied[0]!.split('\n')).toHaveLength(4)
+  expect(seen.copied[0]).toMatch(/^API keys: 1\/4 tasks done \(25%\) · now T2/)
+  expect(reply).toMatch(/Copied to the clipboard/)
+})
+
+test('/progress report writes one self-contained page next to the task list', async ($, on) => {
+  const many = Array.from({ length: 8 }, (_, i) => `## Task ${i + 1}: Step ${i + 1}\n- [${i < 5 ? 'x' : ' '}] work\n`).join('\n')
+  const at = (n: number) => many.replace(/- \[x\]/g, (m, off) => (many.slice(0, off).split('- [x]').length - 1 < n ? m : '- [ ]'))
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: many, [`${CWD}/SPEC.md`]: SPEC }
+  world(on, files, gitOutput([['2026-10-08', at(5)], ['2026-10-05', at(3)], ['2026-10-01', at(1)], ['2026-09-28', at(0)]]))
+  const reply = JSON.stringify(await $.command.run(run('report')))
+  expect(reply).toMatch(/Wrote tasks\/progress-report\.html \(\d+ KB\)/)
+  const html = files[`${CWD}/tasks/progress-report.html`]!
+  expect(html).toMatch(/^<!doctype html>/)
+  // Self-contained: nothing fetched, so it opens offline and survives an email.
+  expect(html).not.toMatch(/(src|href)=["']?(https?:)?\/\//)
+  expect(html).not.toMatch(/<script/)
+  expect(html).toMatch(/<span class="k">Done<\/span><span class="v">5\/8<\/span>/)
+  expect(html).toMatch(/<span class="k">ETA<\/span><span class="v">\d+ \w{3}<\/span>/)
+  expect(html.match(/<svg /g)?.length).toBe(2)
+  expect(html).toMatch(/<th>T1<\/th><td class="t">Step 1<\/td>.*<td class="n">3 d<\/td><td class="d">1 Oct<\/td>/)
+  expect(html).toMatch(/<h2>Needs a decision<\/h2><ul><li>approve SPEC\.md<\/li>/)
 })
 
 test('/progress next answers from the parser and sets the status entry', async ($, on) => {

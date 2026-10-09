@@ -2,11 +2,12 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, type TaskList } from './lib/parse'
+import { parsePlan, parseSpec, parseTasks, taskKey, type TaskList } from './lib/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './lib/forecast'
 import {
   CAT_ARGV,
   catInput,
+  doneDaysFromGit,
   logArgv,
   mergeHistory,
   parseLog,
@@ -15,17 +16,23 @@ import {
   type Backfill,
 } from './lib/history'
 import { burnup, flow } from './lib/chart'
+import { digestText, reportHtml } from './lib/report'
+import { burnupSvg, flowSvg } from './lib/svg'
+import { spinnerWord, stepOf, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import {
   bandText,
   bar,
   completionToast,
+  taskDates,
   progressBrief,
   taskInPrompt,
   forecastText,
   historyNote,
   nextText,
   specApproval,
+  specFileFor,
+  specFiles,
   stageOfSkill,
   statusText,
   timelineRows,
@@ -36,13 +43,21 @@ const NAME = 'agent-skills-mods'
 const project = atom({ plugin: 'agent-skills-mods', key: 'project' } as const, null as AsmProject | null)
 const stage = atom({ plugin: 'agent-skills-mods', key: 'stage' } as const, null as Stage | null)
 const allowOverwrite = atom({ plugin: 'agent-skills-mods', key: 'allowOverwrite' } as const, false)
+/** What the agent is doing in plan terms, for the spinner (H3). */
+const step = atom({ plugin: 'agent-skills-mods', key: 'step' } as const, null as { step: Step; task: string | null } | null)
+/** The task whose last test run failed, marked × on the timeline (F1). */
+const failed = atom({ plugin: 'agent-skills-mods', key: 'failed' } as const, null as string | null)
+/** The spec file picked in the spec pane or by `/spec-view <id>` (A3). */
+const specChoice = atom({ plugin: 'agent-skills-mods', key: 'specChoice' } as const, null as string | null)
 /** The task the last prompt asked about, highlighted on the board (C1). */
 const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null as string | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
 const CHARTS_PANE = 'asm-charts'
-const WATCHED = /(^|[\\/])(SPEC\.md|tasks[\\/](plan|todo)\.md)$/
+/** Where /progress report writes its page (G1), next to the task list it reports on. */
+const REPORT_FILE = 'tasks/progress-report.html'
+const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|tasks[\\/](plan|todo)\.md)$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
 type $ = EngineInterface
@@ -61,21 +76,44 @@ async function readText($: $, path: string): Promise<string | null> {
  * Rebuilds the snapshots a project had before the mod saw it (F5): two git
  * calls, once per project. Without git the history starts today, and says so.
  */
-async function backfill($: $, file: string, list: TaskList, today: string): Promise<{ note: Backfill; snaps: Snapshot[] }> {
-  const none = (reason: string) => ({ note: { source: 'none', reason, since: today } as const, snaps: [] })
+type Found = { note: Backfill; snaps: Snapshot[]; doneDays: Record<string, string> }
+
+async function backfill($: $, file: string, list: TaskList, today: string): Promise<Found> {
+  const none = (reason: string): Found => ({ note: { source: 'none', reason, since: today }, snaps: [], doneDays: {} })
   try {
     const log = await $.process.run(logArgv(file), { timeoutMs: 20_000 })
     if (log.exitCode !== 0) return none('not a git repository')
     const commits = parseLog(log.stdout)
     if (commits.length === 0) return none(`${file} has no commits`)
     const cat = await $.process.run(CAT_ARGV, { stdin: catInput(commits, file), timeoutMs: 20_000 })
-    const snaps = cat.exitCode === 0 ? snapshotsFromGit(commits, splitBatch(cat.stdout), list) : []
+    const texts = cat.exitCode === 0 ? splitBatch(cat.stdout) : []
+    const snaps = snapshotsFromGit(commits, texts, list)
     const first = snaps[0]
     if (!first) return none(`no commit of ${file} holds this plan`)
-    return { note: { source: 'git', days: snaps.length, since: first.day }, snaps }
+    return { note: { source: 'git', days: snaps.length, since: first.day }, snaps, doneDays: doneDaysFromGit(commits, texts, list) }
   } catch {
     return none('git is not available')
   }
+}
+
+/** The build loop in plan terms (H3, F1): what the spinner says, and × for a failed test run. */
+async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean }) {
+  try {
+    const s = stepOf(String(e.tool), e as never)
+    if (!s) return
+    const task = (await read($, project))?.list?.current?.id ?? null
+    await update($, step, () => ({ step: s, task }))
+    if (s === 'test' && task) {
+      const isFailed = result.isError === true
+      await update($, failed, f => (isFailed ? task : f === task ? null : f))
+    }
+  } catch {}
+}
+
+/** The spec pane's picker (A3): show another spec file. */
+async function pick($: $, file: string) {
+  await update($, specChoice, () => file)
+  await load($)
 }
 
 /** Projects whose backfill is running, so a second load does not start another. */
@@ -84,8 +122,15 @@ const backfilling = new Set<string>()
 /** Re-reads the three files, records today's snapshot and updates the status entry. */
 async function load($: $): Promise<AsmProject> {
   const cwd = await $.session.cwd()
+  const names = await $.fs.list(cwd).then(
+    entries => entries.filter(f => f.kind === 'file').map(f => f.name),
+    () => [] as string[],
+  )
+  const files = specFiles(names)
+  const choice = await read($, specChoice)
+  const specFile = choice && files.includes(choice) ? choice : (files[0] ?? null)
   const [specText, todoText, planText] = await Promise.all([
-    readText($, `${cwd}/SPEC.md`),
+    specFile ? readText($, `${cwd}/${specFile}`) : null,
     readText($, `${cwd}/tasks/todo.md`),
     readText($, `${cwd}/tasks/plan.md`),
   ])
@@ -99,18 +144,22 @@ async function load($: $): Promise<AsmProject> {
   let fc: AsmProject['forecast'] = null
   let backfilled: Backfill | null = null
   let snapshots: Snapshot[] = []
+  let dates: AsmProject['dates'] = {}
   if (list && list.total > 0) {
     const now = await $.clock.now()
     const key = `history:${cwd}`
     const noteKey = `backfill:${cwd}`
     let history = ((await $.store.get(key)) as Snapshot[] | undefined) ?? []
     let note = ((await $.store.get(noteKey)) as Backfill | undefined) ?? null
+    const daysKey = `doneDays:${cwd}`
+    let doneDays = ((await $.store.get(daysKey)) as Record<string, string> | undefined) ?? {}
     if (!note && listFile && !backfilling.has(cwd)) {
       backfilling.add(cwd)
       try {
         const found = await backfill($, listFile, list, dayOf(now))
         note = found.note
         history = mergeHistory(((await $.store.get(key)) as Snapshot[] | undefined) ?? [], found.snaps)
+        doneDays = { ...found.doneDays, ...doneDays }
         await $.store.set(noteKey, note)
         $.ui.toast(
           note.source === 'git'
@@ -125,10 +174,18 @@ async function load($: $): Promise<AsmProject> {
     await $.store.set(key, next)
     fc = forecast(next, now)
     backfilled = note
+    // A task first seen done today is dated today; the dates stay when it is unticked.
+    const today = dayOf(now)
+    const fresh = list.tasks.filter(t => t.status === 'done' && !doneDays[taskKey(t)])
+    if (fresh.length > 0 || note?.source === 'git') {
+      for (const t of fresh) doneDays = { ...doneDays, [taskKey(t)]: today }
+      await $.store.set(daysKey, doneDays)
+    }
+    dates = taskDates(list, doneDays, fc, today)
     snapshots = next
   }
 
-  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots }
+  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots, dates, specFile, specFiles: files }
   await update($, project, () => value)
   $.ui.status(statusText(spec, list))
   return value
@@ -144,16 +201,17 @@ async function stageLabel($: $): Promise<string | null> {
 
 const reply = (text: string) => ({ text })
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills task board. Args: next | charts | allow-overwrite | refresh',
-      argumentHint: '[next|charts|allow-overwrite|refresh]',
+      description: 'agent-skills task board. Args: next | charts | digest | report | allow-overwrite | refresh',
+      argumentHint: '[next|charts|digest|report|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
-      description: 'Open SPEC.md as a pane with its six core areas',
+      description: 'Open SPEC.md, or a module spec SPEC-<id>.md, as a pane with its six core areas',
+      argumentHint: '[module id]',
     })
     await load($).catch(() => undefined)
     return next(e)
@@ -161,10 +219,22 @@ export const register: Register = on => {
 
   // ----------------------------------------------------------- commands (A3, B1, C2, D1)
 
-  on('command.run', { command: 'spec-view' }, async $ => {
+  on('command.run', { command: 'spec-view' }, async ($, e) => {
+    const arg = e.args.trim()
+    if (arg) {
+      const file = specFileFor(arg)
+      const p = await load($)
+      if (!p.specFiles.includes(file)) {
+        const here = p.specFiles.length ? ` Specs here: ${p.specFiles.join(', ')}.` : ''
+        return reply(`No ${file} in ${p.cwd}.${here}`)
+      }
+      await update($, specChoice, () => file)
+    }
     const p = await load($)
     await $.ui.open({ id: SPEC_PANE, title: 'Spec' })
-    return reply(p.spec ? 'Spec pane opened.' : `No SPEC.md in ${p.cwd}. Run /spec to write one.`)
+    if (!p.spec) return reply(`No SPEC.md in ${p.cwd}. Run /spec to write one.`)
+    const others = p.specFiles.length > 1 ? ` (${p.specFiles.length} specs; pick another in the pane or with /spec-view <id>)` : ''
+    return reply(`Spec pane opened: ${p.specFile}${others}.`)
   })
 
   on('command.run', { command: 'progress' }, async ($, e) => {
@@ -181,7 +251,23 @@ export const register: Register = on => {
       const days = new Set(p.snapshots.map(s => s.day)).size
       return reply(days >= 2 ? `Charts opened: ${days} days of history.` : 'Charts opened. They draw once there are two days of history.')
     }
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|allow-overwrite|refresh]`)
+    if (arg === 'digest') {
+      const text = digestText(p)
+      const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
+      return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
+    }
+    if (arg === 'report') {
+      if (!p.list || p.list.total === 0) return reply('No task list yet, so there is nothing to report.')
+      const path = `${p.cwd}/${REPORT_FILE}`
+      const html = reportHtml({
+        ...p,
+        today: dayOf(await $.clock.now()),
+        charts: { burnup: burnupSvg(p.snapshots, p.forecast), flow: flowSvg(p.snapshots) },
+      })
+      await $.fs.write(path, html)
+      return reply(`Wrote ${REPORT_FILE} (${Math.round(html.length / 1024)} KB): one self-contained page that opens offline. Open it in a browser or attach it to an email.`)
+    }
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [next|charts|digest|report|allow-overwrite|refresh]`)
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
   })
@@ -201,28 +287,44 @@ export const register: Register = on => {
     return { deny: denyMessage(e.file_path, verdict) }
   }).catch(($, e, next) => (next.called ? next(e) : { deny: `${NAME}: the plan guard failed, so the write was stopped.` }))
 
-  // ----------------------------------------------------------- refresh after edits (A1, B1)
+  // ----------------------------------------------------------- after each tool call: refresh (A1, B1) and step (H3, F1)
 
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
+    await trackStep($, e, result)
     const path = 'file_path' in e && typeof e.file_path === 'string' ? e.file_path : null
     if (!path || !EDIT_TOOLS.has(String(e.tool)) || !WATCHED.test(path) || result.isError) return result
-    const before = (await read($, project))?.list ?? null
-    const after = (await load($)).list
-    const toast = GUARDED.test(path) ? completionToast(before, after) : undefined
-    if (toast) $.ui.toast(toast)
-    if (/SPEC\.md$/.test(path)) void $.ui.open({ id: SPEC_PANE, title: 'Spec' })
-    else if (/todo\.md$/.test(path)) void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
-    return result
-   })
     // A refresh that fails must never change the tool's own result.
-    .catch(($, e, next) => next(e))
+    try {
+      const before = (await read($, project))?.list ?? null
+      const after = (await load($)).list
+      const toast = GUARDED.test(path) ? completionToast(before, after) : undefined
+      if (toast) $.ui.toast(toast)
+      const spec = /(?:^|[\\/])(SPEC(-[\w.-]+)?\.md)$/.exec(path)
+      if (spec) {
+        await update($, specChoice, () => spec[1]!)
+        await load($)
+        void $.ui.open({ id: SPEC_PANE, title: 'Spec' })
+      }
+      if (/todo\.md$/.test(path)) void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+    } catch {}
+    return result
+  }).catch(($, e, next) => (next.called ? undefined : next(e)) as never)
+
+  on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
+    if (options.planSpinner !== true || e.props.message !== null) return next(e)
+    const s = await read($, step)
+    return s ? next({ ...e, props: { ...e.props, word: spinnerWord(s.step, s.task) } }) : next(e)
+  })
 
   // Edits made outside the session show after the next turn. The overwrite allowance
   // lasts the person's whole turn, so a subagent finishing inside it leaves it alone.
   on('turn.complete', async ($, e, next) => {
     await load($).catch(() => undefined)
-    if (e.agentId === undefined) await update($, allowOverwrite, () => false)
+    if (e.agentId === undefined) {
+      await update($, allowOverwrite, () => false)
+      await update($, step, () => null)
+    }
     return next(e)
   })
 
@@ -283,6 +385,21 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: SPEC_PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const p = await read($, project)
+    // The mobile app draws no Select yet; there /spec-view <id> picks.
+    const picker = (() => {
+      if (!p || p.specFiles.length < 2) return null
+      if (e.surface === 'mobile') return <Text dimColor>Specs: {p.specFiles.join(', ')}</Text>
+      const { Select } = $.ui.resolve(e)
+      return (
+        <Select
+          key="spec-file"
+          label="Spec"
+          options={p.specFiles.map(f => ({ value: f, label: f }))}
+          value={p.specFile ?? undefined}
+          onSelect={(file: string) => void pick($, file)}
+        />
+      )
+    })()
     const spec = p?.spec
     if (!spec) {
       return (
@@ -305,9 +422,11 @@ export const register: Register = on => {
     )
     return (
       <Box flexDirection="column" gap={1}>
+        {picker}
         <Box flexDirection="column">
           <Text bold wrap="truncate-end">
-            {spec.title ?? 'SPEC.md'}
+            {spec.title ?? p?.specFile ?? 'SPEC.md'}
+            {spec.title && p?.specFile && p.specFile !== 'SPEC.md' ? <Text dimColor> ({p.specFile})</Text> : ''}
           </Text>
           <Text color={approval === 'approved' ? 'success' : 'permission'}>
             {approval === 'approved' ? '✓ approved' : '♦ awaiting approval'}
@@ -355,7 +474,11 @@ export const register: Register = on => {
     }
     const width = e.props.bodyColumns
     const focused = await read($, focus)
-    const tone = { done: 'success', next: 'warning', blocked: 'error', todo: 'subtle' } as const
+    const failedTask = await read($, failed)
+    const rows = timelineRows(list, { dates: p?.dates ?? {}, failed: failedTask })
+    const dated = rows.some(r => r.date)
+    const date = (d: string) => (dated ? <Text dimColor>{d.padEnd(8)}</Text> : '')
+    const tone = { done: 'success', next: 'warning', blocked: 'error', todo: 'subtle', failed: 'error' } as const
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
@@ -375,16 +498,21 @@ export const register: Register = on => {
           {p?.plan?.trackedIn && <Text dimColor>Tasks tracked in {p.plan.trackedIn}</Text>}
         </Box>
         <Box flexDirection="column">
-          {timelineRows(list).map(row =>
+          {rows.map(row =>
             row.kind === 'phase' ? (
-              <Text bold>{row.text}</Text>
+              <Text wrap="truncate-end">
+                {date(row.date)}
+                <Text bold>{row.text}</Text>
+              </Text>
             ) : row.kind === 'checkpoint' ? (
               <Text color={row.glyph === '♦' ? 'permission' : undefined} dimColor={row.glyph !== '♦'} wrap="truncate-end">
+                {date(row.date)}
                 {'  '}
                 {row.glyph} {row.text}
               </Text>
             ) : (
               <Text wrap="truncate-end" inverse={row.id === focused}>
+                {date(row.date)}
                 {row.id === focused ? '› ' : '  '}
                 <Text color={tone[row.status]}>{row.glyph}</Text> <Text bold={row.status === 'next'}>{row.id}</Text>{' '}
                 <Text dimColor={row.status === 'done'}>{row.title}</Text>
@@ -393,7 +521,7 @@ export const register: Register = on => {
             ),
           )}
         </Box>
-        <Text dimColor>✓ done ● next ○ to do ◌ waits on a dependency ♦ needs you</Text>
+        <Text dimColor>✓ done ● next ○ to do ◌ waits on a dependency ♦ needs you × tests failed{dated ? ' · ≈ expected' : ''}</Text>
       </Box>
     )
   })
@@ -411,11 +539,16 @@ export const register: Register = on => {
       const since = snaps[0] ? ` Tracking since ${shortDay(snaps[0].day)}.` : ''
       return <Text dimColor wrap="wrap">{`Charts need two days of history.${since}`}</Text>
     }
-    // Rasters are terminal cells; other surfaces get the numbers until their SVG charts (F4).
-    const raster = (key: string, c: { columns: number; rows: number; cells: string }) => {
-      if (e.surface !== 'terminal') return null
-      const { Raster } = $.ui.resolve(e)
-      return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
+    // Terminal cells there (F2); interactive SVG on desktop, VS Code and mobile (F4).
+    const chart = (key: 'burnup' | 'flow', c: { columns: number; rows: number; cells: string }) => {
+      if (e.surface === 'terminal') {
+        const { Raster } = $.ui.resolve(e)
+        return <Raster key={key} columns={c.columns} rows={c.rows} cells={c.cells} />
+      }
+      const svg = key === 'burnup' ? burnupSvg(snaps, p?.forecast ?? null) : flowSvg(snaps)
+      if (!svg) return null
+      const { Svg } = $.ui.resolve(e)
+      return <Svg source={svg.source} alt={svg.alt} isInteractive />
     }
     return (
       <Box flexDirection="column" gap={1}>
@@ -423,14 +556,14 @@ export const register: Register = on => {
           <Text>
             <Text bold>Burn-up</Text> <Text dimColor>scope vs done{p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}</Text>
           </Text>
-          {raster('burnup', up)}
+          {chart('burnup', up)}
           <Text dimColor wrap="wrap">{up.legend}</Text>
         </Box>
         <Box flexDirection="column">
           <Text>
             <Text bold>Flow</Text> <Text dimColor>tasks by state, per day</Text>
           </Text>
-          {raster('flow', fl)}
+          {chart('flow', fl)}
           <Text dimColor wrap="wrap">{fl.legend}</Text>
         </Box>
       </Box>

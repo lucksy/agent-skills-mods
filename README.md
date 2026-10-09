@@ -43,16 +43,19 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 
 | | What it does | Where it shows |
 |---|---|---|
-| **Spec pane** | The six core areas of `SPEC.md` (Objective, Commands, Project structure, Code style, Testing, Boundaries), each marked present ✓, empty ○ or missing ×. Boundaries show as Always / Ask first / Never columns, followed by the open questions. The header says *awaiting approval* until the spec is approved. Weak sections get a ! and one reason: success criteria with no number or condition, Commands with no runnable line, Code style with no code block. These are hints and never block approval. | Opens when the agent writes `SPEC.md`, or with `/spec-view` |
-| **Task board** | Phases, tasks and checkpoints in plan order, with ✓ ● ○ ◌ ♦ glyphs, a progress bar and an ETA. | Opens when the agent writes `tasks/todo.md`, or with `/progress` |
+| **Spec pane** | The six core areas of `SPEC.md` (Objective, Commands, Project structure, Code style, Testing, Boundaries), each marked present ✓, empty ○ or missing ×. With module specs (`SPEC-<id>.md` next to `SPEC.md`) a picker at the top switches between them, and a module spec the agent writes is shown at once. Boundaries show as Always / Ask first / Never columns, followed by the open questions. The header says *awaiting approval* until the spec is approved. Weak sections get a ! and one reason: success criteria with no number or condition, Commands with no runnable line, Code style with no code block. These are hints and never block approval. | Opens when the agent writes a spec, or with `/spec-view [id]` |
+| **Task board** | Phases, tasks and checkpoints in plan order, with ✓ ● ○ ◌ ♦ × glyphs, a progress bar and an ETA. A date column gives the day each task was done (rebuilt from git where it can be) and `≈` the day the median pace reaches each open one. A task whose last test run failed is marked ×, until a run passes. | Opens when the agent writes `tasks/todo.md`, or with `/progress` |
 | **ETA as a range** | A median date with optimistic and slow cases, plus where it comes from ("from 4 tasks in 11 days") and how much scope was added. It shows no date until 3 tasks have been finished in the history. | Board pane |
 | **History from git** | The first time the plugin sees a plan, it rebuilds past daily progress from the commits of `tasks/todo.md`, so a project that is already under way gets an ETA on day one. It reads back until the file did not exist or held a different plan. Without git, tracking starts that day, and the board says which. A toast reports the result once. | Board pane, under the ETA |
-| **Charts** | A burn-up (scope and done per day, plus a dotted forecast line to the median ETA) drawn in braille dots, and a flow chart (tasks done, in progress, blocked and to do, per day) drawn in half-blocks. Each chart fits the pane's width and is redrawn when the pane is resized. Under each chart, a line gives the latest numbers and names each color, so the colors never carry the meaning on their own. Charts need two days of history. On desktop and VS Code the pane shows the number lines only, until the SVG charts arrive. | `/progress charts` |
+| **Charts** | A burn-up (scope and done per day, plus a dotted forecast line to the median ETA) drawn in braille dots, and a flow chart (tasks done, in progress, blocked and to do, per day) drawn in half-blocks. Each chart fits the pane's width and is redrawn when the pane is resized. Under each chart, a line gives the latest numbers and names each color, so the colors never carry the meaning on their own. Charts need two days of history. On desktop, VS Code and mobile the same charts are interactive SVG: hover a day for its numbers; the forecast shows as a band from fast to slow. | `/progress charts` |
+| **Digest** | Four lines for Slack, copied to the clipboard: progress and the current task, the ETA, this week's sparkline with tasks done and added, and what needs a decision (checkpoints reached, open questions, a spec waiting for approval). | `/progress digest` |
+| **HTML report** | One self-contained page for people without Claude Code: done, ETA, pace and added scope as headline figures, a bar of tasks by state, both charts, days per task, and what needs a decision. No scripts and no external requests, so it opens offline and can be attached to an email. Light and dark. | `/progress report` writes `tasks/progress-report.html` |
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
 | **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
 | **Current task band** | `● T2 title · 2 criteria left · 1/4 done · checkpoint after this task`. Hidden when there is no plan or every task is done. | Above the prompt |
 | **Status entry** | `spec ✓ approved · plan 4/9` | Status area |
 | **Stage in the footer** | When an agent-skills skill loads, its stage (spec, plan, build, test, review, ship) and the current task are added to the hint line (`· build T2`) and to the mode labels. Claude Code's own text stays. | Hint line and mode labels |
+| **Spinner in plan terms** | Off by default. Turned on with the `planSpinner` option, the spinner's random word becomes the step: `Building T4` for source edits, `Testing T4` for a test command, `Committing T4` for `git commit`. | The spinner, while a turn runs |
 | **Plan guard** | Puts the planning skill's rule *"Never overwrite an incomplete plan"* into practice. A `Write` to `tasks/plan.md` or `tasks/todo.md` is refused when it would drop or rename a task that isn't finished. Edits that tick boxes, add tasks or reword around the open ones still go through. | On every `Write` |
 
 ### Commands
@@ -61,10 +64,14 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 |---|---|
 | `/progress` | Opens the task board |
 | `/progress charts` | Opens the burn-up and flow charts |
+| `/progress digest` | Copies the four-line digest and shows it |
+| `/progress report` | Writes `tasks/progress-report.html` |
 | `/progress next` | Prints the next unblocked task with its criteria and any checkpoint after it. It comes straight from the parser and costs no model tokens. |
 | `/progress allow-overwrite` | Lets the next turn overwrite an unfinished plan once |
 | `/progress refresh` | Re-reads the files and prints the status |
-| `/spec-view` | Opens the spec pane. Without a `SPEC.md` it says where the file would go. |
+| `/spec-view [id]` | Opens the spec pane. `/spec-view auth` shows `SPEC-auth.md`. Without a spec it says where the file would go. |
+
+Option: `planSpinner` (boolean, default off), set in `/config` or under `pluginConfigs` in settings.
 
 The board command is `/progress` because Claude Code already has a built-in `/tasks`.
 
@@ -101,7 +108,7 @@ It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 48 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 59 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```
@@ -114,6 +121,9 @@ hooks/lib/parse.ts     SPEC.md / plan.md / todo.md parsers (pure, no Claude Code
 hooks/lib/forecast.ts  daily snapshots → ETA range
 hooks/lib/history.ts   past snapshots rebuilt from git
 hooks/lib/chart.ts     burn-up and flow charts as Raster cells
+hooks/lib/svg.ts       the same charts as SVG
+hooks/lib/report.ts    digest and HTML report
+hooks/lib/steps.ts     tool calls as build, test and commit
 hooks/lib/guard.ts     the overwrite check
 hooks/lib/view.ts      text views shared by panes and commands
 types/index.d.ts       the session state contract
@@ -124,10 +134,7 @@ History for the ETA is one snapshot per day, stored per project in the plugin's 
 
 ## Roadmap
 
-The user stories, mockups and chart designs live in the proposal. Next up:
-
-- the same charts as interactive SVG on desktop and in VS Code;
-- `/progress report` (HTML for managers) and `/progress digest` (Slack text).
+The user stories, mockups and chart designs live in the proposal; every story in it is now built except the upstream one below.
 
 Upstream, the plan is to propose a documented, parseable file shape to agent-skills: `status:` front matter and stable `T<n>` IDs. That would let any tool, not only this plugin, read progress reliably.
 
