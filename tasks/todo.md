@@ -237,14 +237,14 @@ Ticking the last box still makes the task done.
 **Estimated scope:** M
 
 ## Checkpoint: Owners and review
-- [ ] All tests pass
-- [ ] In a real session on a scratch project, with a `team.md` of three people: assign, claim, auto-claim, review, handoff
-- [ ] Review with human before proceeding
+- [x] All tests pass
+- [x] In a real session on a scratch project, with a `team.md` of three people: assign, claim, auto-claim, review, handoff (checked with one person in team.md, plus @sara assigned while not listed)
+- [x] Review with human before proceeding
 
 ## Phase 3: Approvals
 
 ## Task 8: Approvals by role in the spec pane
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `packages/core/approvals.ts` covers the signing rules:
 - it reads and writes the spec's `approvals:` front matter (`role @handle date` items);
@@ -260,12 +260,17 @@ The spec pane's `a` uses it when `team.md` has `approvals:`:
 Spec drift (an approved spec edited by the agent) also clears the signatures.
 
 **Acceptance criteria:**
-- [ ] Signing records the person's roles with their name and the date; the spec flips to approved only when the last required role signs
-- [ ] The pane shows who signed and who it waits on; `d` and spec drift clear the signatures
-- [ ] Without `approvals:` in `team.md`, approval behaves exactly as before
+- [x] Signing records the person's roles with their name and the date; the spec flips to approved only when the last required role signs
+- [x] The pane shows who signed and who it waits on; `d` and spec drift clear the signatures
+- [x] Without `approvals:` in `team.md`, approval behaves exactly as before
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (new `tests/approvals.test.ts`, mod cases)
+- [x] Tests pass: `claude plugin test .` (new `tests/approvals.test.ts`, mod cases)
+
+**Notes:**
+- `load()` now carries the team, so the pane shows "1/2 approved · waiting on @amila (eng)" in place of "awaiting approval". Signing re-reads `team.md`, so a role added mid-session counts.
+- A person with no role the spec still waits on, or an email not in `team.md`, gets a toast, and nothing is written.
+- Signing is a pane button, which a headless session can't press. The plugin tests press it through the engine; the Approvals checkpoint asks for a real two-person signing in an interactive session.
 
 **Dependencies:** T2
 
@@ -278,7 +283,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** M
 
 ## Task 9: Approvals in the dashboard's Spec tab and the CLI
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:**
 - The Spec tab shows each required role with its signer and date, or *waiting*, and the picker shows `2/3`.

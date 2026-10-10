@@ -436,7 +436,8 @@ export function driftedSpec(before: string, after: string): string | null {
   const now = readFrontMatter(after)
   if ((now.fields.status ?? '').toLowerCase() !== 'approved') return null
   if (was.body.trim() === now.body.trim()) return null
-  return setFrontMatter(after, { status: 'draft' })
+  // The signatures were for the text before this change (format-v2): they go too.
+  return setFrontMatter(after, { status: 'draft', approvals: null })
 }
 
 /** Box `index` (in order, within task `id`'s section) ticked or unticked; the text unchanged when there is no such box. */

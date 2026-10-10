@@ -23,6 +23,7 @@ import { TABS, type Tab } from './ui/tabs'
 import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { toState } from '../packages/core/state'
+import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from '../packages/core/pixels'
@@ -393,7 +394,34 @@ async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
   const text = await readText($, path)
   if (text === null) return
   const today = dayOf(await $.clock.now())
-  await $.fs.write(path, stampDoc(setFrontMatter(text, { status, approved: status === 'approved' ? today : null }), today))
+  const team = await readTeam($, p.cwd)
+  // format-v2 (F5): with approvals: in tasks/team.md, `a` signs for your roles.
+  if (status === 'approved' && team?.approvals.length) {
+    const email = await gitEmail($)
+    const me = whoIs(team, email)
+    if (!me) {
+      $.ui.toast(`Can't sign: ${email ? `${email} is not in ${TEAM_FILE}` : 'git config user.email is not set'}.`)
+      return
+    }
+    const r = signSpec(stampDoc(text, today), me, team.approvals, today)
+    if (!r.signed.length) {
+      const sigs = parseSpec(text).approvals
+      const open = team.approvals.filter(role => !sigs.some(s => s.role === role))
+      $.ui.toast(open.length ? `${me.handle} (${me.roles.join(', ') || 'no role'}) holds no role ${p.specFile} still waits on: ${open.join(', ')}.` : `${p.specFile} has every signature it needs.`)
+      return
+    }
+    await $.fs.write(path, r.text)
+    await load($)
+    const waiting = approvalStatus(parseSpec(r.text).approvals, team).waiting
+    $.ui.toast(
+      r.complete
+        ? `✓ ${p.specFile} approved: every role has signed (${team.approvals.join(', ')})`
+        : `✓ ${me.handle} signed ${p.specFile} for ${r.signed.join(', ')} · waiting on ${waiting.map(w => `${w.who.join(' or ') || w.role} (${w.role})`).join(', ')}`,
+    )
+    return
+  }
+  const base = status === 'draft' ? clearApprovals(text) : text
+  await $.fs.write(path, stampDoc(setFrontMatter(base, { status, approved: status === 'approved' ? today : null }), today))
   await load($)
   $.ui.toast(status === 'approved' ? `✓ ${p.specFile} approved · planning can start` : `○ ${p.specFile} back to draft`)
 }
@@ -549,7 +577,7 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
     }
   }
 
-  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots, dates, specFile, specFiles: files }
+  const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots, dates, specFile, specFiles: files, team: await readTeam($, cwd) }
   await update($, project, () => value)
   $.ui.status(statusText(spec, list))
   return value
@@ -1479,7 +1507,11 @@ export const register: Register = (on, options) => {
           </Text>
           <Box flexShrink={0}>
             <Text bold color={approval === 'approved' ? 'success' : 'warning'}>
-              {approval === 'approved' ? `approved${approvedNote}` : 'awaiting approval'}
+              {approval === 'approved'
+                ? `approved${approvedNote}`
+                : p?.team?.approvals.length
+                  ? approvalStatus(spec.approvals ?? [], p.team).text
+                  : 'awaiting approval'}
             </Text>
           </Box>
         </Box>

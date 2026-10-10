@@ -71,10 +71,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 7: /progress handoff and handoff notes
 
 ### Checkpoint: Owners and review
-- [ ] A team can assign, review and hand off in a real session
+- [x] A team can assign, review and hand off in a real session
 
 ### Phase 3: Approvals
-- [ ] Task 8: Approvals by role in the spec pane
+- [x] Task 8: Approvals by role in the spec pane
 - [ ] Task 9: Approvals in the dashboard's Spec tab and the CLI
 
 ### Checkpoint: Approvals

@@ -2,6 +2,7 @@
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
 import { parseHandoffLine, parseStatusLine, readFrontMatter, type Handoff, type TaskState } from './format'
+import { parseApprovals, type Signature } from './approvals'
 
 export type Box = { text: string; isDone: boolean }
 
@@ -326,6 +327,8 @@ export type Spec = {
   /** From front matter (the progress format): the day it was written and the day it was approved. */
   created?: string
   approvedOn?: string
+  /** Signatures by role, from front matter `approvals:` (format-v2, F5). */
+  approvals: Signature[]
   areas: SpecArea[]
   boundaries: { always: string[]; ask: string[]; never: string[] }
   /** From `## Success Criteria`, or a "Success criteria" list inside Objective. */
@@ -407,7 +410,7 @@ export function parseSpec(text: string): Spec {
 
   const dates = readFrontMatter(text).fields
   const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)
-  return { title, status, areas, boundaries, successCriteria, openQuestions, created: day(dates.created), approvedOn: day(dates.approved) }
+  return { title, status, areas, boundaries, successCriteria, openQuestions, created: day(dates.created), approvedOn: day(dates.approved), approvals: parseApprovals(dates.approvals) }
 }
 
 const isPlaceholder = (s: string) => s.replace(/\[[^\]]*\]|[-*\s]|<!--[\s\S]*?-->/g, '') === ''

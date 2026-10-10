@@ -1409,3 +1409,36 @@ test('/progress handoff sets the new owner and leaves a dated note; it needs a n
   expect((await $.command.run(run('handoff T2 @bob'))).text).toBe('Say what the next person needs to know: /progress handoff T2 @bob "migration done, tests left".')
   expect((await $.command.run(run('handoff T2 "note"'))).text).toBe('Say who takes it: /progress handoff T2 @bob "note".')
 })
+
+// format-v2 T8 (F5): the spec pane signs by role when tasks/team.md asks for approvals.
+test('the spec pane signs for your roles, and approves only on the last signature', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  const seen = world(on, files, asPerson('sara@example.com'))
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  expect(await pane.find({ text: /^0\/2 approved · waiting on @sara \(design\), @amila \(eng\)$/ })).toBeDefined()
+  await pane.press({ key: 'spec-approve' })
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: draft\ncreated: 2026-10-09\napprovals: design @sara 2026-10-09\n---/)
+  expect(seen.toasts).toContain('✓ @sara signed SPEC.md for design · waiting on @amila (eng)')
+  expect(await pane.find({ text: /^1\/2 approved · waiting on @amila \(eng\)$/ })).toBeDefined()
+  // Sara takes on eng too, and signs for it: the last role approves the spec.
+  files[`${CWD}/tasks/team.md`] = TEAM_MD.replace('| @sara | design |', '| @sara | design, eng |')
+  await pane.press({ key: 'spec-approve' })
+  expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\ncreated: 2026-10-09\napprovals: design @sara 2026-10-09, eng @sara 2026-10-09\napproved: 2026-10-09\n---/)
+  expect(seen.toasts).toContain('✓ SPEC.md approved: every role has signed (design, eng)')
+  await pane.press({ key: 'spec-draft' })
+  expect(files[`${CWD}/SPEC.md`]).not.toContain('approvals:')
+})
+
+test('signing needs a role the spec still waits on, and to know who you are', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/tasks/team.md`]: TEAM_MD.replace('| @sara | design |', '| @sara | qa |') }
+  const seen = world(on, files, asPerson('sara@example.com'))
+  await $.command.run({ command: 'spec-view', args: '', origin: { kind: 'composer' } } as never)
+  const pane = await mountSpec($)
+  await pane.press({ key: 'spec-approve' })
+  expect(seen.toasts).toContain('@sara (qa) holds no role SPEC.md still waits on: design, eng.')
+  expect(files[`${CWD}/SPEC.md`]).toBe(SPEC)
+  files[`${CWD}/tasks/team.md`] = TEAM_MD.replace('sara@example.com', 'sara@elsewhere.org')
+  await pane.press({ key: 'spec-approve' })
+  expect(seen.toasts).toContain("Can't sign: sara@example.com is not in tasks/team.md.")
+})

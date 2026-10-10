@@ -33,6 +33,8 @@ export type AsmSpec = {
   openQuestions: string[]
   created?: string
   approvedOn?: string
+  /** Signatures by role (format-v2). */
+  approvals?: { role: string; handle: string; day: string }[]
 }
 export type AsmPlan = { trackedIn: string | null; openQuestions: string[]; status?: 'draft' | 'approved'; created?: string; approvedOn?: string }
 export type AsmForecast =
@@ -62,6 +64,8 @@ export type AsmProject = {
   /** The spec file shown (A3), and every spec file at the root: SPEC.md first, then SPEC-<id>.md. */
   specFile: string | null
   specFiles: string[]
+  /** tasks/team.md (format-v2): handles and roles, and the roles a spec needs; null without the file. */
+  team?: { members: { handle: string; roles: string[]; email: string | null }[]; approvals: string[]; problems: string[] } | null
 }
 
 declare module 'claude-code' {
