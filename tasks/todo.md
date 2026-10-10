@@ -7,17 +7,17 @@ created: 2026-10-10
 ## Phase 1: Core
 
 ## Task 1: Spike: hooks module importing from ../packages/core
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Find out whether the mods engine loads a hooks module that imports a file outside `hooks/` (SPEC-core Q1). Add `packages/core/spike.ts`, import it from `hooks/register.tsx`, check it loads, record the answer in tasks/plan.md under Q1, then remove the spike.
 
 **Acceptance criteria:**
-- [ ] Q1 in tasks/plan.md records yes or no, with the evidence (validate output, a session log or the error)
-- [ ] The spike files are removed and the tree is back to clean
+- [x] Q1 in tasks/plan.md records yes or no, with the evidence (validate output, a session log or the error)
+- [x] The spike files are removed and the tree is back to clean
 
 **Verification:**
-- [ ] `claude plugin validate .` with the spike in place
-- [ ] Manual check: `claude --plugin-dir .` session, `/progress` opens, no load error
+- [x] `claude plugin validate .` with the spike in place
+- [x] Manual check: `claude --plugin-dir .` session, `/progress` opens, no load error
 
 **Dependencies:** None
 
