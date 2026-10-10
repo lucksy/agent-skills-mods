@@ -1375,3 +1375,26 @@ test('auto-claim does nothing without tasks/team.md, or when it does not know yo
   await $.command.run(run('start T3'))
   expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 3: Issue and revoke keys\n\*\*Status:\*\* in progress · started 2026-10-09\n/)
 })
+
+// format-v2 T5 (F4): put a task up for review.
+test('/progress review sets in review with its PR and reviewer; a done or untouched task is refused', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @amila · started 2026-10-07 · step test\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('amila@example.com'))
+  const line = (id: string) => files[`${CWD}/tasks/todo.md`]!.split('\n').find((_, i, all) => all[i - 1]?.startsWith(`## Task ${id}:`))
+  expect((await $.command.run(run('review T2 #42 @sara'))).text).toBe('T2 Prisma schema for keys is in review: PR #42, reviewer @sara.')
+  expect(line('2')).toBe('**Status:** in review · @amila · started 2026-10-07 · PR #42 · reviewer @sara')
+  expect((await $.command.run(run('review T2 https://github.com/acme/api/pull/43'))).text).toBe('T2 Prisma schema for keys is in review: PR https://github.com/acme/api/pull/43, reviewer @sara.')
+  expect((await $.command.run(run('review T1'))).text).toBe('T1 Monorepo scaffold is done: a review comes before its last box is ticked.')
+  expect((await $.command.run(run('review T3'))).text).toBe('T3 Issue and revoke keys has no box ticked yet: build it first, or /progress start T3.')
+  expect((await $.command.run(run('review T2 later'))).text).toBe('Not a PR or a reviewer: "later". Use /progress review T2 #42 @bob (both optional).')
+})
+
+test('handles and PR links keep the case they were typed in', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · started 2026-10-07\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo }
+  world(on, files, asPerson('x@example.com'))
+  await $.command.run(run('assign T2 @Sara-K'))
+  await $.command.run(run('review T2 https://github.com/Acme/API/pull/42 @Bob'))
+  expect(files[`${CWD}/tasks/todo.md`]).toContain('**Status:** in review · @Sara-K · started 2026-10-07 · PR https://github.com/Acme/API/pull/42 · reviewer @Bob')
+})

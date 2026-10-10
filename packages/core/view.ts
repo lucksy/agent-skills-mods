@@ -158,6 +158,8 @@ export function timelineRows(list: TaskList, opts: { dates?: Record<string, Task
     const progress = t.boxes.length > 1 ? `${t.boxes.length - left}/${t.boxes.length}` : ''
     const detail = isFailed
       ? ['tests failed', progress].filter(Boolean).join(' · ')
+      : t.status !== 'done' && t.state?.status === 'in review'
+        ? ['in review', t.pr && `PR ${t.pr}`, t.reviewer].filter(Boolean).join(' · ')
       : t.status === 'done'
         ? `${t.boxes.length}/${t.boxes.length}`
         : t.status === 'blocked'
@@ -445,11 +447,14 @@ export function boardRows(list: TaskList, opts: { failed?: string | null } = {})
       const ticked = t.boxes.filter(b => b.isDone).length
       const isCurrent = t.id === list.current?.id
       const waitOn = t.deps.find(d => list.tasks.some(x => x.id === d && x.status !== 'done'))
+      const inReview = t.status !== 'done' && t.state?.status === 'in review'
       const [glyph, tone, right, rightTone]: [string, Tone, string, Tone] = isFailed
         ? ['×', 'blocked', 'tests failed', 'blocked']
         : t.status === 'done'
           ? ['●', 'done', '✓', 'done']
-          : isCurrent
+          : inReview
+            ? ['◐', 'now', ['review', t.pr, t.reviewer].filter(Boolean).join(' '), 'now']
+            : isCurrent
             ? ['◐', 'now', ticked > 0 ? `${ticked}/${t.boxes.length}` : 'now', 'now']
             : t.status === 'blocked'
               ? ['■', 'blocked', 'blocked', 'blocked']
@@ -569,10 +574,12 @@ export function taskDetail(list: TaskList, id: string, opts: { today: string; da
   if (!t) return null
   const st = t.state
   const glyph = { done: GLYPH.done, next: '◐', todo: GLYPH.todo, waiting: GLYPH.waiting, blocked: GLYPH.blocked }[t.status]
-  const word = { done: 'done', next: 'current', todo: 'to do', waiting: 'waiting', blocked: 'blocked' }[t.status]
+  const word = t.status !== 'done' && st?.status === 'in review' ? 'in review' : { done: 'done', next: 'current', todo: 'to do', waiting: 'waiting', blocked: 'blocked' }[t.status]
   const lines = [`${glyph} ${t.id} ${t.title}${t.phase ? `  ·  ${phaseLabel(t.phase)}` : ''}`]
   const facts = [word]
   if (t.owner) facts.push(t.owner)
+  if (t.pr) facts.push(`PR ${t.pr}`)
+  if (t.reviewer) facts.push(`reviewer ${t.reviewer}`)
   if (st?.step && t.status !== 'done') facts.push(`step ${st.step}`)
   if (st?.started) {
     const end = st.done ?? opts.today

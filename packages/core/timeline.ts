@@ -171,7 +171,8 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
                 : s('○', 'muted')
       const row: Seg[] = [date(null), branch, glyph, s(' '), s(t.id, 'strong'), s(` ${t.title.length > titleW ? `${t.title.slice(0, titleW - 1)}…` : t.title.padEnd(titleW)}  `)]
       const d = dates[t.id]
-      if (t.status === 'blocked') row.push(s(`needs you: ${question(t)}`, 'needsYou'))
+      if (t.status !== 'done' && t.state?.status === 'in review') row.push(s('▬▬▬', 'run'), s(` ${['in review', t.pr && `PR ${t.pr}`, t.reviewer].filter(Boolean).join(' · ')}`, 'run'))
+      else if (t.status === 'blocked') row.push(s(`needs you: ${question(t)}`, 'needsYou'))
       else if (t.status === 'done') row.push(...stepBar(t, false, false), s(` done${d && !d.isEstimate ? ` ${shortDay(d.day)}` : ''}`, 'done'))
       else if (isCur) {
         row.push(...stepBar(t, true, slow), s(' '))

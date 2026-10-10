@@ -32,7 +32,7 @@ import { archiveDir, archiveReadme } from '../packages/core/archive'
 import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
-import { setOwner, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
+import { setOwner, setReview, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
 import {
   bandText,
   bar,
@@ -689,6 +689,38 @@ async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: 
 }
 
 /**
+ * `/progress review T4 [#42 | PR link] [@bob]` (format-v2, F4): the task in
+ * review, with its PR and reviewer; owner and dates kept. A done task, or one
+ * with nothing ticked yet, is refused with why.
+ */
+async function reviewCommand($: $, words: string[]): Promise<string> {
+  const p = await load($)
+  const path = `${p.cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text === null) return 'No tasks/todo.md here.'
+  const rawId = words[0] ?? ''
+  if (!rawId) return 'Say which task: /progress review T4 #42 @bob (PR and reviewer optional).'
+  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
+  const task = p.list?.tasks.find(t => t.id === id)
+  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
+  let pr: string | undefined
+  let reviewer: string | undefined
+  for (const w of words.slice(1)) {
+    if (/^#\d+$/.test(w) || /^https?:\/\//i.test(w)) pr = w
+    else if (/^@[\w.-]+$/.test(w)) reviewer = w
+    else return `Not a PR or a reviewer: "${w}". Use /progress review ${id} #42 @bob (both optional).`
+  }
+  if (task.status === 'done') return `${id} ${task.title} is done: a review comes before its last box is ticked.`
+  if (!task.boxes.some(b => b.isDone) && task.state?.status !== 'in progress' && task.state?.status !== 'in review') {
+    return `${id} ${task.title} has no box ticked yet: build it first, or /progress start ${id}.`
+  }
+  await $.fs.write(path, setReview(text, id, { pr, reviewer }))
+  const after = (await load($)).list?.tasks.find(t => t.id === id)
+  const bits = [after?.pr && `PR ${after.pr}`, after?.reviewer && `reviewer ${after.reviewer}`].filter(Boolean)
+  return `${id} ${task.title} is in review${bits.length ? `: ${bits.join(', ')}` : ''}.`
+}
+
+/**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
  * board shows (the plugin's own history included), opened on `view`. Written even
  * without a task list, since the page then says how to start.
@@ -1092,6 +1124,8 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'progress' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    // As typed: handles and links keep their case.
+    const rawWords = e.args.trim().split(/\s+/)
     const p = await load($)
     if (arg === 'next') return reply(nextText(p.list, p.plan))
     if (arg === 'allow-overwrite') {
@@ -1142,14 +1176,16 @@ export const register: Register = (on, options) => {
     if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
     {
-      const [verb, ...words] = arg.split(/\s+/)
+      const verb = rawWords[0]?.toLowerCase()
+      const words = rawWords.slice(1)
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
+      if (verb === 'review') return reply(await reviewCommand($, words))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

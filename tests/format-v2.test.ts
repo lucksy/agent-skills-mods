@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { parseStatusLine, setOwner, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { nowCounts } from '../packages/core/report'
 import { parseTasks } from '../packages/core/parse'
 import { bandText, boardRows, taskDetail, timelineRows } from '../packages/core/view'
 import { plain, timeline } from '../packages/core/timeline'
@@ -104,5 +105,28 @@ describe('auto-claim (T4)', () => {
     expect(taskStates(stampTodo(TODO_TEMPLATE, '2026-10-09', { changes: change })).T2!.owner).toBe('@sara')
     const owned = setOwner(TODO_TEMPLATE, 'T2', '@amila')
     expect(taskStates(stampTodo(owned, '2026-10-09', { changes: change })).T2!.owner).toBe('@amila')
+  })
+})
+
+describe('in review (T5)', () => {
+  const started = setOwner(TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · started 2026-10-07 · step test\n'), 'T2', '@amila')
+
+  test('setReview sets in review with the PR and reviewer given, keeping owner and dates', () => {
+    expect(taskStates(setReview(started, 'T2', { pr: '#42', reviewer: '@bob' })).T2).toEqual({ status: 'in review', owner: '@amila', started: '2026-10-07', pr: '#42', reviewer: '@bob' })
+    // Only what is given changes: a second review keeps the PR.
+    const again = setReview(setReview(started, 'T2', { pr: '#42' }), 'T2', { reviewer: '@ann' })
+    expect(taskStates(again).T2).toMatchObject({ pr: '#42', reviewer: '@ann' })
+  })
+
+  test('in review shows in the board pane, the timeline, /progress task and the CLI, and counts as under way', () => {
+    const list = parseTasks(setReview(started, 'T2', { pr: '#42', reviewer: '@bob' }))
+    const row = boardRows(list).find(r => r.kind === 'task' && r.id === 'T2') as { right: string }
+    expect(row.right).toBe('review #42 @bob')
+    const tl = timeline({ spec: null, list, plan: null, forecast: null, dates: {}, today: '2026-10-09' }).rows.map(plain)
+    expect(tl.find(r => r.includes('T2 Prisma'))).toMatch(/▬▬▬ in review · PR #42 · @bob {2}@amila$/)
+    expect(taskDetail(list, 'T2', { today: '2026-10-09', dates: {}, commits: [] })!.split('\n')[1]).toMatch(/^in review · @amila · PR #42 · reviewer @bob · started 7 Oct/)
+    const cli = timelineRows(list).find(r => r.kind === 'task' && r.id === 'T2') as { detail: string }
+    expect(cli.detail).toBe('@amila · in review · PR #42 · @bob')
+    expect(nowCounts(list)).toMatchObject({ doing: 1 })
   })
 })

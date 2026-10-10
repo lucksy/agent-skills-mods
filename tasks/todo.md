@@ -143,7 +143,7 @@ The owner then shows on the board pane's task rows, in the band (`▸ T4 Rate li
 **Estimated scope:** S
 
 ## Task 5: /progress review and the in-review state
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `/progress review T4 [#42 | PR URL] [@bob]` sets *in review*, with the PR and the reviewer. A done task, or a task with no boxes ticked, gets a refusal that explains why.
 
@@ -155,12 +155,17 @@ The panes show it:
 Ticking the last box still makes the task done.
 
 **Acceptance criteria:**
-- [ ] The command writes *in review*, the PR and the reviewer, and keeps the owner and dates
-- [ ] *In review* shows in the board pane, the timeline, `/progress task` and the CLI; the counts treat it as under way
-- [ ] Ticking the last box of a task in review makes it done
+- [x] The command writes *in review*, the PR and the reviewer, and keeps the owner and dates
+- [x] *In review* shows in the board pane, the timeline, `/progress task` and the CLI; the counts treat it as under way
+- [x] Ticking the last box of a task in review makes it done
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- Found and fixed: `/progress` lowercased its whole argument, which would have mangled `@Sara-K` and PR URLs. assign, claim, unassign and review now take the words as typed, with a test.
+- A task with no box ticked may still go to review if its Status line says it's under way. An untouched task is refused.
+- Checked in a real session on a scratch project: `review T4 #12 @Sara` kept the owner and start date, and the timeline and CLI showed it.
 
 **Dependencies:** T3
 
@@ -173,7 +178,7 @@ Ticking the last box still makes the task done.
 **Estimated scope:** M
 
 ## Task 6: Dashboard Board: owners, In review column, person filter
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** The dashboard's Board shows each card's owner and, for a task in review, its PR and reviewer. It gets an *In review* column between In progress and Blocked, and a person filter (`#board?owner=sara`) next to phase and state. The person filter appears only when some task has an owner.
 

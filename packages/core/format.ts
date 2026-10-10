@@ -168,6 +168,25 @@ export function setOwner(text: string, id: string, owner: string | null): string
 }
 
 /**
+ * `/progress review T4 #42 @bob` (format-v2, F4): task `id` in review, with the
+ * PR and reviewer given (each kept from before when not given), owner and
+ * dates kept. The text unchanged when there is no such task.
+ */
+export function setReview(text: string, id: string, opts: { pr?: string; reviewer?: string }): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const s = sections(lines).find(x => x.id === id)
+  if (!s) return text
+  const had = (s.status === null ? null : parseStatusLine(lines[s.status]!)) ?? { status: 'todo' as const }
+  const next: TaskState = { ...had, status: 'in review', ...(opts.pr ? { pr: opts.pr } : {}), ...(opts.reviewer ? { reviewer: opts.reviewer } : {}) }
+  delete next.step
+  const line = statusLine(next)
+  if (s.status === null) lines.splice(s.heading + 1, 0, line)
+  else lines[s.status] = line
+  return lines.join(eol)
+}
+
+/**
  * The task list with Status lines brought up to date:
  * - every `## Task N:` section has one, right under its heading;
  * - a task with every box ticked is `done`, dated `today` unless it has a date;

@@ -254,7 +254,7 @@ export function headline(p: ProgressInput): Figure[] {
 /** Tasks by state now, for the now-bar: done, in progress, blocked, to do (waiting counts as to do). */
 export function nowCounts(list: TaskList): { done: number; doing: number; blocked: number; todo: number } {
   const done = list.tasks.filter(t => t.status === 'done').length
-  const doing = list.tasks.filter(t => t.status !== 'done' && t.status !== 'blocked' && (t.id === list.current?.id || t.state?.status === 'in progress')).length
+  const doing = list.tasks.filter(t => t.status !== 'done' && t.status !== 'blocked' && (t.id === list.current?.id || t.state?.status === 'in progress' || t.state?.status === 'in review')).length
   const blocked = list.tasks.filter(t => t.status === 'blocked').length
   return { done, doing, blocked, todo: list.total - done - doing - blocked }
 }

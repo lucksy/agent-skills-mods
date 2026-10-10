@@ -66,7 +66,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 ### Phase 2: Owners and review
 - [x] Task 3: Assign, claim and unassign, with owners in the panes
 - [x] Task 4: Auto-claim when a task starts
-- [ ] Task 5: /progress review and the in-review state
+- [x] Task 5: /progress review and the in-review state
 - [ ] Task 6: Dashboard Board: owners, In review column, person filter
 - [ ] Task 7: /progress handoff and handoff notes
 
