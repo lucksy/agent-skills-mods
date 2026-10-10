@@ -1,0 +1,18 @@
+{
+  "name": "agent-skills-mods-charts",
+  "private": true,
+  "description": "The dashboard's Nivo charts, bundled into packages/core/dashboard/charts-bundle.ts. Dev dependencies only: nothing here is installed by the plugin or the CLI.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@nivo/bar": "0.99.0",
+    "@nivo/core": "0.99.0",
+    "@nivo/line": "0.99.0",
+    "@nivo/scatterplot": "0.99.0",
+    "esbuild": "0.28.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

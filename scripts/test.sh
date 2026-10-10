@@ -54,6 +54,14 @@ if grep -q 'No task list yet' "$tmp/empty.html"; then echo "ok   dashboard-empty
 node -e 'const h=require("fs").readFileSync(process.argv[1],"utf8");const m=[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)];if(m.length!==1)process.exit(2);require("fs").writeFileSync(process.argv[2],m[0][1])' "$tmp/build/tasks/progress-dashboard.html" "$tmp/dash.js"
 if node --check "$tmp/dash.js" 2>/dev/null; then echo "ok   dashboard-script-parses"; else echo "FAIL dashboard-script-parses"; fail=1; fi
 
+# The chart bundle (K4): generated, valid JavaScript, inside its size limit.
+bundle="$here/../packages/core/dashboard/charts-bundle.ts"
+if head -1 "$bundle" | grep -q '@generated'; then echo "ok   charts-bundle-generated"; else echo "FAIL charts-bundle-generated: $bundle is not the build's output"; fail=1; fi
+node --no-warnings --experimental-strip-types -e 'import(process.argv[1]).then(m => require("fs").writeFileSync(process.argv[2], m.CHARTS_JS))' "$bundle" "$tmp/charts.js"
+if node --check "$tmp/charts.js" 2>/dev/null; then echo "ok   charts-bundle-parses"; else echo "FAIL charts-bundle-parses"; fail=1; fi
+size=$(wc -c < "$tmp/charts.js" | tr -d ' ')
+if (( size < 600 * 1024 )); then echo "ok   charts-bundle-size ($((size / 1024)) KB of 600)"; else echo "FAIL charts-bundle-size: $((size / 1024)) KB, over 600"; fail=1; fi
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

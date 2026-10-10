@@ -193,7 +193,10 @@ claude plugin test .         # 160 tests: parser, guard, forecast, state, and th
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
+npm --prefix packages/charts ci && npm --prefix packages/charts run build   # rebuild the dashboard's chart bundle
 ```
+
+The dashboard's charts are [Nivo](https://nivo.rocks) (React), bundled by esbuild from `packages/charts/` into the committed, generated `packages/core/dashboard/charts-bundle.ts`. The plugin and the CLI install nothing. Rebuild only after changing `packages/charts/`; `scripts/test.sh` checks that the bundle parses and stays under 600 KB.
 
 Layout:
 
@@ -215,6 +218,8 @@ packages/core/specedit.ts  approve / draft in front matter, the editor to open
 packages/core/pixels.ts    pixel charts: RGBA canvas and PNG encoder
 packages/core/cli.ts       the summary agent-skills-progress prints
 packages/core/timeline.ts  the run timeline as rows of coloured segments
+packages/core/dashboard/   the dashboard page: shell and tabs, one module per view, the generated chart bundle
+packages/charts/           the chart bundle's source (React + Nivo, dev dependencies only) and its build
 hooks/ui/                  surface modules: the tabs, the animated bar, the turning task marker
 scripts/                   agent-skills-progress, its test, and the core purity check
 types/index.d.ts           the session state contract

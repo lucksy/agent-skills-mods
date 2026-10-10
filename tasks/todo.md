@@ -174,7 +174,7 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 **Estimated scope:** S
 
 ## Task 14: Nivo chart bundle and its build
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Set up `packages/charts/`:
 - `package.json` with dev dependencies only: `react`, `react-dom`, `@nivo/core`, `@nivo/line`, `@nivo/bar`, `@nivo/scatterplot`, `esbuild`;
@@ -184,14 +184,21 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 Start with one placeholder chart, the tasks-done line, to prove the whole path. First check that the mods engine loads the large generated module.
 
 **Acceptance criteria:**
-- [ ] `npm --prefix packages/charts ci && npm --prefix packages/charts run build` writes `charts-bundle.ts`; the bundle is under 450 KB and passes `node --check`
-- [ ] The plugin loads with the generated module imported (`claude plugin validate .`, the tests, and a `claude -p --plugin-dir .` session); `scripts/purity.mjs` still passes
-- [ ] A page with a `data-chart` mount draws the placeholder chart in Chrome under the page's CSP, with no console errors and no requests
+- [x] `npm --prefix packages/charts ci && npm --prefix packages/charts run build` writes `charts-bundle.ts`; the bundle is under 600 KB and passes `node --check`
+- [x] The plugin loads with the generated module imported (`claude plugin validate .`, the tests, and a `claude -p --plugin-dir .` session); `scripts/purity.mjs` still passes
+- [x] A page with a `data-chart` mount draws the placeholder chart in Chrome under the page's CSP, with no console errors and no requests
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` and `bash scripts/test.sh`
-- [ ] Build succeeds: `claude plugin validate .`
-- [ ] Manual check: the placeholder chart draws in light and dark
+- [x] Tests pass: `claude plugin test .` and `bash scripts/test.sh`
+- [x] Build succeeds: `claude plugin validate .`
+- [x] Manual check: the placeholder chart draws in light and dark
+
+**Notes:**
+- The bundle is 547 KB with React 19, since react-dom alone is 205 KB. On 2026-10-10 the user raised the limit from 450 to 600 KB rather than switch to React 18 (498 KB) or Preact (374 KB, which Nivo doesn't support).
+- A session with the plugin loaded measured 11.48 s against 11.07 s before the bundle, over 4 pairs, which is within the noise.
+- esbuild must not read the repository's tsconfig, whose JSX factory is the mods engine's `h`. `build.mjs` passes its own.
+- A rebuild from the lockfile is byte-identical.
+- T9 needs named tooltip and axis formats in the bundle, because JSON specs can't carry functions.
 
 **Dependencies:** T4
 
@@ -212,7 +219,7 @@ Start with one placeholder chart, the tasks-done line, to prove the whole path. 
 ## Phase 3: Views
 
 ## Task 7: Board view
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `board.ts` draws five columns: to do, waiting, in progress, blocked and done. Each card shows:
 - id and title;

@@ -7,6 +7,7 @@ import { shortDay } from '../forecast'
 import { stateJson, type State } from '../state'
 import { specApproval } from '../view'
 import { overviewHtml } from './overview'
+import { CHARTS_JS } from './charts-bundle'
 import { esc } from './html'
 
 export type ViewId = 'overview'
@@ -40,6 +41,26 @@ export function stages(s: State): { label: string; glyph: string; tone: 'done' |
 
 /** A note as one sentence: a capital first, one full stop last (the CLI's notes have neither, the plugin's both). */
 const sentence = (note: string) => `${note.charAt(0).toUpperCase()}${note.slice(1).replace(/\.+$/, '')}.`
+
+/** A chart as a view describes it: what packages/charts draws with Nivo. Colours name the page's CSS tokens. */
+export type ChartSpec = {
+  kind: 'line' | 'bar' | 'scatter'
+  data: unknown[]
+  colors: string[]
+  /** Plain Nivo props: anything JSON can carry. */
+  props?: Record<string, unknown>
+  height?: number
+}
+
+/** A chart's mount: its spec for the bundle, and its one-line summary, which is what a page without JS shows. */
+export function chartMount(spec: ChartSpec, summary: string): string {
+  return `<div class="chart" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
+}
+
+/** The chart bundle, only for a page that has a chart: a page without one stays small. */
+export function chartsScript(body: string): string {
+  return body.includes('data-chart="') ? `<script>${CHARTS_JS}</script>` : ''
+}
 
 /** JSON safe inside a script block: no `<`, so it cannot close the block or open a comment. */
 const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c')
@@ -89,6 +110,7 @@ ${panels}
 <footer class="wrap foot">Built by agent-skills-mods from the project's markdown.${s.history ? ` ${esc(sentence(s.history))}` : ''} The data behind this page is embedded as JSON (State v1).</footer>
 <script type="application/json" id="asm-state">${scriptJson(stateJson(s))}</script>
 <script>${DASHBOARD_SCRIPT}</script>
+${chartsScript(panels)}
 </body>
 </html>
 `

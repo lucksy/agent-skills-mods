@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DASHBOARD_SCRIPT, dashboardHtml } from '../packages/core/dashboard/page'
+import { DASHBOARD_SCRIPT, chartMount, chartsScript, dashboardHtml } from '../packages/core/dashboard/page'
+import { CHARTS_JS } from '../packages/core/dashboard/charts-bundle'
 import { inline, plainInline } from '../packages/core/dashboard/html'
 import { headline } from '../packages/core/report'
 import { health } from '../packages/core/health'
@@ -192,5 +193,29 @@ describe('health (K1)', () => {
     expect(forecastFig(dashboardHtml(await project()))).toMatch(/[+−]\d+ d since 8 Oct|no change since 8 Oct/)
     const once = await buildState(io({ 'tasks/todo.md': TODO_T3_DONE }))
     expect(forecastFig(dashboardHtml(once))).not.toMatch(/since/)
+  })
+})
+
+describe('the chart bundle (K4)', () => {
+  test('it is inlined only when the page has a chart to draw', async () => {
+    expect(chartsScript('<p>no charts here</p>')).toBe('')
+    expect(chartsScript(chartMount({ kind: 'line', data: [], colors: ['--done'] }, 'Tasks done: 3 of 4.'))).toBe(`<script>${CHARTS_JS}</script>`)
+    // The Overview has no charts: the page carries only its own two scripts.
+    expect(dashboardHtml(await project()).match(/<script\b/g)!.length).toBe(2)
+  })
+
+  test('the bundle cannot end its script block, and is generated, not hand-written', () => {
+    expect(CHARTS_JS.length).toBeGreaterThan(1000)
+    expect(CHARTS_JS).not.toMatch(/<\/script/i)
+    expect(CHARTS_JS).not.toContain('<!--')
+  })
+
+  test('a mount carries its spec as escaped JSON and its summary as text, for pages without JS', () => {
+    const html = chartMount({ kind: 'line', data: [{ id: '</div>"x', data: [{ x: '1', y: 2 }] }], colors: ['--done'] }, 'Tasks done: 3 of 4 <ok>.')
+    expect(html).toMatch(/^<div class="chart" data-chart="\{&quot;kind&quot;:&quot;line&quot;/)
+    expect(html).toMatch(/<\/p><\/div>$/)
+    expect(html).not.toContain('</div>"x')
+    expect(html).toContain('&lt;/div&gt;\\&quot;x')
+    expect(html).toContain('<p class="chart-text">Tasks done: 3 of 4 &lt;ok&gt;.</p>')
   })
 })

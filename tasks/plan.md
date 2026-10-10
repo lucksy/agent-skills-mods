@@ -83,7 +83,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
 - [x] Task 5: /progress dashboard [view] in the plugin
 - [x] Task 6: Overview health and ETA drift figure
-- [ ] Task 14: Nivo chart bundle and its build
+- [x] Task 14: Nivo chart bundle and its build
 
 ### Checkpoint: Dashboard path
 - [ ] Both entry points produce a working page, checked in a browser
@@ -113,7 +113,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 | The move breaks imports in a place no test covers (CLI, statusline) | Medium | T2 runs all three test suites plus `claude --plugin-dir .` |
 | The plugin's numbers differ from the CLI's | Medium | One `toState`. A test feeds both paths the same parts and compares. |
 | Markdown text injects script into the page | High | `esc()` everywhere, JSON `<` escaping, CSP, an explicit test with a hostile title |
-| The engine refuses or chokes on a 300–450 KB generated module | Medium | T14 checks this first. Fallback: the CLI inlines the bundle from a plain `.js` file and the plugin reads it with `$.fs`. |
+| The engine refuses or chokes on a ~550 KB generated module | Medium | T14 checks this first. Fallback: the CLI inlines the bundle from a plain `.js` file and the plugin reads it with `$.fs`. |
 | The Nivo bundle grows past budget | Medium | Import only the three chart packages; esbuild minify with tree-shaking; a size check in `scripts/test.sh` |
 | The page grows large on long plans | Low | A budget test in T12: 60 tasks and 90 days of history stay under 250 KB and 200 ms |
 | The inline script can't be tested without a browser | Medium | A test checks the script parses. A manual Chrome DevTools check at each checkpoint. Views work without JS. |
