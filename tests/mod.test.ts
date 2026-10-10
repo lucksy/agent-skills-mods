@@ -18,7 +18,13 @@ function world(
   stored: Record<string, unknown> = {},
   surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
 ) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[],
+    // /progress dashboard live (T12): `node --version`'s answer (null: no node), what --serve prints, the children started and a way to end them.
+    node: 'v22.20.0' as string | null,
+    serve: { stdout: 'Serving /p at http://127.0.0.1:50123/?token=ab12\nOnly this machine can reach it, and only with the token. Ctrl-C stops it.\n', stderr: '', code: null as number | null },
+    spawned: [] as string[][],
+    ends: [] as (() => void)[],
+  }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
     return { value: { isCopied: true } }
@@ -34,6 +40,10 @@ function world(
       delete files[e.argv[e.argv.length - 1]!]
       return out(0, '')
     }
+    if (e.argv[0] === 'node' && e.argv[1] === '--version') {
+      if (seen.node === null) throw new Error('spawn node ENOENT')
+      return out(0, `${seen.node}\n`)
+    }
     if (e.argv[0] === 'open') {
       seen.launched.push(e.argv[1]!)
       return out(0, '')
@@ -47,6 +57,15 @@ function world(
     if (e.argv[1] === 'rev-list' && e.argv.includes('-1')) return out(0, git.revList ?? '')
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.answer ? git.answer([...e.argv], typeof e.init?.stdin === "string" ? e.init.stdin : "") : git.cat)
+  })
+  // The CLI's --serve as a child: what it prints, then it runs until the test ends it (or exits with `code`).
+  on('process.spawn', async function* (_$, e) {
+    seen.spawned.push([...e.argv])
+    if (seen.serve.stdout) yield { stream: 'stdout' as const, text: seen.serve.stdout }
+    if (seen.serve.stderr) yield { stream: 'stderr' as const, text: seen.serve.stderr }
+    if (seen.serve.code !== null) return { value: { code: seen.serve.code, signal: null } }
+    await new Promise<void>(end => seen.ends.push(end))
+    return { value: { code: null, signal: 'SIGTERM' } }
   })
   clocks.set(seen, mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') }))
   mock.store(on, stored)
@@ -1669,4 +1688,60 @@ test('done on another branch is no collision: the band stays quiet', async ($, o
   expect((await $.command.run(run('start T2'))).text).not.toContain('is also')
   const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never })
   expect(await band.find({ text: /is also/ })).toBeUndefined()
+})
+
+// team-view T12: /progress dashboard live starts --serve as the session's child, once per project.
+test('/progress dashboard live starts --serve, opens its address, and a second call reuses the running server', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  const first = (await $.command.run(run('dashboard live'))).text
+  expect(first).toBe('Live dashboard at http://127.0.0.1:50123/?token=ab12 · stops when this session ends.')
+  expect(seen.spawned).toHaveLength(1)
+  const argv = seen.spawned[0]!
+  expect(argv[0]).toBe('node')
+  expect(argv[2]).toMatch(/\/scripts\/agent-skills-progress\.mjs$/)
+  expect(argv.slice(3)).toEqual([CWD, '--serve', '--port', '0', '--no-open'])
+  expect(seen.launched).toEqual(['http://127.0.0.1:50123/?token=ab12'])
+  // No page written: the server builds it from the files on each load.
+  expect(files[`${CWD}/tasks/progress-dashboard.html`]).toBeUndefined()
+
+  const second = (await $.command.run(run('dashboard live'))).text
+  expect(second).toBe('Live dashboard at http://127.0.0.1:50123/?token=ab12 (already running, opened it again) · stops when this session ends.')
+  expect(seen.spawned).toHaveLength(1)
+  expect(seen.launched).toHaveLength(2)
+
+  // Once the server has stopped, the next call starts another.
+  for (const end of seen.ends.splice(0)) end()
+  await new Promise(done => setTimeout(done, 20))
+  seen.serve.stdout = 'Serving /p at http://127.0.0.1:50999/?token=cd34\n'
+  expect((await $.command.run(run('dashboard live'))).text).toBe('Live dashboard at http://127.0.0.1:50999/?token=cd34 · stops when this session ends.')
+  expect(seen.spawned).toHaveLength(2)
+  for (const end of seen.ends.splice(0)) end()
+})
+
+test('/progress dashboard live with no Node or an old one says why and prints the command to run instead', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  seen.node = null
+  const none = (await $.command.run(run('dashboard live'))).text ?? ''
+  expect(none).toMatch(/^The live dashboard needs Node 22\.6 or newer, and there is no `node` on this machine's PATH\. Install it, then run: ! node --experimental-strip-types \/\S+\/scripts\/agent-skills-progress\.mjs \/p --serve$/m)
+  expect(none).toMatch(/Ctrl-C stops it\.$/)
+  seen.node = 'v20.11.0'
+  const old = (await $.command.run(run('dashboard live'))).text ?? ''
+  expect(old).toMatch(/^The live dashboard needs Node 22\.6 or newer; this machine has v20\.11\.0\. With a newer Node, run: ! node --experimental-strip-types \S+ \/p --serve$/m)
+  expect(seen.spawned).toEqual([])
+  expect(seen.launched).toEqual([])
+})
+
+test('/progress dashboard live when the server fails to start passes on its reason and the command to run instead', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  seen.serve = { stdout: '', stderr: 'agent-skills-progress: EACCES: permission denied, open tasks\n', code: 2 }
+  const out = (await $.command.run(run('dashboard live'))).text ?? ''
+  expect(out).toMatch(/^The live dashboard didn't start: EACCES: permission denied, open tasks\. Run it yourself instead: ! node --experimental-strip-types \S+ \/p --serve$/m)
+  expect(out).toMatch(/Ctrl-C stops it\.$/)
+  expect(seen.launched).toEqual([])
+  // Nothing is kept running, so the next call tries again.
+  seen.serve = { ...seen.serve, stdout: 'Serving /p at http://127.0.0.1:50123/?token=ab12\n', stderr: '', code: null }
+  expect((await $.command.run(run('dashboard live'))).text).toMatch(/^Live dashboard at http:\/\/127\.0\.0\.1:50123\//)
+  expect(seen.spawned).toHaveLength(2)
+  for (const end of seen.ends.splice(0)) end()
 })

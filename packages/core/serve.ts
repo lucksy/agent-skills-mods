@@ -189,3 +189,36 @@ async function action(body: string, io: ServeIo): Promise<ServeResponse> {
   for (const w of r.writes) await io.write(w.file, w.text)
   return json(200, { reply: r.reply, rev: (await readRev(io)).rev })
 }
+
+// /progress dashboard live (T12): the plugin starts this server as a child of the
+// session and reads its address off what it prints; a person runs it by hand.
+
+/** The oldest Node the CLI runs on: it strips the plugin's TypeScript types itself. */
+export const MIN_NODE = [22, 6] as const
+
+/**
+ * The CLI's --serve on `cwd`: for the plugin's child on a free port and unopened
+ * (the plugin opens the address it prints), for a person as they'd type it.
+ */
+export function serveArgv(script: string, cwd: string, who: 'child' | 'person'): string[] {
+  const argv = ['node', '--experimental-strip-types', script, cwd, '--serve']
+  return who === 'child' ? [...argv, '--port', '0', '--no-open'] : argv
+}
+
+/** `argv` as one shell line, each word single-quoted only when it needs it. */
+export function shellLine(argv: readonly string[]): string {
+  return argv.map(w => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)).join(' ')
+}
+
+/** The address on --serve's first line (`Serving <dir> at <url>`), once that whole line has come; else null. */
+export function servedUrl(stdout: string): string | null {
+  return /^Serving .* at (http:\/\/127\.0\.0\.1:\d+\/\S*)\r?\n/m.exec(stdout)?.[1] ?? null
+}
+
+/** True when `node --version` (`v20.11.0`) is older than MIN_NODE; an answer it can't read is not. */
+export function nodeTooOld(version: string): boolean {
+  const m = /^v(\d+)\.(\d+)\./.exec(version.trim())
+  if (!m) return false
+  const [major, minor] = [Number(m[1]), Number(m[2])]
+  return major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])
+}

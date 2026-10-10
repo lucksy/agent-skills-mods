@@ -300,16 +300,16 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Medium
 
 ## Task 12: /progress dashboard live
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `/progress dashboard live` gives you the live dashboard from Claude Code. If Q1 found that a mod can start a long-running process, it starts `--serve` and opens the URL. If not, it prints the exact `! node … --serve` line. Either way, it says how to stop the server.
 
 **Acceptance criteria:**
-- [ ] The command follows Q1's answer, and a mod test covers its reply
-- [ ] When it starts the server, a second call reuses the running one instead of starting another
+- [x] The command follows Q1's answer, and a mod test covers its reply
+- [x] When it starts the server, a second call reuses the running one instead of starting another
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: in a real session on this repo
 
 **Dependencies:** T11

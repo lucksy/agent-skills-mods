@@ -38,6 +38,7 @@ import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
+import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
 import {
@@ -888,6 +889,86 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
     : `Wrote ${DASHBOARD_FILE} (${size}): one self-contained page that works offline. Open ${path} in a browser.`
 }
 
+/**
+ * The live dashboards this session started (team-view T12), by project folder:
+ * one --serve child each, its address once it has printed one, and how to stop it.
+ */
+const liveServers = new Map<string, { started: Promise<{ url: string } | { error: string }>; stop: () => void }>()
+
+/** How long --serve gets to print its address before the start counts as failed. */
+const SERVE_START_MS = 15_000
+
+/**
+ * `/progress dashboard live` (team-view T12): the CLI's --serve as a child of the
+ * session (Q1), on a free port, its address opened in the browser. A second call
+ * reopens the running one. It stops when the session ends; when it can't start,
+ * the reply says why and gives the command to run by hand.
+ */
+async function liveDashboard($: $, cwd: string): Promise<string> {
+  const script = `${$.plugin.root}/scripts/agent-skills-progress.mjs`
+  const byHand = `! ${shellLine(serveArgv(script, cwd, 'person'))}\nIt serves this folder until Ctrl-C stops it.`
+  const running = liveServers.get(cwd)
+  if (running) {
+    const r = await running.started
+    if ('url' in r) {
+      await openFile($, r.url)
+      return `Live dashboard at ${r.url} (already running, opened it again) · stops when this session ends.`
+    }
+  }
+  const version = await $.process.run(['node', '--version'], { timeoutMs: 10_000 }).catch(() => null)
+  const need = `Node ${MIN_NODE.join('.')} or newer`
+  if (!version || version.exitCode !== 0) return `The live dashboard needs ${need}, and there is no \`node\` on this machine's PATH. Install it, then run: ${byHand}`
+  if (nodeTooOld(version.stdout)) return `The live dashboard needs ${need}; this machine has ${version.stdout.trim()}. With a newer Node, run: ${byHand}`
+
+  const r = await startServe($, cwd, serveArgv(script, cwd, 'child'))
+  if ('error' in r) return `The live dashboard didn't start: ${r.error}. Run it yourself instead: ${byHand}`
+  await openFile($, r.url)
+  return `Live dashboard at ${r.url} · stops when this session ends.`
+}
+
+/**
+ * Starts --serve and waits for its address. The child lives as long as the loop
+ * reading it: it ends with the session (the module unloads, or `stop`), and when
+ * it exits on its own the entry goes, so the next call starts another.
+ */
+async function startServe($: $, cwd: string, argv: string[]): Promise<{ url: string } | { error: string }> {
+  let settle: (r: { url: string } | { error: string }) => void = () => {}
+  const started = new Promise<{ url: string } | { error: string }>(done => (settle = done))
+  const child = $.process.spawn({ argv, cwd })
+  const entry = { started, stop: () => void child.return({ code: null, signal: null }).catch(() => {}) }
+  liveServers.set(cwd, entry)
+  void (async () => {
+    // stdout until the address has come; then only the last of stderr, for a reason if it dies.
+    let out: string | null = ''
+    let err = ''
+    try {
+      for await (const { stream, text } of child) {
+        if (stream === 'stderr') err = (err + text).slice(-2000)
+        else if (out !== null) {
+          const url = servedUrl((out += text))
+          if (url) {
+            out = null
+            settle({ url })
+          }
+        }
+      }
+    } catch (e) {
+      err ||= String((e as Error)?.message ?? e)
+    }
+    if (liveServers.get(cwd) === entry) liveServers.delete(cwd)
+    // The CLI says `agent-skills-progress: <why>` on its way out.
+    const why = err.trim().split('\n').at(-1)?.replace(/^agent-skills-progress:\s*/, '').replace(/\.$/, '')
+    settle({ error: why || 'it stopped without saying why' })
+  })()
+  const timeout = $.clock.sleep(SERVE_START_MS).then(() => ({ error: `it printed no address within ${SERVE_START_MS / 1000} s` }))
+  const r = await Promise.race([started, timeout])
+  if ('error' in r) {
+    if (liveServers.get(cwd) === entry) liveServers.delete(cwd)
+    entry.stop()
+  }
+  return r
+}
+
 /** The board's and charts' Report and Copy digest buttons: the command's work, its outcome as a toast. */
 async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
   const p = await load($)
@@ -1215,7 +1296,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'progress',
       description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | dashboard | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view]|team [init]|history|format|allow-overwrite|refresh]',
+      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view|live]|team [init]|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -1239,6 +1320,13 @@ export const register: Register = (on, options) => {
     const p = await load($, { recheckLogs: true }).catch(() => undefined)
     // The other branches, for collisions in the band (team-view T4); never fetches.
     if (p) await readBoard($, p).catch(() => undefined)
+    return next(e)
+  })
+
+  // The live dashboards (T12) stop with the session, a /clear included.
+  on('session.end', async ($, e, next) => {
+    for (const s of liveServers.values()) s.stop()
+    liveServers.clear()
     return next(e)
   })
 
@@ -1329,11 +1417,12 @@ export const register: Register = (on, options) => {
       if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
       if (verb === 'merge-driver') return reply(await mergeDriverCommand($, words))
     }
+    if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

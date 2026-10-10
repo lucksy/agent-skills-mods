@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { ACTION_NAMES } from '../packages/core/actions'
 import { stampTodo } from '../packages/core/format'
 import { parsePlan, parseSpec, parseTasks } from '../packages/core/parse'
-import { handle, hashText, readRev, type ServeIo, type ServeRequest } from '../packages/core/serve'
+import { handle, hashText, nodeTooOld, readRev, serveArgv, servedUrl, shellLine, type ServeIo, type ServeRequest } from '../packages/core/serve'
 import { SPEC, TODO_T2_DONE, TODO_TEMPLATE } from './fixtures'
 
 // team-view T10: the live server's request handling, with no sockets. The token
@@ -298,3 +298,31 @@ describe('the live page\'s writes (T11)', () => {
   })
 })
 
+
+// team-view T12: /progress dashboard live starts the CLI's --serve as the session's child.
+test('serveArgv runs --serve on a free port and unopened for the plugin, and as a person types it otherwise', () => {
+  expect(serveArgv('/plug/scripts/agent-skills-progress.mjs', '/p', 'child')).toEqual([
+    'node', '--experimental-strip-types', '/plug/scripts/agent-skills-progress.mjs', '/p', '--serve', '--port', '0', '--no-open',
+  ])
+  expect(serveArgv('/plug/scripts/agent-skills-progress.mjs', '/p', 'person')).toEqual(['node', '--experimental-strip-types', '/plug/scripts/agent-skills-progress.mjs', '/p', '--serve'])
+})
+
+test('shellLine quotes only the words that need it', () => {
+  expect(shellLine(['node', '/a/b.mjs', '/p', '--serve'])).toBe('node /a/b.mjs /p --serve')
+  expect(shellLine(['node', "/My Files/it's.mjs", '--serve'])).toBe(`node '/My Files/it'\\''s.mjs' --serve`)
+})
+
+test('servedUrl reads the address off --serve\'s first line, once the whole line has come', () => {
+  expect(servedUrl('')).toBeNull()
+  expect(servedUrl('Serving /p at http://127.0.0.1:5012')).toBeNull()
+  expect(servedUrl('Serving /my p at http://127.0.0.1:50123/?token=ab12\nOnly this machine can reach it')).toBe('http://127.0.0.1:50123/?token=ab12')
+  expect(servedUrl('Serving /p at http://example.com/?token=x\n')).toBeNull()
+})
+
+test('nodeTooOld: older than 22.6 is too old; an answer it can\'t read is left to the start to judge', () => {
+  expect(nodeTooOld('v20.11.0\n')).toBe(true)
+  expect(nodeTooOld('v22.5.9')).toBe(true)
+  expect(nodeTooOld('v22.6.0')).toBe(false)
+  expect(nodeTooOld('v24.1.0')).toBe(false)
+  expect(nodeTooOld('bun 1.2')).toBe(false)
+})
