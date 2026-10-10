@@ -49,6 +49,10 @@ const TODO = 'tasks/todo.md'
 const isStr = (v: unknown): v is string => typeof v === 'string'
 /** Optional string args: absent, or a string. */
 const strings = (args: Args, keys: string[]) => keys.every(k => args[k] === undefined || isStr(args[k]))
+/** A handle arg (`who`, `to`): one word, so it can't end the Status line or start a line of its own. */
+const isHandle = (v: unknown) => v === undefined || (isStr(v) && /^@?[^\s·]+$/.test(v))
+/** Free text (a reason, a note) on one line: the live server's JSON can carry newlines the command line never sends. */
+const oneLine = (v: unknown) => ((v as string | undefined) ?? '').replace(/\s*[\r\n]+\s*/g, ' ')
 
 /** `4`, `t4` and `T4` all name T4. */
 const taskId = (raw: string) => (/^\d+$/.test(raw) ? `T${raw}` : raw.toUpperCase())
@@ -88,7 +92,7 @@ function setTask(verb: 'start' | 'done' | 'block' | 'unblock'): Action {
         next = stampTodo(tickTask(text, id), today, { changes })
         said = `${id} ${task.title} is done: ${task.boxes.filter(b => !b.isDone).length} box(es) ticked.`
       } else if (verb === 'block') {
-        const why = (args.why as string | undefined) ?? ''
+        const why = oneLine(args.why)
         if (!why) return refuse('Say why: /progress block T6 "Upstash or self-hosted?"')
         next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'blocked' } } })
         const added = addQuestion(input.plan, id, why)
@@ -127,7 +131,7 @@ const tick: Action = {
 function owner(verb: 'claim' | 'assign' | 'unassign'): Action {
   return {
     todo: true,
-    check: args => (isStr(args.id) && args.id && strings(args, ['who']) ? args : `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.`),
+    check: args => (isStr(args.id) && args.id && strings(args, ['who']) && isHandle(args.who) ? args : `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.`),
     edit: (args, input) => {
       const found = findTask(args.id as string, input)
       if (typeof found === 'string') return refuse(found)
@@ -176,7 +180,7 @@ const review: Action = {
     let pr: string | undefined
     let reviewer: string | undefined
     for (const w of (args.refs as string[] | undefined) ?? []) {
-      if (/^#\d+$/.test(w) || /^https?:\/\//i.test(w)) pr = w
+      if (/^#\d+$/.test(w) || /^https?:\/\/\S+$/i.test(w)) pr = w
       else if (/^@[\w.-]+$/.test(w)) reviewer = w
       else return refuse(`Not a PR or a reviewer: "${w}". Use /progress review ${id} #42 @bob (both optional).`)
     }
@@ -197,13 +201,13 @@ const review: Action = {
  */
 const handoff: Action = {
   todo: true,
-  check: args => (isStr(args.id) && args.id && strings(args, ['to', 'note']) ? args : 'Say which task: /progress handoff T4 @bob "migration done, tests left".'),
+  check: args => (isStr(args.id) && args.id && strings(args, ['to', 'note']) && isHandle(args.to) ? args : 'Say which task: /progress handoff T4 @bob "migration done, tests left".'),
   edit: (args, input) => {
     const found = findTask(args.id as string, input)
     if (typeof found === 'string') return refuse(found)
     const { id, task } = found
     const to = args.to as string | undefined
-    const note = ((args.note as string | undefined) ?? '').trim()
+    const note = oneLine(args.note).trim()
     if (!to) return refuse(`Say who takes it: /progress handoff ${id} @bob "${note || 'note'}".`)
     if (!note) return refuse(`Say what the next person needs to know: /progress handoff ${id} ${to} "migration done, tests left".`)
     const from = task.owner ?? sessionHandle(input)

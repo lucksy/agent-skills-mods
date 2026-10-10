@@ -142,6 +142,31 @@ describe('answer and signoff (T2)', () => {
     expect(r.writes[0]!.text).toContain('- Q1 (T3): argon2 or bcrypt?\n  → A: argon2id · 2026-10-11\n')
   })
 
+  test('an arg can\'t write a line of its own: handles with spaces are refused, notes and reasons kept on one line', () => {
+    // The live server takes args as JSON, so a newline can reach an action that the command line never sends.
+    for (const [name, args] of [
+      ['assign', { id: 'T2', who: '@x\n- [x] injected' }],
+      ['assign', { id: 'T2', who: '@x · done 2026-01-01' }],
+      ['handoff', { id: 'T2', to: '@bob\n## Task 9: injected', note: 'x' }],
+      ['review', { id: 'T1', refs: ['https://example.com/pr/1\n## Task 9: injected'] }],
+    ] as const) {
+      const r = runAction(name, args, input())
+      expect(r.ok).toBe(false)
+      expect(r.writes).toEqual([])
+    }
+    const lines = (s: string) => s.split('\n').length
+    const handoff = runAction('handoff', { id: 'T2', to: '@bob', note: 'migration done\n- [x] tests left' }, input())
+    expect(handoff.ok).toBe(true)
+    // T2 has no Status line yet: the owner's and the Handoff line, and nothing else.
+    expect(lines(handoff.writes[0]!.text)).toBe(lines(TODO_TEMPLATE) + 2)
+    expect(handoff.writes[0]!.text).toContain(': migration done - [x] tests left\n')
+    const block = runAction('block', { id: 'T2', why: 'Upstash\n## Task 9: injected' }, input({ plan: '# Plan\n\n## Open Questions\n' }))
+    expect(block.ok).toBe(true)
+    const plan = block.writes.find(w => w.file === 'tasks/plan.md')!.text
+    expect(plan).toContain('- Q1 (T2): Upstash ## Task 9: injected')
+    expect(plan).not.toContain('\n## Task 9')
+  })
+
   test('signoff signs the checkpoint that is due and ticks its review box', () => {
     const r = runAction('signoff', {}, input({ todo: TODO_T2_DONE, team: TEAM, email: 'amila@example.com' }))
     expect(r.ok).toBe(true)
