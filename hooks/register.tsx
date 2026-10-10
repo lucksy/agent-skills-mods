@@ -113,7 +113,9 @@ async function readText($: $, path: string): Promise<string | null> {
 type Sources = GitSources & { logs: SourceData; logsChoice: LogsChoice }
 // v4: from 0.7.1 a task waiting on another no longer counts as blocked, and no commits
 // yet is told apart from no repository; projects seen by 0.7.0 gather again once.
-const sourcesKey = (cwd: string) => `sources:v4:${cwd}`
+// v5: from 0.34.1 the copies are read in groups under the 4 MiB output limit; a long
+// task list read before that kept only its newest copies, so it is gathered again.
+const sourcesKey = (cwd: string) => `sources:v5:${cwd}`
 
 /** Git's two sources for the task list (F5), through the session's process runner. */
 function fromGit($: $, file: string, list: TaskList): Promise<GitSources> {

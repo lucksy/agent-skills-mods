@@ -19,7 +19,11 @@ import {
   doneDaysFromMessages,
   earliestDays,
   mergeHistory,
+  gitSources,
+  lastPerDay,
   parseLog,
+  parseSizes,
+  readGroups,
   parseMessages,
   snapshotsFromDoneDays,
   snapshotsFromGit,
@@ -178,6 +182,40 @@ describe('checkOverwrite', () => {
 
 describe('history from git (F5)', () => {
   const current = parseTasks(TODO_T3_DONE)
+
+  test('a long task list is read a day at a time, in groups under the 4 MiB output limit', async () => {
+    // 600 KB of notes under the tasks, committed on 20 days: 12 MB in one read.
+    const pad = `\n\n## Notes\n\n${'A line of notes that makes the file long. '.repeat(15_000)}\n`
+    const days = Array.from({ length: 20 }, (_, i) => new Date(Date.parse('2026-10-08T00:00:00Z') - i * 86_400_000).toISOString().slice(0, 10))
+    const copies: [string, string | null][] = days.map((d, i) => [d, `${i < 3 ? TODO_T3_DONE : i < 10 ? TODO_T2_DONE : TODO_NONE_DONE}${pad}`])
+    const out = gitOutput([...copies, ['2026-09-01', null]])
+    const reads: number[] = []
+    const LIMIT = 4_194_304
+    const run = async (argv: string[], opts?: { stdin?: string }) => {
+      if (argv[1] === 'log') return { exitCode: 0, stdout: argv.some(a => a.includes('%B')) ? '' : out.log, stderr: '' }
+      const full = out.answer(argv, opts?.stdin)
+      if (!argv.some(a => a.startsWith('--batch-check'))) reads.push(full.length)
+      // What Claude Code's process runner does: keep 4 MiB, drop the rest.
+      return { exitCode: 0, stdout: full.slice(0, LIMIT), stderr: '', isStdoutTruncated: full.length > LIMIT }
+    }
+    const src = await gitSources(run, 'tasks/todo.md', parseTasks(TODO_T3_DONE))
+    expect(reads.every(n => n <= LIMIT)).toBe(true)
+    expect(reads.length).toBeGreaterThan(1)
+    expect(src.git.snaps[0]?.day).toBe('2026-09-19')
+    expect(src.git.snaps.length).toBe(20)
+    expect(src.git.doneDays['T2|Prisma schema for keys']).toBe('2026-09-29')
+    expect(src.git.doneDays['T3|Issue and revoke keys']).toBe('2026-10-06')
+  })
+
+  test('one copy a day, sizes read back, groups end at a missing copy or one too big', async () => {
+    const at = (d: string, h: number) => ({ hash: `h${d}${h}`, ms: Date.parse(`${d}T${String(h).padStart(2, '0')}:00:00Z`) })
+    expect(lastPerDay([at('2026-10-08', 18), at('2026-10-08', 9), at('2026-10-07', 12)]).map(c => c.hash)).toEqual(['h2026-10-0818', 'h2026-10-0712'])
+    expect(parseSizes('@@asm 120\nabc:./tasks/todo.md missing\n@@asm 7\n')).toEqual([120, null, 7])
+    const c = [1, 2, 3, 4, 5].map(i => ({ hash: `c${i}`, ms: i }))
+    expect(readGroups(c, [100, 100, 100, 100, 100], 400).map(g => g.map(x => x.hash))).toEqual([['c1', 'c2'], ['c3', 'c4'], ['c5']])
+    expect(readGroups(c, [100, null, 100], 400).map(g => g.length)).toEqual([1])
+    expect(readGroups(c, [100, 1000, 100], 400).map(g => g.length)).toEqual([1])
+  })
 
   test('one snapshot per day from its last commit, stopping at an older plan', async () => {
     const { log, cat } = gitOutput([
@@ -660,7 +698,7 @@ describe('the progress script for other agents (E2)', () => {
   })
   const git = (copies: [string, string | null][]): CliIo['run'] => {
     const out = gitOutput(copies)
-    return async argv => ({ exitCode: 0, stdout: argv[1] === 'log' ? (argv.some(a => a.includes('%B')) ? '' : out.log) : out.cat, stderr: '' })
+    return async (argv, opts) => ({ exitCode: 0, stdout: argv[1] === 'log' ? (argv.some(a => a.includes('%B')) ? '' : out.log) : out.answer(argv, opts?.stdin), stderr: '' })
   }
 
   test('same parse as the mod: spec, task list, history from git and an ETA range', async () => {

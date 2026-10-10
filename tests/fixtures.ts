@@ -180,7 +180,19 @@ export function gitOutput(copies: [string, string | null][]) {
   const cat = copies
     .map(([, text], i) => (text === null ? `${hash(i)}:./tasks/todo.md missing\n` : `@@asm blob\n${text}\n`))
     .join('')
-  return { log, cat }
+  const blobs = new Map(copies.map(([, text], i) => [hash(i), text]))
+  /** What `git cat-file` answers for the commits on its input: sizes, or the copies. */
+  const answer = (argv: string[], stdin = '') =>
+    stdin
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const text = blobs.get(line.split(':')[0]!)
+        if (text === null || text === undefined) return `${line} missing\n`
+        return argv.some(a => a.startsWith('--batch-check')) ? `@@asm ${new TextEncoder().encode(text).length}\n` : `@@asm blob\n${text}\n`
+      })
+      .join('')
+  return { log, cat, answer }
 }
 
 /** A Raster's packed cells as rows of glyphs and the matching rows of [fg, bg]. */

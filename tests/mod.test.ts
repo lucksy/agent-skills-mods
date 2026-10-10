@@ -9,7 +9,7 @@ const CWD = '/p'
 const clocks = new WeakMap<object, ReturnType<typeof mock.clock>>()
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string; messages?: string; named?: string; diff?: string; revList?: string } | 'no-repo' | 'no-commits'
+type Git = { log: string; cat: string; answer?: (argv: string[], stdin?: string) => string; messages?: string; named?: string; diff?: string; revList?: string } | 'no-repo' | 'no-commits'
 
 function world(
   on: On,
@@ -45,7 +45,7 @@ function world(
     if (e.argv[1] === 'diff') return out(0, git.diff ?? '')
     if (e.argv[1] === 'rev-list' && e.argv.includes('-1')) return out(0, git.revList ?? '')
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
-    return out(0, git.cat)
+    return out(0, git.answer ? git.answer([...e.argv], typeof e.init?.stdin === "string" ? e.init.stdin : "") : git.cat)
   })
   clocks.set(seen, mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') }))
   mock.store(on, stored)
@@ -249,7 +249,7 @@ test('history is rebuilt from git once, so the first day already has an ETA', as
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }, git)
   await $.command.run(run('refresh'))
   await $.command.run(run('refresh'))
-  expect(seen.git).toEqual(['git log', 'git cat-file', 'git log'])
+  expect(seen.git).toEqual(['git log', 'git cat-file', 'git cat-file', 'git log'])
   expect(seen.toasts).toEqual(['History since 29 Sep: 3 days from commits of tasks/todo.md.'])
   const board = await mountBoard($)
   expect(await board.find({ text: /from 3 tasks in 10 days/ })).toBeDefined()
