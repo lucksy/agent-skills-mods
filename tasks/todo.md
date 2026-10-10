@@ -273,7 +273,7 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 **Estimated scope:** S
 
 ## Task 9: Flow view: burn-up, cumulative flow, cycle time, aging WIP (Nivo)
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `flow.ts` gives each chart a `<div data-chart="…">` mount point, a one-line text summary, and the series the chart is handed, built from State in TypeScript and so testable. The chart bundle from T14 draws:
 - burn-up: `@nivo/line`, with scope, done, and the forecast band to the ETA;
@@ -304,7 +304,7 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** M
 
 ## Task 10: Flow view: ETA drift chart (Nivo)
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** An ETA drift chart: for each past day from `forecastHistory`, the median ETA with its fast–slow range. It is drawn with `@nivo/line` plus a custom layer for the range band, and goes in the Flow view under the other charts.
 
@@ -328,7 +328,7 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** S
 
 ## Task 11: Spec view
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `spec.ts` draws one section per spec file (`SPEC.md`, `SPEC-*.md`, `specs/*.md`), with a picker. Each section shows:
 - approval and its date;

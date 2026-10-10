@@ -7,16 +7,22 @@ import { shortDay } from '../forecast'
 import { stateJson, type State } from '../state'
 import { specApproval } from '../view'
 import { boardHtml } from './board'
+import { FLOW_STYLE, flowHtml } from './flow'
 import { overviewHtml } from './overview'
+import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
+import { SPEC_STYLE, specHtml } from './spec'
 import { CHARTS_JS } from './charts-bundle'
 import { esc } from './html'
 
-export type ViewId = 'overview' | 'board'
+export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
   { id: 'overview', label: 'Overview', render: overviewHtml },
   { id: 'board', label: 'Board', render: boardHtml },
+  { id: 'roadmap', label: 'Roadmap', render: roadmapHtml },
+  { id: 'flow', label: 'Flow', render: flowHtml },
+  { id: 'spec', label: 'Spec', render: specHtml },
 ]
 
 /** The views a page can open on, in tab order. */
@@ -220,6 +226,9 @@ section:focus{outline:none}
 .foot{color:var(--ink3);font-size:12px;padding-top:var(--s2);padding-bottom:var(--s6)}
 ${OVERVIEW_STYLE()}
 ${BOARD_STYLE()}
+${ROADMAP_STYLE}
+${FLOW_STYLE}
+${SPEC_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {

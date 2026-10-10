@@ -231,9 +231,9 @@ describe('Board (K2)', () => {
     return [...col.matchAll(/data-task="(T\d+)"/g)].map(m => m[1])
   }
 
-  test('a tab of its own, after the Overview', async () => {
+  test('a tab of its own, after the Overview, in the order of the spec', async () => {
     const html = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })))
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'roadmap', 'flow', 'spec'])
     expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })), { view: 'board' })).toContain('data-view="board"')
   })
 
