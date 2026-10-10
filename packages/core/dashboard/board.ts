@@ -74,6 +74,12 @@ ${phases.length ? '<label class="check"><input type="checkbox" id="board-group">
 ${lanes}`
 }
 
+/** The latest handoff note on a card (format-v2, F6): who passed it on, to whom, and what's left. */
+function noteHtml(t: Task): string {
+  const h = t.handoffs?.at(-1)
+  return h ? `\n<p class="c-note">↪ ${h.from ? `${esc(h.from)} → ` : 'to '}${esc(h.to)}: ${inline(h.note)}</p>` : ''
+}
+
 /** An owner as the filter and the hash name them: `@Sara-K` → `sara-k`; '' when there is none. */
 const ownerKey = (owner: string | undefined) => (owner ?? '').replace(/^@/, '').toLowerCase()
 
@@ -96,7 +102,7 @@ function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean
   const phaseTag = showPhase && phase ? `<span class="c-phase">Phase ${phase}</span>` : ''
   const card = `<li class="card c-${col}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}">
 <p class="c-title"><span class="id">${esc(t.id)}</span> ${inline(t.title)}</p>
-<p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>
+<p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}
 </li>`
   const cp = t.checkpoint
   if (!cp) return card

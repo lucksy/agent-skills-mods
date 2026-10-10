@@ -1398,3 +1398,14 @@ test('handles and PR links keep the case they were typed in', async ($, on) => {
   await $.command.run(run('review T2 https://github.com/Acme/API/pull/42 @Bob'))
   expect(files[`${CWD}/tasks/todo.md`]).toContain('**Status:** in review · @Sara-K · started 2026-10-07 · PR https://github.com/Acme/API/pull/42 · reviewer @Bob')
 })
+
+// format-v2 T7 (F6): hand a task over, with a note.
+test('/progress handoff sets the new owner and leaves a dated note; it needs a note and a handle', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @sara · started 2026-10-07\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('sara@example.com'))
+  expect((await $.command.run(run('handoff T2 @amila "Migration done; tests left"'))).text).toBe('T2 Prisma schema for keys → @amila, from @sara. Note: "Migration done; tests left".')
+  expect(files[`${CWD}/tasks/todo.md`]).toContain('**Status:** in progress · @amila · started 2026-10-07\n**Handoff:** 2026-10-09 @sara → @amila: Migration done; tests left\n')
+  expect((await $.command.run(run('handoff T2 @bob'))).text).toBe('Say what the next person needs to know: /progress handoff T2 @bob "migration done, tests left".')
+  expect((await $.command.run(run('handoff T2 "note"'))).text).toBe('Say who takes it: /progress handoff T2 @bob "note".')
+})

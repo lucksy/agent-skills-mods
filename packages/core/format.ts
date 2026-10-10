@@ -167,6 +167,34 @@ export function setOwner(text: string, id: string, owner: string | null): string
   return lines.join(eol)
 }
 
+/** A handoff (format-v2, F6): `**Handoff:** 2026-10-10 @sara → @bob: migration done, tests left`. */
+export type Handoff = { day: string; from: string | null; to: string; note: string }
+
+const HANDOFF_LINE = /^\s*\*\*Handoff:?\*\*:?\s*(\d{4}-\d{2}-\d{2})\s+(?:(@[\w.-]+)\s+)?(?:→|->)\s*(@[\w.-]+)\s*:\s*(.*)$/
+
+/** A `**Handoff:**` line, or null for another line. */
+export function parseHandoffLine(line: string): Handoff | null {
+  const m = HANDOFF_LINE.exec(line)
+  return m ? { day: m[1]!, from: m[2] ?? null, to: m[3]!, note: m[4]!.trim() } : null
+}
+
+/**
+ * `/progress handoff T4 @bob "note"` (format-v2, F6): task `id` owned by `to`,
+ * with a dated note under its Status line after any earlier ones. Every other
+ * byte is kept. The text unchanged when there is no such task.
+ */
+export function addHandoff(text: string, id: string, h: Handoff): string {
+  const owned = setOwner(text, id, h.to)
+  const eol = owned.includes('\r\n') ? '\r\n' : '\n'
+  const lines = owned.replace(/\r\n?/g, '\n').split('\n')
+  const s = sections(lines).find(x => x.id === id)
+  if (!s || s.status === null) return text
+  let at = s.status + 1
+  while (at < lines.length && parseHandoffLine(lines[at]!)) at++
+  lines.splice(at, 0, `**Handoff:** ${h.day} ${h.from ? `${h.from} ` : ''}→ ${h.to}: ${h.note.replace(/\s*\n\s*/g, ' ').trim()}`)
+  return lines.join(eol)
+}
+
 /**
  * `/progress review T4 #42 @bob` (format-v2, F4): task `id` in review, with the
  * PR and reviewer given (each kept from before when not given), owner and

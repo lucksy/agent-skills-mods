@@ -206,7 +206,7 @@ Ticking the last box still makes the task done.
 **Estimated scope:** M
 
 ## Task 7: /progress handoff and handoff notes
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `/progress handoff T4 @bob "migration done, tests left"` sets the new owner and adds the line `**Handoff:** 2026-10-10 @sara → @bob: …` under the Status line; earlier notes are kept.
 - The parser reads the handoff lines.
@@ -214,11 +214,16 @@ Ticking the last box still makes the task done.
 - When the task is current, its notes join the section of the system prompt that already carries the parsed state, so the next person's agent reads them.
 
 **Acceptance criteria:**
-- [ ] The command writes the new owner and a dated note line, keeping earlier notes and every other byte
-- [ ] Handoff notes show in `/progress task`, on the dashboard card, and in the agent's state section when the task is current
+- [x] The command writes the new owner and a dated note line, keeping earlier notes and every other byte
+- [x] Handoff notes show in `/progress task`, on the dashboard card, and in the agent's state section when the task is current
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The note comes from the old owner, or from you when the task had none. A line break in the note is folded into one line.
+- Handoff lines are their own kind of line, not a box, a dependency or a heading, so the task is otherwise unchanged.
+- Checked in a real session: after `handoff T4 @sara "…"`, a fresh agent with no file access named the new owner and quoted the note, from the state section of its system prompt.
 
 **Dependencies:** T3
 
@@ -239,7 +244,7 @@ Ticking the last box still makes the task done.
 ## Phase 3: Approvals
 
 ## Task 8: Approvals by role in the spec pane
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `packages/core/approvals.ts` covers the signing rules:
 - it reads and writes the spec's `approvals:` front matter (`role @handle date` items);

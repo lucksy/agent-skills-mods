@@ -32,7 +32,7 @@ import { archiveDir, archiveReadme } from '../packages/core/archive'
 import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
-import { setOwner, setReview, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
+import { addHandoff, setOwner, setReview, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
 import {
   bandText,
   bar,
@@ -689,6 +689,32 @@ async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: 
 }
 
 /**
+ * `/progress handoff T4 @bob "migration done, tests left"` (format-v2, F6): the
+ * task's new owner, and a dated note under it from the old owner (else you), which
+ * the next person's agent reads with the current task.
+ */
+async function handoffCommand($: $, rest: string): Promise<string> {
+  const m = /^(\S+)?\s*(@[\w.-]+)?\s*([\s\S]*)$/.exec(rest)!
+  const rawId = m[1] ?? ''
+  const to = m[2]
+  const note = (m[3] ?? '').trim().replace(/^["'“”]|["'“”]$/g, '').trim()
+  const p = await load($)
+  const path = `${p.cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text === null) return 'No tasks/todo.md here.'
+  if (!rawId) return 'Say which task: /progress handoff T4 @bob "migration done, tests left".'
+  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
+  const task = p.list?.tasks.find(t => t.id === id)
+  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
+  if (!to) return `Say who takes it: /progress handoff ${id} @bob "${note || 'note'}".`
+  if (!note) return `Say what the next person needs to know: /progress handoff ${id} ${to} "migration done, tests left".`
+  const from = task.owner ?? (await sessionHandle($, p.cwd))
+  await $.fs.write(path, addHandoff(text, id, { day: dayOf(await $.clock.now()), from, to, note }))
+  await load($)
+  return `${id} ${task.title} → ${to}${from ? `, from ${from}` : ''}. Note: "${note}".`
+}
+
+/**
  * `/progress review T4 [#42 | PR link] [@bob]` (format-v2, F4): the task in
  * review, with its PR and reviewer; owner and dates kept. A done task, or one
  * with nothing ticked yet, is refused with why.
@@ -1180,12 +1206,13 @@ export const register: Register = (on, options) => {
       const words = rawWords.slice(1)
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
       if (verb === 'review') return reply(await reviewCommand($, words))
+      if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

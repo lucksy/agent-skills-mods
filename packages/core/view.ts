@@ -363,6 +363,7 @@ export function progressBrief(p: BriefInput): string | undefined {
       if (t) {
         const open = t.boxes.filter(b => !b.isDone).map(b => b.text)
         out.push(`- current: ${t.id} ${t.title}${t.phase ? ` (${t.phase})` : ''}${open.length ? `; open: ${open.join('; ')}` : ''}`)
+        for (const h of t.handoffs ?? []) out.push(`- handoff to ${h.to} on ${h.day}${h.from ? ` from ${h.from}` : ''}: ${h.note}`)
         if (t.checkpoint) out.push(`- checkpoint after ${t.id}: ${t.checkpoint.title} (${t.checkpoint.items.map(b => b.text).join('; ')})`)
       } else if (list.done === list.total) out.push('- all tasks done; next stage is review.')
       for (const b of list.tasks.filter(x => x.status === 'blocked').slice(0, MAX_ROWS)) {
@@ -589,6 +590,8 @@ export function taskDetail(list: TaskList, id: string, opts: { today: string; da
   const d = opts.dates[t.id]
   if (d) facts.push(d.isEstimate ? `expected ≈${shortDay(d.day)}` : `done ${shortDay(d.day)}`)
   lines.push(facts.join(' · '))
+  const h = t.handoffs?.at(-1)
+  if (h) lines.push(`Handoff ${shortDay(h.day)} ${h.from ? `${h.from} ` : ''}→ ${h.to}: ${h.note}${t.handoffs!.length > 1 ? ` (${t.handoffs!.length} notes in tasks/todo.md)` : ''}`)
   const groups: [string, number[]][] = [
     ['Acceptance criteria', t.boxes.map((_, i) => i).filter(i => (t.kinds?.[i] ?? 'criteria') === 'criteria')],
     ['Verification', t.boxes.map((_, i) => i).filter(i => t.kinds?.[i] === 'verification')],

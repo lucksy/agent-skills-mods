@@ -68,7 +68,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 4: Auto-claim when a task starts
 - [x] Task 5: /progress review and the in-review state
 - [x] Task 6: Dashboard Board: owners, In review column, person filter
-- [ ] Task 7: /progress handoff and handoff notes
+- [x] Task 7: /progress handoff and handoff notes
 
 ### Checkpoint: Owners and review
 - [ ] A team can assign, review and hand off in a real session

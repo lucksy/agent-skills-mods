@@ -295,6 +295,7 @@ function BOARD_STYLE(): string {
 .c-meta{margin:var(--s1) 0 0;font-size:12.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:2px var(--s2);justify-content:space-between}
 .c-meta .why{color:var(--blocked)}
 .c-phase{color:var(--ink3);white-space:nowrap}.c-owner{color:var(--ink);font-weight:550;white-space:nowrap}
+.c-note{margin:var(--s1) 0 0;padding-top:var(--s1);border-top:1px dashed var(--line2);font-size:12.5px;color:var(--ink2)}
 .c-review{border-left-color:var(--focus)!important}.lane .c-phase{display:none}
 .cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
 .cp span{color:var(--needs)}

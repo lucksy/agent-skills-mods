@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { addHandoff, parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
 import { nowCounts } from '../packages/core/report'
 import { parseTasks } from '../packages/core/parse'
-import { bandText, boardRows, taskDetail, timelineRows } from '../packages/core/view'
+import { bandText, boardRows, progressBrief, taskDetail, timelineRows } from '../packages/core/view'
+import { dashboardHtml } from '../packages/core/dashboard/page'
 import { plain, timeline } from '../packages/core/timeline'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 import { TODO_TEMPLATE } from './fixtures'
@@ -128,5 +129,42 @@ describe('in review (T5)', () => {
     const cli = timelineRows(list).find(r => r.kind === 'task' && r.id === 'T2') as { detail: string }
     expect(cli.detail).toBe('@amila · in review · PR #42 · @bob')
     expect(nowCounts(list)).toMatchObject({ doing: 1 })
+  })
+})
+
+describe('handoffs (T7)', () => {
+  const owned = setOwner(TODO_TEMPLATE, 'T2', '@sara')
+
+  test('addHandoff sets the new owner and adds a dated note under the Status line, keeping earlier notes', () => {
+    const once = addHandoff(owned, 'T2', { day: '2026-10-09', from: '@sara', to: '@bob', note: 'migration done, tests left' })
+    expect(once).toContain('## Task 2: Prisma schema for keys\n**Status:** todo · @bob\n**Handoff:** 2026-10-09 @sara → @bob: migration done, tests left\n')
+    const twice = addHandoff(once, 'T2', { day: '2026-10-10', from: '@bob', to: '@ann', note: 'over to you' })
+    expect(twice).toContain('**Status:** todo · @ann\n**Handoff:** 2026-10-09 @sara → @bob: migration done, tests left\n**Handoff:** 2026-10-10 @bob → @ann: over to you\n')
+    // Nothing else moved.
+    expect(twice.replace(/\*\*Handoff:\*\*.*\n/g, '').replace('**Status:** todo · @ann\n', '**Status:** todo · @sara\n')).toBe(owned)
+  })
+
+  test('without an owner before, the note says who handed it over; the parser reads every note', () => {
+    const t = addHandoff(TODO_TEMPLATE, 'T3', { day: '2026-10-09', from: null, to: '@bob', note: 'yours' })
+    expect(t).toContain('## Task 3: Issue and revoke keys\n**Status:** todo · @bob\n**Handoff:** 2026-10-09 → @bob: yours\n')
+    const list = parseTasks(addHandoff(t, 'T3', { day: '2026-10-10', from: '@bob', to: '@ann', note: 'a `code` note' }))
+    expect(list.tasks.find(x => x.id === 'T3')!.handoffs).toEqual([
+      { day: '2026-10-09', from: null, to: '@bob', note: 'yours' },
+      { day: '2026-10-10', from: '@bob', to: '@ann', note: 'a `code` note' },
+    ])
+    // A Handoff line is not a box, a dependency or a heading: the task is otherwise the same.
+    expect(list.tasks.find(x => x.id === 'T3')!.boxes.length).toBe(1)
+  })
+
+  test('the latest note shows in /progress task, on the dashboard card, and in the agent\'s state when the task is current', async () => {
+    const text = addHandoff(owned, 'T2', { day: '2026-10-09', from: '@sara', to: '@bob', note: 'migration done, tests left' })
+    const list = parseTasks(text)
+    expect(taskDetail(list, 'T2', { today: '2026-10-09', dates: {}, commits: [] })).toContain('Handoff 9 Oct @sara → @bob: migration done, tests left')
+    const files: Record<string, string> = { 'tasks/todo.md': text }
+    const io: ProjectIo = { cwd: '/p', now: Date.parse('2026-10-09T10:00:00Z'), read: async r => files[r] ?? null, list: async () => [] }
+    const html = dashboardHtml(await buildState(io), { view: 'board' })
+    expect(html).toMatch(/data-task="T2"[\s\S]*?<p class="c-note">↪ @sara → @bob: migration done, tests left<\/p>/)
+    const brief = progressBrief({ spec: null, specFile: null, list, listFile: 'tasks/todo.md', plan: null, forecast: null })!
+    expect(brief).toContain('- handoff to @bob on 2026-10-09 from @sara: migration done, tests left')
   })
 })
