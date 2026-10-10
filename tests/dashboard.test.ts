@@ -3,8 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import { DASHBOARD_SCRIPT, dashboardHtml } from '../packages/core/dashboard/page'
 import { inline, plainInline } from '../packages/core/dashboard/html'
 import { headline } from '../packages/core/report'
+import { health } from '../packages/core/health'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
-import { SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
+import { GOOD_SPEC, SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
 
 // The dashboard (K1–K6): one self-contained page built from State v1.
 
@@ -151,5 +152,45 @@ describe('Overview (K1)', () => {
     const s = await buildState(io({ 'tasks/todo.md': done }))
     expect(s.needsYou).toEqual([])
     expect(text(section(dashboardHtml(s), 'overview'))).toContain('Nothing is waiting on you')
+  })
+})
+
+describe('health (K1)', () => {
+  const approved = SPEC.replace('status: draft', 'status: approved')
+  const files = (todo: string, extra: Record<string, string> = {}) => ({ 'SPEC.md': approved, 'tasks/todo.md': todo, ...extra })
+
+  test('on track when nothing below holds', async () => {
+    const h = health(await buildState(io(files(TODO_T3_DONE), HISTORY)))
+    expect(h).toEqual({ status: 'on track', reasons: [] })
+  })
+
+  test('at risk, with every reason: a band alert, a blocked task, a draft spec under way, an unsigned checkpoint', async () => {
+    const long = `---\nplan: keys\ncreated: 2026-09-01\n---\n${TODO_T3_DONE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Status:** in progress · started 2026-09-10 · step build\n')}`
+    expect(health(await buildState(io(files(long)))).reasons).toEqual([expect.stringMatching(/^T4 has run 29d, over twice the usual/)])
+
+    const plan = '# Plan\n\n## Open Questions\n- Q1 (T4): Redis or in memory?\n'
+    expect(health(await buildState(io(files(TODO_T3_DONE, { 'tasks/plan.md': plan })))).reasons).toEqual(['T4 is blocked: Q1 (T4): Redis or in memory?'])
+
+    expect(health(await buildState(io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_T3_DONE })))).toEqual({ status: 'at risk', reasons: ['Building while SPEC.md awaits approval'] })
+
+    expect(health(await buildState(io(files(TODO_T2_DONE)))).reasons).toEqual(['Checkpoint after T2 is not signed off: After Tasks 1-2'])
+  })
+
+  test('a spec waiting before any work starts is not a risk yet', async () => {
+    expect(health(await buildState(io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_NONE_DONE }))).status).toBe('on track')
+  })
+
+  test('the Overview leads with it: a word and a glyph, then each reason', async () => {
+    const risky = text(section(dashboardHtml(await buildState(io({ 'SPEC.md': SPEC, 'tasks/todo.md': TODO_T2_DONE }))), 'overview'))
+    expect(risky).toMatch(/^\s*Overview ! At risk · 2 reasons Building while SPEC\.md awaits approval Checkpoint after T2 is not signed off: After Tasks 1-2/)
+    const fine = text(section(dashboardHtml(await buildState(io(files(TODO_T3_DONE), HISTORY))), 'overview'))
+    expect(fine).toMatch(/^\s*Overview ✓ On track Nothing is late, blocked or waiting on a sign-off\./)
+  })
+
+  test('the Forecast figure says how far the ETA moved', async () => {
+    const forecastFig = (html: string) => text(html.match(/<div class="fig f-forecast"[\s\S]*?<\/div>/)![0])
+    expect(forecastFig(dashboardHtml(await project()))).toMatch(/[+−]\d+ d since 8 Oct|no change since 8 Oct/)
+    const once = await buildState(io({ 'tasks/todo.md': TODO_T3_DONE }))
+    expect(forecastFig(dashboardHtml(once))).not.toMatch(/since/)
   })
 })

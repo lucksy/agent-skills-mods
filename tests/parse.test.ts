@@ -13,7 +13,7 @@ import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../pa
 import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../packages/core/cli'
 import { alerts, ANSWER_CARDS, areaSummary, runnableCount } from '../packages/core/view'
 import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask, toggleBox } from '../packages/core/format'
-import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
+import { etaDrift, forecast, forecastHistory, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
   doneDaysFromGit,
@@ -481,6 +481,32 @@ describe('forecast', () => {
       expect(f.added).toBe(2)
       expect(forecastText(f)).toBe(`ETA ${shortDay(f.median)} (fast ${shortDay(f.optimistic)}, slow ${shortDay(f.slow)}) · from 4 tasks in 11 days · +2 added since tracking began`)
     }
+  })
+
+  test('forecastHistory replays the forecast as of each day; its last entry is today\'s forecast', async () => {
+    const h: Snapshot[] = [
+      { day: day(1), done: 0, total: 9 },
+      { day: day(3), done: 1, total: 9 },
+      { day: day(6), done: 3, total: 9 },
+      { day: day(12), done: 5, total: 10 },
+    ]
+    const past = forecastHistory(h)
+    expect(past.map(p => p.day)).toEqual([day(1), day(3), day(6), day(12)])
+    expect(past.map(p => p.forecast.kind)).toEqual(['not-enough', 'not-enough', 'range', 'range'])
+    expect(past.at(-1)!.forecast).toEqual(forecast(h, now))
+  })
+
+  test('ETA drift: how far the median moved since a week ago, or since the first forecast that week', async () => {
+    const range = (median: string) => ({ kind: 'range' as const, optimistic: median, median, slow: median, basis: '', added: 0 })
+    const notYet = { kind: 'not-enough' as const, reason: 'x' }
+    // A forecast from a week back or more is the baseline.
+    expect(etaDrift([{ day: day(1), forecast: range('2026-10-20') }, { day: day(5), forecast: range('2026-10-21') }, { day: day(12), forecast: range('2026-10-23') }])).toEqual({ days: 2, since: day(5) })
+    // None that old: the first forecast this week is.
+    expect(etaDrift([{ day: day(1), forecast: notYet }, { day: day(9), forecast: range('2026-10-25') }, { day: day(12), forecast: range('2026-10-22') }])).toEqual({ days: -3, since: day(9) })
+    expect(etaDrift([{ day: day(9), forecast: range('2026-10-22') }, { day: day(12), forecast: range('2026-10-22') }])).toEqual({ days: 0, since: day(9) })
+    // One forecast, or none today: nothing to compare.
+    expect(etaDrift([{ day: day(1), forecast: notYet }, { day: day(12), forecast: range('2026-10-22') }])).toBeNull()
+    expect(etaDrift([{ day: day(9), forecast: range('2026-10-22') }, { day: day(12), forecast: { kind: 'done' } }])).toBeNull()
   })
 
   test('record keeps one snapshot per day', async () => {

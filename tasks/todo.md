@@ -149,19 +149,19 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 **Estimated scope:** S
 
 ## Task 6: Overview health and ETA drift figure
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Add `forecastHistory(snapshots)` to `forecast.ts`, which replays `forecast()` as of each past day. The Overview gets two additions:
 - **Health:** *on track* or *at risk*, listing every reason: band alerts, blocked tasks, building while the spec is a draft, and checkpoints reached but not signed off.
 - **ETA drift:** how the median moved over the last 7 days, in ±days.
 
 **Acceptance criteria:**
-- [ ] `forecastHistory` gives one forecast per snapshot day, and its last entry equals `forecast()` for the whole history
-- [ ] Health is *at risk*, with the matching reasons, for fixtures with an alert, a blocked task, a draft spec plus tasks in progress, or an unsigned checkpoint; it is *on track* otherwise
-- [ ] ETA drift shows "+N d", "−N d" or "no change", or a "needs history" message when there's too little history
+- [x] `forecastHistory` gives one forecast per snapshot day, and its last entry equals `forecast()` for the whole history
+- [x] Health is *at risk*, with the matching reasons, for fixtures with an alert, a blocked task, a draft spec plus tasks in progress, or an unsigned checkpoint; it is *on track* otherwise
+- [x] ETA drift shows "+N d", "−N d" or "no change", or a "needs history" message when there's too little history
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 
 **Dependencies:** T4
 
@@ -174,7 +174,7 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 **Estimated scope:** S
 
 ## Task 14: Nivo chart bundle and its build
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** Set up `packages/charts/`:
 - `package.json` with dev dependencies only: `react`, `react-dom`, `@nivo/core`, `@nivo/line`, `@nivo/bar`, `@nivo/scatterplot`, `esbuild`;

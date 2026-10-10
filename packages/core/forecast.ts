@@ -87,3 +87,27 @@ export function shortDay(day: string): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`
 }
+
+/**
+ * The forecast as it stood on each day of the history (ETA drift): each day's
+ * forecast from the snapshots up to it, made as of that day. The last entry is
+ * today's forecast.
+ */
+export function forecastHistory(history: Snapshot[]): { day: string; forecast: Forecast }[] {
+  return history.map((s, i) => ({ day: s.day, forecast: forecast(history.slice(0, i + 1), parseDay(s.day)) }))
+}
+
+/**
+ * How many days the median ETA moved: against the newest forecast at least a
+ * week old, else the first one this week. Null without two range forecasts, or
+ * when today's is not a range.
+ */
+export function etaDrift(past: { day: string; forecast: Forecast }[]): { days: number; since: string } | null {
+  const ranges = past.filter((p): p is { day: string; forecast: Extract<Forecast, { kind: 'range' }> } => p.forecast.kind === 'range')
+  const last = past.at(-1)
+  if (!last || last.forecast.kind !== 'range' || ranges.length < 2) return null
+  const weekAgo = parseDay(last.day) - 7 * DAY
+  const before = ranges.filter(p => p !== ranges.at(-1))
+  const base = [...before].reverse().find(p => parseDay(p.day) <= weekAgo) ?? before.find(p => parseDay(p.day) > weekAgo)!
+  return { days: Math.round((parseDay(last.forecast.median) - parseDay(base.forecast.median)) / DAY), since: base.day }
+}

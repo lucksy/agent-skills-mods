@@ -184,6 +184,14 @@ function OVERVIEW_STYLE(): string {
 .fig.f-needs .s{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fig.f-needs .v{color:var(--needs)}.fig.f-needs.zero .v{color:var(--done)}
 .basis{margin:var(--s2) 0 0;color:var(--ink3);font-size:12.5px}
+.health{border:1px solid var(--line);border-left:3px solid;border-radius:var(--r);background:var(--surface);padding:var(--s3) var(--s4);margin-bottom:var(--s4)}
+.health p{margin:0}.h-ok{border-left-color:var(--done)}.h-risk{border-left-color:var(--doing)}
+.h-head{font-weight:650;font-size:15px}.h-ok .g{color:var(--done)}.h-risk .g{color:var(--doing)}
+.h-n{font-weight:400;color:var(--ink2);font-size:13px}
+.h-why{margin:var(--s1) 0 0;color:var(--ink2);font-size:13px}
+ul.h-why{padding-left:var(--s5)}ul.h-why li{padding:1px 0}
+.drift{display:block;font-size:12.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+.d-later{color:var(--doing)}.d-sooner{color:var(--done)}.d-same{color:var(--ink3)}
 .states{margin-top:var(--s5)}
 .bar{display:flex;gap:2px;height:12px;border-radius:3px;overflow:hidden;background:var(--line)}
 .bar span{display:block}.b-done{background:var(--done)}.b-doing{background:var(--doing)}.b-blocked{background:var(--blocked)}.b-todo{background:var(--todo)}

@@ -2,7 +2,8 @@
 // figures (the same ones the charts tab shows), tasks by state as a bar named in
 // words, then what is waiting on a person beside what is under way now. Pure.
 
-import { shortDay } from '../forecast'
+import { etaDrift, forecastHistory, shortDay } from '../forecast'
+import { health } from '../health'
 import { headline, nowCounts } from '../report'
 import type { State } from '../state'
 import { esc, inline, plainInline, plural } from './html'
@@ -13,11 +14,12 @@ export function overviewHtml(s: State): string {
 
   const figs = headline({ spec: s.spec, list, plan: s.plan, forecast: s.forecast, snapshots: s.snapshots, specFile: s.specFile })
   const keys = ['done', 'forecast', 'scope', 'needs']
+  const drift = driftHtml(s)
   const figures = figs
     .map(
       (f, i) => `<div class="fig f-${keys[i]}${keys[i] === 'needs' && f.value === '0' ? ' zero' : ''}" data-figure="${keys[i]}">
 <dt>${esc(f.label)}</dt>
-<dd><span class="v">${esc(f.value)}${f.unit ? `<span class="u">${esc(f.unit)}</span>` : ''}</span><span class="s" title="${esc(plainInline(f.sub))}">${esc(plainInline(f.sub))}</span></dd>
+<dd><span class="v">${esc(f.value)}${f.unit ? `<span class="u">${esc(f.unit)}</span>` : ''}</span><span class="s" title="${esc(plainInline(f.sub))}">${esc(plainInline(f.sub))}</span>${keys[i] === 'forecast' ? drift : ''}</dd>
 </div>`,
     )
     .join('')
@@ -30,13 +32,40 @@ export function overviewHtml(s: State): string {
         ? `No forecast yet: ${fc.reason}.`
         : ''
 
-  return `<dl class="figs">${figures}</dl>
+  return `${healthHtml(s)}
+<dl class="figs">${figures}</dl>
 ${basis ? `<p class="basis">${esc(basis)}</p>` : ''}
 ${statesHtml(s)}
 <div class="cols">
 <div class="card"><h3>Needs you</h3>${needsHtml(s)}</div>
 <div class="card"><h3>Now</h3>${nowHtml(s)}</div>
 </div>`
+}
+
+/** On track, or at risk with each reason: the first thing a manager reads. */
+function healthHtml(s: State): string {
+  const h = health(s)
+  if (h.status === 'on track') {
+    return `<div class="health h-ok" role="status"><p class="h-head"><span class="g" aria-hidden="true">✓</span> On track</p><p class="h-why">Nothing is late, blocked or waiting on a sign-off.</p></div>`
+  }
+  const MAX = 5
+  const more = h.reasons.length - MAX
+  return `<div class="health h-risk" role="status"><p class="h-head"><span class="g" aria-hidden="true">!</span> At risk <span class="h-n">· ${plural(h.reasons.length, 'reason')}</span></p>
+<ul class="h-why">${h.reasons
+    .slice(0, MAX)
+    .map(r => `<li>${inline(r)}</li>`)
+    .join('')}${more > 0 ? `<li class="muted">and ${more} more</li>` : ''}</ul></div>`
+}
+
+/** How far the likely date moved this week: later is worse, so it reads as a warning. */
+function driftHtml(s: State): string {
+  const d = etaDrift(forecastHistory(s.snapshots))
+  if (!d) return ''
+  const since = shortDay(d.since)
+  if (d.days === 0) return `<span class="drift d-same" title="The likely date has not moved since ${since}.">no change since ${since}</span>`
+  const later = d.days > 0
+  const n = Math.abs(d.days)
+  return `<span class="drift ${later ? 'd-later' : 'd-sooner'}" title="The likely date moved ${plural(n, 'day')} ${later ? 'later' : 'sooner'} since ${since}."><span aria-hidden="true">${later ? '▲' : '▼'}</span> ${later ? '+' : '−'}${n} d since ${since}</span>`
 }
 
 /** Tasks by state: a bar for the eye, a legend with glyphs and counts for everyone. */
