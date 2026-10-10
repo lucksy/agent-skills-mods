@@ -44,7 +44,7 @@ Usage: agent-skills-progress [dir] [options]
   --brief         one line: stages and the current task
   --timeline      the run timeline: phases as a tree, a build · test · commit bar per task
   --json          the parsed state as JSON, for other tools
-  --modules       every module of SPEC.md's capability map, archived plans included
+  --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
@@ -62,7 +62,11 @@ function parseArgs(argv) {
     else if (a === '--brief') o.mode = 'brief'
     else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
-    else if (a === '--modules') o.mode = 'modules'
+    else if (a === '--modules') {
+      o.mode = 'modules'
+      // A module id, not a folder: no slash, not . or ..
+      if (/^[\w][\w.-]*$/.test(argv[i + 1] ?? '')) o.module = argv[++i]
+    }
     else if (a === '--dashboard') {
       o.mode = 'dashboard'
       if (/\.html?$/i.test(argv[i + 1] ?? '')) o.out = argv[++i]
@@ -149,7 +153,13 @@ async function main() {
   if (o.mode === 'json') return console.log(renderJson(state))
   if (o.mode === 'modules') {
     const { modulesText } = await import('../packages/core/modules.ts')
-    return console.log(state.modules ? modulesText(state.modules, 'SPEC.md') : 'No capability map in SPEC.md.')
+    if (!state.modules) return console.log('No capability map in SPEC.md.')
+    if (!o.module) return console.log(modulesText(state.modules, 'SPEC.md'))
+    const { moduleFiles, moduleTimeline } = await import('../packages/core/module-timeline.ts')
+    const files = Object.fromEntries(await Promise.all(moduleFiles(state.modules, o.module).map(async f => [f, await io.read(f)])))
+    const env = process.env
+    const color = o.color ?? (env.NO_COLOR ? false : env.FORCE_COLOR ? true : !!process.stdout.isTTY)
+    return console.log(moduleTimeline(state.modules, o.module, files, state.today, { color, width: o.width || Math.min(110, process.stdout.columns || 80) }))
   }
   if (o.mode === 'dashboard') {
     const { dashboardHtml } = await import('../packages/core/dashboard/page.ts')

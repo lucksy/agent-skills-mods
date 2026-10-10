@@ -68,6 +68,7 @@ printf -- '---\nstatus: approved\n---\n# Capability Map: keys\n\n| Module id | R
 printf -- '---\nplan: core\ncreated: 2026-09-20\n---\n## Task 1: Lib\n**Status:** done · started 2026-09-20 · done 2026-09-25\n- [x] lib\n' > "$tmp/mods/tasks/archive/2026-09-26-core/todo.md"
 check modules-cli '✓ core   done · 1/1' node "$script" "$tmp/mods" --modules --no-color --no-git
 check modules-json '"state": "not started"' node "$script" "$tmp/mods" --json --no-git
+check modules-one '✓ T1 Lib' node "$script" "$tmp/mods" --modules core --no-color --no-git
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

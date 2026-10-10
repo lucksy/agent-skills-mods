@@ -24,6 +24,7 @@ import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, ta
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
+import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
 import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -648,10 +649,14 @@ async function projectModules($: $, p: AsmProject, specs?: { file: string; spec:
   return readModules(io, specs ?? (await allSpecs($, p)), await readText($, `${p.cwd}/tasks/todo.md`))
 }
 
-/** `/progress modules` (F7): every module of the capability map at a glance. */
-async function modulesCommand($: $): Promise<string> {
+/** `/progress modules [id]` (F7): every module of the capability map at a glance, or one module's run timeline. */
+async function modulesCommand($: $, id?: string): Promise<string> {
   const p = await load($)
   const rows = await projectModules($, p)
+  if (rows && id) {
+    const files = Object.fromEntries(await Promise.all(moduleFiles(rows, id).map(async f => [f, await readText($, `${p.cwd}/${f}`)] as const)))
+    return moduleTimeline(rows, id, files, dayOf(await $.clock.now()))
+  }
   return rows
     ? modulesText(rows, 'SPEC.md')
     : 'No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).'
@@ -1257,7 +1262,7 @@ export const register: Register = (on, options) => {
       const words = rawWords.slice(1)
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
       if (verb === 'review') return reply(await reviewCommand($, words))
-      if (verb === 'modules') return reply(await modulesCommand($))
+      if (verb === 'modules') return reply(await modulesCommand($, words[0]))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))

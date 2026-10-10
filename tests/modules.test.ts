@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { moduleRows, modulesText, parseCapabilityMap } from '../packages/core/modules'
+import { moduleTimeline } from '../packages/core/module-timeline'
 import { parseSpec } from '../packages/core/parse'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 
@@ -96,5 +97,27 @@ describe('modules in State v1 (T10)', () => {
   test('no capability map: no modules', async () => {
     const s = await buildState(io({ 'tasks/todo.md': ACTIVE }))
     expect([s.modules, stateJson(s).modules]).toEqual([null, null])
+  })
+})
+
+describe('one module\'s run timeline (T11)', () => {
+  const map = parseCapabilityMap(MAP)!
+  const plans = [{ where: 'archive' as const, dir: 'tasks/archive/2026-10-10-core-dashboard', text: ARCHIVED }, { where: 'active' as const, dir: 'tasks', text: ACTIVE }]
+  const history = JSON.stringify([{ day: '2026-10-01', done: 0, total: 14 }, { day: '2026-10-09', done: 14, total: 14 }])
+
+  test('an archived module prints its plan as /progress timeline would, with its done dates', () => {
+    const rows = moduleRows(map, [], plans)
+    const out = moduleTimeline(rows, 'dashboard', { 'tasks/archive/2026-10-10-core-dashboard/todo.md': ARCHIVED, 'tasks/archive/2026-10-10-core-dashboard/history.json': history }, '2026-10-10')
+    const lines = out.split('\n')
+    expect(lines[0]).toBe('Module dashboard · done · 14/14 · plan core-dashboard in tasks/archive/2026-10-10-core-dashboard')
+    expect(out).toMatch(/✓ T1 Step 1 +▬▬▬ done 2 Oct/)
+    expect(out).toMatch(/✓ T14 Step 14 +▬▬▬ done 7 Oct/)
+  })
+
+  test('the active module prints its own plan; an unknown id lists the modules; a module without a plan says so', () => {
+    const rows = moduleRows(map, [], plans)
+    expect(moduleTimeline(rows, 'format-v2', { 'tasks/todo.md': ACTIVE }, '2026-10-10').split('\n')[0]).toBe('Module format-v2 · building · 9/13 · plan format-v2 in tasks/todo.md')
+    expect(moduleTimeline(rows, 'nope', {}, '2026-10-10')).toBe('No module "nope". Modules: core, dashboard, format-v2, team-view.')
+    expect(moduleTimeline(rows, 'team-view', {}, '2026-10-10')).toBe('team-view has no plan yet (not started; needs format-v2, dashboard).')
   })
 })

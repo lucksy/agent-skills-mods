@@ -353,16 +353,21 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** M
 
 ## Task 11: /progress modules <id>: an archived module's timeline
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-11
 
 **Description:** `/progress modules dashboard` prints that module's run timeline, the same rows as `/progress timeline`. It reads them from its plan: the active plan, or the archived `todo.md` with that archive's `history.json` for dates. `--modules <id>` does the same in the CLI.
 
 **Acceptance criteria:**
-- [ ] On this repo, `/progress modules dashboard` prints the archived plan's timeline with its done dates
-- [ ] An unknown id lists the modules; a module with no plan says so
+- [x] On this repo, `/progress modules dashboard` prints the archived plan's timeline with its done dates
+- [x] An unknown id lists the modules; a module with no plan says so
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+
+**Notes:**
+- `module-timeline.ts` is its own module because it builds a State, and `state.ts` already imports `modules.ts`. A cycle between them would risk the engine's initialisation errors.
+- It rebuilds a State v1 for the plan from its archive: done dates from the Status lines, days from `history.json`. The CLI's own `renderTimelineCli` then draws it, so it matches `/progress timeline`.
+- Checked on this repo in a real session and the CLI: `/progress modules dashboard` shows the archived plan's four phases, done dates and checkpoints.
 
 **Dependencies:** T10
 
@@ -375,7 +380,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** S
 
 ## Task 12: Dashboard Modules tab
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** A Modules tab appears when a capability map exists. Each module is a row showing:
 - its state glyph, id and responsibility;

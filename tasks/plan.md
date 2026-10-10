@@ -82,7 +82,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 4: Modules
 - [x] Task 10: Module rows, /progress modules and --modules
-- [ ] Task 11: /progress modules <id>: an archived module's timeline
+- [x] Task 11: /progress modules <id>: an archived module's timeline
 - [ ] Task 12: Dashboard Modules tab
 
 ### Checkpoint: Modules

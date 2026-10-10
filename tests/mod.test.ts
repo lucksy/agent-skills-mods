@@ -1462,3 +1462,12 @@ test('/progress modules without a capability map says where one goes', async ($,
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
   expect((await $.command.run(run('modules'))).text).toBe('No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).')
 })
+
+test('/progress modules <id> prints that module\'s run timeline, from its archive', async ($, on) => {
+  const archived = '---\nplan: core\ncreated: 2026-09-20\n---\n## Task 1: Lib\n**Status:** done · started 2026-09-20 · done 2026-09-25\n- [x] lib\n'
+  world(on, { [`${CWD}/SPEC.md`]: MAP_MD, [`${CWD}/tasks/archive/2026-09-26-core/todo.md`]: archived, [`${CWD}/tasks/archive/2026-09-26-core/history.json`]: '[{"day":"2026-09-25","done":1,"total":1}]' })
+  const out = (await $.command.run(run('modules core'))).text
+  expect(out).toMatch(/^Module core · done · 1\/1 · plan core in tasks\/archive\/2026-09-26-core/)
+  expect(out).toMatch(/✓ T1 Lib +▬▬▬ done 25 Sep/)
+  expect((await $.command.run(run('modules ui'))).text).toBe('ui has no plan yet (not started; needs api).')
+})
