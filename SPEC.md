@@ -11,7 +11,7 @@ agent-skills-mods grows from a single-developer view in Claude Code into a team 
 |---|---|---|
 | core | `hooks/lib` moved into `packages/core`; a versioned `state.json` contract read by every surface | — |
 | dashboard | Multi-view HTML dashboard (Overview, Board, Roadmap, Flow, Spec) built from today's data, opened by `/progress dashboard` and the CLI's `--dashboard`; read-only | core |
-| format-v2 | Progress format v2: owner, in review, size, named approvals, `tasks/team.md`, handoff notes | core |
+| format-v2 | Progress format v2: owner, in review, named approvals, `tasks/team.md`, handoff notes; a Modules view across the capability map, archived plans included (added 2026-10-10) | core, dashboard |
 | team-view | Board across branches, collision alerts, task-aware merge driver, "since you last looked", live local dashboard with write actions | format-v2, dashboard |
 | ceremonies | Sprint view, team standup, sprint report, retro, decisions inbox | format-v2, dashboard |
 | team-site | GitHub Action building the dashboard to Pages, portfolio across repos, risk radar | dashboard |
