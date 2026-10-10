@@ -25,7 +25,7 @@ import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
-import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
+import { approvalStatus, clearApprovals } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from '../packages/core/pixels'
@@ -35,7 +35,8 @@ import { archiveDir, archiveReadme } from '../packages/core/archive'
 import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
-import { addHandoff, setOwner, setReview, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
+import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
+import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
 import {
   bandText,
   bar,
@@ -395,37 +396,16 @@ async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
   const path = `${p.cwd}/${p.specFile}`
   const text = await readText($, path)
   if (text === null) return
-  const today = dayOf(await $.clock.now())
-  const team = await readTeam($, p.cwd)
-  // format-v2 (F5): with approvals: in tasks/team.md, `a` signs for your roles.
-  if (status === 'approved' && team?.approvals.length) {
-    const email = await gitEmail($)
-    const me = whoIs(team, email)
-    if (!me) {
-      $.ui.toast(`Can't sign: ${email ? `${email} is not in ${TEAM_FILE}` : 'git config user.email is not set'}.`)
-      return
-    }
-    const r = signSpec(stampDoc(text, today), me, team.approvals, today)
-    if (!r.signed.length) {
-      const sigs = parseSpec(text).approvals
-      const open = team.approvals.filter(role => !sigs.some(s => s.role === role))
-      $.ui.toast(open.length ? `${me.handle} (${me.roles.join(', ') || 'no role'}) holds no role ${p.specFile} still waits on: ${open.join(', ')}.` : `${p.specFile} has every signature it needs.`)
-      return
-    }
-    await $.fs.write(path, r.text)
-    await load($)
-    const waiting = approvalStatus(parseSpec(r.text).approvals, team).waiting
-    $.ui.toast(
-      r.complete
-        ? `✓ ${p.specFile} approved: every role has signed (${team.approvals.join(', ')})`
-        : `✓ ${me.handle} signed ${p.specFile} for ${r.signed.join(', ')} · waiting on ${waiting.map(w => `${w.who.join(' or ') || w.role} (${w.role})`).join(', ')}`,
-    )
+  // The sign action approves, or with approvals: in tasks/team.md signs for your roles (format-v2, F5).
+  if (status === 'approved') {
+    const r = await act($, p, 'sign', {}, { spec: { file: p.specFile, text } })
+    $.ui.toast(r.reply)
     return
   }
-  const base = status === 'draft' ? clearApprovals(text) : text
-  await $.fs.write(path, stampDoc(setFrontMatter(base, { status, approved: status === 'approved' ? today : null }), today))
+  const today = dayOf(await $.clock.now())
+  await $.fs.write(path, stampDoc(setFrontMatter(clearApprovals(text), { status, approved: null }), today))
   await load($)
-  $.ui.toast(status === 'approved' ? `✓ ${p.specFile} approved · planning can start` : `○ ${p.specFile} back to draft`)
+  $.ui.toast(`○ ${p.specFile} back to draft`)
 }
 
 /** The spec pane's Open in editor button: a windowed $VISUAL/$EDITOR, else the default app. */
@@ -718,38 +698,7 @@ async function teamCommand($: $, arg: string): Promise<string> {
  * byte kept. Anyone may assign: roles are shown, never enforced.
  */
 async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: string[]): Promise<string> {
-  const p = await load($)
-  const path = `${p.cwd}/tasks/todo.md`
-  const text = await readText($, path)
-  if (text === null) return 'No tasks/todo.md here.'
-  const rawId = words[0] ?? ''
-  if (!rawId) return `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.`
-  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
-  const task = p.list?.tasks.find(t => t.id === id)
-  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
-  const team = await readTeam($, p.cwd)
-  let owner: string | null = null
-  let isYou = false
-  if (verb !== 'unassign') {
-    const who = verb === 'claim' ? 'me' : words[1]
-    if (!who) return `Say who: /progress assign ${id} @sara, or /progress claim ${id} for yourself.`
-    if (who === 'me') {
-      const email = await gitEmail($)
-      const me = whoIs(team, email)
-      if (!me) {
-        const why = !team ? 'no tasks/team.md here. /progress team init sets one up;' : !email ? 'git config user.email is not set. Set it,' : `${email} is not in tasks/team.md. Add a row with it,`
-        return `Can't tell who you are: ${why} or name someone: /progress assign ${id} @name.`
-      }
-      owner = me.handle
-      isYou = true
-    } else owner = who.startsWith('@') ? who : `@${who}`
-  }
-  const was = task.owner
-  await $.fs.write(path, setOwner(text, id, owner))
-  await load($)
-  if (!owner) return `${id} ${task.title} has no owner now${was ? ` (was ${was})` : ''}.`
-  const unknown = team && !team.members.some(m => m.handle.toLowerCase() === owner!.toLowerCase()) ? ` ${owner} is not in tasks/team.md (/progress team).` : ''
-  return `${id} ${task.title} → ${owner}${isYou ? ' (you)' : ''}${was && was !== owner ? `, was ${was}` : ''}.${unknown}`
+  return (await act($, await load($), verb, { id: words[0] ?? '', who: words[1] })).reply
 }
 
 /**
@@ -759,23 +708,8 @@ async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: 
  */
 async function handoffCommand($: $, rest: string): Promise<string> {
   const m = /^(\S+)?\s*(@[\w.-]+)?\s*([\s\S]*)$/.exec(rest)!
-  const rawId = m[1] ?? ''
-  const to = m[2]
   const note = (m[3] ?? '').trim().replace(/^["'“”]|["'“”]$/g, '').trim()
-  const p = await load($)
-  const path = `${p.cwd}/tasks/todo.md`
-  const text = await readText($, path)
-  if (text === null) return 'No tasks/todo.md here.'
-  if (!rawId) return 'Say which task: /progress handoff T4 @bob "migration done, tests left".'
-  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
-  const task = p.list?.tasks.find(t => t.id === id)
-  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
-  if (!to) return `Say who takes it: /progress handoff ${id} @bob "${note || 'note'}".`
-  if (!note) return `Say what the next person needs to know: /progress handoff ${id} ${to} "migration done, tests left".`
-  const from = task.owner ?? (await sessionHandle($, p.cwd))
-  await $.fs.write(path, addHandoff(text, id, { day: dayOf(await $.clock.now()), from, to, note }))
-  await load($)
-  return `${id} ${task.title} → ${to}${from ? `, from ${from}` : ''}. Note: "${note}".`
+  return (await act($, await load($), 'handoff', { id: m[1] ?? '', to: m[2], note })).reply
 }
 
 /**
@@ -784,30 +718,7 @@ async function handoffCommand($: $, rest: string): Promise<string> {
  * with nothing ticked yet, is refused with why.
  */
 async function reviewCommand($: $, words: string[]): Promise<string> {
-  const p = await load($)
-  const path = `${p.cwd}/tasks/todo.md`
-  const text = await readText($, path)
-  if (text === null) return 'No tasks/todo.md here.'
-  const rawId = words[0] ?? ''
-  if (!rawId) return 'Say which task: /progress review T4 #42 @bob (PR and reviewer optional).'
-  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
-  const task = p.list?.tasks.find(t => t.id === id)
-  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
-  let pr: string | undefined
-  let reviewer: string | undefined
-  for (const w of words.slice(1)) {
-    if (/^#\d+$/.test(w) || /^https?:\/\//i.test(w)) pr = w
-    else if (/^@[\w.-]+$/.test(w)) reviewer = w
-    else return `Not a PR or a reviewer: "${w}". Use /progress review ${id} #42 @bob (both optional).`
-  }
-  if (task.status === 'done') return `${id} ${task.title} is done: a review comes before its last box is ticked.`
-  if (!task.boxes.some(b => b.isDone) && task.state?.status !== 'in progress' && task.state?.status !== 'in review') {
-    return `${id} ${task.title} has no box ticked yet: build it first, or /progress start ${id}.`
-  }
-  await $.fs.write(path, setReview(text, id, { pr, reviewer }))
-  const after = (await load($)).list?.tasks.find(t => t.id === id)
-  const bits = [after?.pr && `PR ${after.pr}`, after?.reviewer && `reviewer ${after.reviewer}`].filter(Boolean)
-  return `${id} ${task.title} is in review${bits.length ? `: ${bits.join(', ')}` : ''}.`
+  return (await act($, await load($), 'review', { id: words[0] ?? '', refs: words.slice(1) })).reply
 }
 
 /**
@@ -944,41 +855,55 @@ async function doctor($: $, fix: boolean): Promise<string> {
  * `/progress start|done|block|unblock T4 ["why"]`: the person sets a task's
  * state, written into tasks/todo.md (and a blocking question into plan.md).
  */
-async function setTask($: $, verb: string, rawId: string, why: string): Promise<string> {
-  const p = await load($)
+async function setTask($: $, verb: 'start' | 'done' | 'block' | 'unblock', rawId: string, why: string): Promise<string> {
+  return (await act($, await load($), verb, { id: rawId, why }, { clearPending: true })).reply
+}
+
+/**
+ * Runs a write action (team-view, T1) on the files as they are on disk: reads
+ * them and who you are, calls packages/core/actions.ts, writes what it changed
+ * and reloads. A refusal writes nothing. `clearPending`: the task list's
+ * pending state changes are written with it, so they are dropped.
+ */
+async function act(
+  $: $,
+  p: AsmProject,
+  name: ActionName,
+  args: Record<string, unknown>,
+  opts: { spec?: { file: string; text: string }; clearPending?: boolean } = {},
+): Promise<ActionResult> {
   const cwd = p.cwd
-  const path = `${cwd}/tasks/todo.md`
-  const text = await readText($, path)
-  if (text === null) return 'No tasks/todo.md here.'
-  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
-  const task = p.list?.tasks.find(t => t.id === id)
-  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
-  const today = dayOf(await $.clock.now())
-  const changes = await readPending($, cwd)
-  let next = text
-  let said = ''
-  if (verb === 'start') {
-    const owner = task.owner ? undefined : ((await sessionHandle($, cwd)) ?? undefined)
-    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'in progress', started: today, ...(owner ? { owner } : {}) } } })
-    said = `${id} ${task.title} is in progress (started ${shortDay(task.state?.started ?? today)}).`
-  } else if (verb === 'done') {
-    next = stampTodo(tickTask(text, id), today, { changes })
-    said = `${id} ${task.title} is done: ${task.boxes.filter(b => !b.isDone).length} box(es) ticked.`
-  } else if (verb === 'block') {
-    if (!why) return 'Say why: /progress block T6 "Upstash or self-hosted?"'
-    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'blocked' } } })
-    const planPath = `${cwd}/tasks/plan.md`
-    const added = addQuestion(await readText($, planPath), id, why)
-    await $.fs.write(planPath, added.text)
-    said = `${id} ${task.title} is blocked. Added ${added.q} to tasks/plan.md: "${why}".`
-  } else {
-    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'todo' } } })
-    said = `${id} ${task.title} is unblocked. Remove or answer its question in tasks/plan.md so it stays that way.`
-  }
-  if (next !== text) await $.fs.write(path, next)
-  await $.store.set(pendingKey(cwd), {})
+  const team = await readTeam($, cwd)
+  const r = runAction(name, args, {
+    todo: await readText($, `${cwd}/tasks/todo.md`),
+    plan: name === 'block' ? await readText($, `${cwd}/tasks/plan.md`) : null,
+    spec: opts.spec ?? null,
+    list: p.list,
+    today: dayOf(await $.clock.now()),
+    team,
+    email: team ? await actionEmail($, cwd, name, args, team) : null,
+    pending: await readPending($, cwd),
+    keepFormat,
+  })
+  if (!r.ok) return r
+  for (const w of r.writes) await $.fs.write(`${cwd}/${w.file}`, w.text)
+  if (opts.clearPending) await $.store.set(pendingKey(cwd), {})
   await load($)
-  return said
+  return r
+}
+
+/**
+ * Your git email, read only for the actions that ask who you are: claiming, and
+ * signing when the team names approvals, read it afresh; start and handoff use
+ * the session's.
+ */
+async function actionEmail($: $, cwd: string, name: ActionName, args: Record<string, unknown>, team: Team): Promise<string | null> {
+  if (name === 'claim' || (name === 'assign' && args.who === 'me') || (name === 'sign' && team.approvals.length)) return gitEmail($)
+  if (name === 'start' || name === 'handoff') {
+    if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
+    return emails.get(cwd)!
+  }
+  return null
 }
 
 /**
@@ -1036,17 +961,10 @@ async function checkpointGate<R extends { context?: readonly string[] }>($: $, p
 async function pressBox($: $, id: string, index: number) {
   const p = await read($, project)
   if (!p) return
-  const path = `${p.cwd}/tasks/todo.md`
-  const text = await readText($, path)
-  if (text === null) return
-  const toggled = toggleBox(text, id, index)
-  if (toggled === text) return
-  const next = keepFormat ? stampTodo(toggled, dayOf(await $.clock.now()), { changes: await readPending($, p.cwd) }) : toggled
-  await $.fs.write(path, next)
-  if (keepFormat) await $.store.set(pendingKey(p.cwd), {})
   const before = p.list
-  const after = (await load($)).list
-  const toast = completionToast(before, after)
+  const r = await act($, p, 'tick', { id, index }, { clearPending: keepFormat })
+  if (!r.ok) return
+  const toast = completionToast(before, (await read($, project))?.list ?? null)
   if (toast) $.ui.toast(toast)
 }
 
@@ -1230,7 +1148,7 @@ export const register: Register = (on, options) => {
       return reply(taskDetail(p.list, id, { today: dayOf(await $.clock.now()), dates: p.dates, commits })!)
     }
     const taskVerb = /^(start|done|block|unblock)\s+#?(t?\d+)\s*(.*)$/i.exec(e.args.trim())
-    if (taskVerb) return reply(await setTask($, taskVerb[1]!.toLowerCase(), taskVerb[2]!, taskVerb[3]!.replace(/^["']|["']$/g, '').trim()))
+    if (taskVerb) return reply(await setTask($, taskVerb[1]!.toLowerCase() as 'start' | 'done' | 'block' | 'unblock', taskVerb[2]!, taskVerb[3]!.replace(/^["']|["']$/g, '').trim()))
     if (arg === 'doctor' || arg === 'doctor fix') return reply(await doctor($, arg.endsWith('fix')))
     if (arg === 'archive' || arg === 'archive force') return reply(await archivePlan($, arg.endsWith('force')))
     if (arg === 'graph') {

@@ -8,18 +8,18 @@ created: 2026-10-11
 ## Phase 1: Foundation
 
 ## Task 1: One actions table for the existing write commands
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/actions.ts` gets one table. It maps each action name to an argument check and a pure edit that returns `{ file, text, reply }`. The table covers `start`, `done`, `block`, `unblock`, `tick`, `claim`, `assign`, `unassign`, `review`, `handoff` and `sign`. Each existing `/progress` verb in `hooks/register.tsx` reads its file, calls the action, writes and replies, with no change in behaviour. This task also checks Q1: can a mod start a long-running, detached process? The answer goes under Q1 in tasks/plan.md.
 
 **Acceptance criteria:**
-- [ ] Every existing write verb goes through `actions.ts`, and every existing mod test passes unchanged
-- [ ] Each action refuses bad args with the same reply as today (unknown task, unknown handle, a done task put up for review)
-- [ ] Q1 is answered in tasks/plan.md, with the API call that settles it
+- [x] Every existing write verb goes through `actions.ts`, and every existing mod test passes unchanged
+- [x] Each action refuses bad args with the same reply as today (unknown task, unknown handle, a done task put up for review)
+- [x] Q1 is answered in tasks/plan.md, with the API call that settles it
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 
