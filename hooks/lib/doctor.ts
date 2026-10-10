@@ -1,18 +1,39 @@
 // /progress doctor: what is wrong with the task files, the plan and the spec,
 // each with how to fix it. The fixable ones (missing Status lines, front
-// matter, a Status line the boxes disagree with) `/progress doctor fix` applies. Pure.
+// matter, a Status line the boxes disagree with, dates later than git shows) `/progress doctor fix` applies. Pure.
 
-import { readFrontMatter, stampDoc, stampTodo, taskStates } from './format'
+import { backdateDoc, readFrontMatter, stampDoc, stampTodo, taskStates, type Past } from './format'
+import { shortDay } from './forecast'
 import { parsePlan, parseSpec, parseTasks } from './parse'
 
 export type Finding = { level: 'error' | 'warn'; file: string; message: string; isFixable: boolean }
 
+/** A quoted example cut short, so a finding stays on one line in a narrow terminal. */
+const clipQuotes = (text: string) => text.replace(/"([^"]{36})[^"]{2,}"/g, (_, head: string) => `"${head.trimEnd()}…"`)
+
 const TASK_HEADING = /^#{1,6}\s+(?:\*\*)?Task\s+(\d+)\s*[:.\-–—]/gim
 
 /** Every check, over the files as they are on disk (null where a file is missing). */
-export function diagnose(input: { todo: string | null; plan: string | null; specs: { file: string; text: string }[]; today: string; keepFormat: boolean }): Finding[] {
+/** What git shows of a project already under way (see format.ts `Past`), by file, and each task's first done day. */
+export type DoctorPast = { files: Record<string, Past>; doneDays: Record<string, string> }
+
+export function diagnose(input: {
+  todo: string | null
+  plan: string | null
+  specs: { file: string; text: string }[]
+  today: string
+  keepFormat: boolean
+  past?: DoctorPast
+}): Finding[] {
   const out: Finding[] = []
-  const add = (level: Finding['level'], file: string, message: string, isFixable = false) => out.push({ level, file, message, isFixable })
+  const add = (level: Finding['level'], file: string, message: string, isFixable = false) => out.push({ level, file, message: clipQuotes(message), isFixable })
+  // Dates the format wrote as the day it came in, on a project git shows older.
+  const lateDates = (file: string, text: string) => {
+    const p = input.past?.files[file]
+    if (!p) return
+    const fm = readFrontMatter(text).fields
+    if (backdateDoc(text, p) !== text && p.created) add('warn', file, `created ${fm.created}, but git has the file from ${shortDay(p.created)}`, true)
+  }
 
   if (input.todo !== null) {
     const file = 'tasks/todo.md'
@@ -45,6 +66,17 @@ export function diagnose(input: { todo: string | null; plan: string | null; spec
       }
       const fm = readFrontMatter(input.todo).fields
       if (!fm.plan || !fm.created) add('warn', file, 'no plan/created front matter', true)
+      const past = input.past
+      if (past) {
+        const created = past.files[file]?.created
+        if (created && fm.created && fm.created > created) add('warn', file, `created ${fm.created}, but git has the file from ${shortDay(created)}`, true)
+        const late = list.tasks.filter(t => {
+          const st = states[t.id]
+          const day = past.doneDays[t.id]
+          return st?.status === 'done' && st.done && day && st.done > day
+        })
+        if (late.length) add('warn', file, `done dates later than git shows: ${late.map(t => `${t.id} ${shortDay(states[t.id]!.done!)} → ${shortDay(past.doneDays[t.id]!)}`).join(', ')}`, true)
+      }
       if (stampTodo(input.todo, input.today) !== input.todo && !out.some(f => f.file === file && f.isFixable)) add('warn', file, 'Status lines or front matter out of date', true)
     }
   }
@@ -55,6 +87,7 @@ export function diagnose(input: { todo: string | null; plan: string | null; spec
     const unnamed = plan.openQuestions.filter(q => !/^Q\d+\b/.test(q))
     if (unnamed.length) add('warn', file, `${unnamed.length} open question${unnamed.length === 1 ? '' : 's'} without a Q<n> number, e.g. "${unnamed[0]}"`)
     if (input.keepFormat && stampDoc(input.plan, input.today) !== input.plan) add('warn', file, 'no status/created front matter', true)
+    if (input.keepFormat) lateDates(file, input.plan)
   }
 
   for (const spec of input.specs) {
@@ -65,6 +98,7 @@ export function diagnose(input: { todo: string | null; plan: string | null; spec
       else if (a.hint) add('warn', spec.file, `${a.label}: ${a.hint}`)
     }
     if (input.keepFormat && stampDoc(spec.text, input.today) !== spec.text) add('warn', spec.file, 'no status/created front matter', true)
+    if (input.keepFormat) lateDates(spec.file, spec.text)
   }
   return out
 }

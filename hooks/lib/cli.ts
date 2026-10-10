@@ -65,7 +65,8 @@ export async function gather(io: CliIo, opts: { specFile?: string } = {}): Promi
   const since = combined.snaps[0]?.day ?? today
   const gitDays = (combined.added.files[0] ?? 0) + combined.added.messages
   if (io.run) {
-    const began = list.meta?.created ?? since
+    // The earliest known day: front matter added late says the day it came in.
+    const began = [list.meta?.created, plan?.created, since].filter((d): d is string => !!d).sort()[0]!
     const out = await io.run(['git', 'rev-list', '--count', `--since=${began}T00:00:00`, 'HEAD']).catch(() => null)
     const n = out && out.exitCode === 0 ? Number(out.stdout.trim()) : NaN
     if (Number.isFinite(n)) state.commits = n
@@ -200,7 +201,7 @@ export function renderCli(s: CliState, o: CliOptions): string {
 
   out.push('')
   out.push(p(`${'─'.repeat(width)}`, 'grey'))
-  const legend = `${p('✓', 'green')} done  ${p('●', 'yellow')} next  ${p('○', 'grey')} to do  ${p('◌', 'grey')} waits  ${p('■', 'red')} blocked  ${p('♦', 'magenta')} needs you`
+  const legend = `${p('✓', 'green')} done  ${p('●', 'yellow')} next  ${p('○', 'grey')} to do  ${p('·', 'grey')} waits  ${p('■', 'red')} blocked  ${p('♦', 'magenta')} needs you`
   line(legend)
   if (s.history) line(p(s.history, 'grey'))
   return out.join('\n')

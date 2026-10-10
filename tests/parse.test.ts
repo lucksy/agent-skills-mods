@@ -81,7 +81,7 @@ describe('parseTasks', () => {
     expect(rows.filter(r => r.kind === 'task').map(r => (r.kind === 'task' ? `${r.glyph} ${r.id} ${r.detail}` : ''))).toEqual([
       '✓ T1 3/3',
       '● T2 1/3',
-      '◌ T3 waits on T2',
+      '· T3 waits on T2',
       '■ T4 question: Upstash or self-hosted Redis for T4?',
     ])
     expect(snapshotOf('2026-10-09', list)).toEqual({ day: '2026-10-09', done: 1, total: 4, doing: 1, blocked: 1 })
@@ -980,7 +980,7 @@ describe('dependency graph', () => {
     expect(graphLines(list).map(plain)).toEqual([
       '✓ T1 A',
       '├─▶ ◐ T2 B',
-      '│   └─▶ ◌ T4 D',
+      '│   └─▶ · T4 D',
       '└─▶ ○ T3 C',
       '    └─▶ T4 (drawn above)',
       '',

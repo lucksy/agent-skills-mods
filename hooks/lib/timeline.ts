@@ -99,7 +99,8 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
   const checkpoints = list.tasks.filter(t => t.checkpoint).length
   const approval = specApproval(spec, true)
   const name = list.meta?.plan ?? (spec?.title ? spec.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : 'plan')
-  const began = list.meta?.created ?? input.plan?.created ?? input.since ?? today
+  // The earliest the files or the history know: front matter added late says the day it came in.
+  const began = [list.meta?.created, input.plan?.created, input.since, today].filter((d): d is string => !!d).sort()[0]!
   const sinceStart = Math.max(0, days(began, today))
   // How long a task takes at this pace, for "slow": over twice that and still running.
   const pace = list.done > 0 ? Math.max(1, sinceStart / list.done) : null
@@ -166,7 +167,7 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
             : isCur
               ? s('●', slow ? 'bad' : 'run')
               : t.status === 'waiting'
-                ? s('◌', 'muted')
+                ? s('·', 'muted')
                 : s('○', 'muted')
       const row: Seg[] = [date(null), branch, glyph, s(' '), s(t.id, 'strong'), s(` ${t.title.length > titleW ? `${t.title.slice(0, titleW - 1)}…` : t.title.padEnd(titleW)}  `)]
       const d = dates[t.id]
@@ -225,7 +226,7 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
       s(' needs you  ', 'needsYou'),
       s('▫', 'muted'),
       s(' to come  ', 'muted'),
-      s('◌', 'muted'),
+      s('·', 'muted'),
       s(' waits on another task', 'muted'),
     ],
   ]

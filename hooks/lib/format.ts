@@ -142,7 +142,17 @@ export function taskStates(text: string): Record<string, TaskState> {
  * - front matter gets `plan` and `created` when missing.
  * Returns the text unchanged when there is nothing to add.
  */
-export function stampTodo(text: string, today: string, opts: { changes?: Record<string, Partial<TaskState>>; plan?: string } = {}): string {
+export function stampTodo(
+  text: string,
+  today: string,
+  opts: {
+    changes?: Record<string, Partial<TaskState>>
+    plan?: string
+    /** For a project already under way: the file's first commit day, and the day git first shows each task done. */
+    created?: string
+    doneDays?: Record<string, string>
+  } = {},
+): string {
   const eol = text.includes('\r\n') ? '\r\n' : '\n'
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const secs = sections(lines)
@@ -155,7 +165,7 @@ export function stampTodo(text: string, today: string, opts: { changes?: Record<
     let next: TaskState = had ? { ...had } : { status: 'todo' }
     const change = opts.changes?.[s.id]
     if (change && next.status !== 'done') next = { ...next, ...change, started: next.started ?? change.started }
-    if (allTicked) next = { ...next, status: 'done', done: next.done ?? today }
+    if (allTicked) next = { ...next, status: 'done', done: next.done ?? opts.doneDays?.[s.id] ?? today }
     else if (next.status === 'done' && s.boxes.length > 0) next = { ...next, status: 'in progress', done: undefined }
     else if (someTicked && next.status === 'todo') next = { ...next, status: 'in progress', started: next.started ?? today }
     if (next.status === 'in progress' && !next.started) next.started = today
@@ -169,7 +179,7 @@ export function stampTodo(text: string, today: string, opts: { changes?: Record<
   const fm = readFrontMatter(out)
   const want: Record<string, string> = {}
   if (!fm.fields.plan && opts.plan) want.plan = opts.plan
-  if (!fm.fields.created) want.created = today
+  if (!fm.fields.created) want.created = opts.created ?? today
   if (Object.keys(want).length) out = setFrontMatter(out, want)
   return out
 }
@@ -178,14 +188,63 @@ export function stampTodo(text: string, today: string, opts: { changes?: Record<
  * A spec's or plan's front matter brought up to date: `status: draft` and
  * `created` when missing, and an `approved` date once the status is approved.
  */
-export function stampDoc(text: string, today: string): string {
+export function stampDoc(text: string, today: string, past: Past = {}): string {
   const { fields } = readFrontMatter(text)
   const want: Record<string, string> = {}
   const status = (fields.status ?? '').toLowerCase()
   if (status !== 'draft' && status !== 'approved') want.status = 'draft'
-  if (!fields.created) want.created = today
-  if (status === 'approved' && !DAY.test(fields.approved ?? '')) want.approved = today
+  if (!fields.created) want.created = past.created ?? today
+  const created = DAY.test(fields.created ?? '') ? fields.created! : want.created
+  if (status === 'approved' && !DAY.test(fields.approved ?? '')) want.approved = latest(past.approved ?? today, created)
   return Object.keys(want).length ? setFrontMatter(text, want) : text
+}
+
+/**
+ * What git shows about a file of a project already under way: the day it was
+ * first committed, and for a spec the day it was evidently approved (the plan's
+ * first commit, as agent-skills plans only after approval).
+ */
+export type Past = { created?: string; approved?: string }
+
+const latest = (a: string, b: string | undefined) => (b && b > a ? b : a)
+
+/**
+ * Front matter stamped with the day the format came in, moved back to what git
+ * shows: a `created` later than the file's first commit, and an `approved`
+ * written the same day as that `created`, later than the plan's first commit.
+ * An approval of its own day (a spec approved again after a change) is kept.
+ */
+export function backdateDoc(text: string, past: Past): string {
+  const { fields } = readFrontMatter(text)
+  const want: Record<string, string> = {}
+  const created = fields.created ?? ''
+  if (past.created && DAY.test(created) && created > past.created) want.created = past.created
+  const approved = fields.approved ?? ''
+  if (want.created && past.approved && approved === created && approved > past.approved) want.approved = latest(past.approved, want.created)
+  return Object.keys(want).length ? setFrontMatter(text, want) : text
+}
+
+/**
+ * A task list's dates moved back to what git shows: `created` later than the
+ * file's first commit, and done dates later than the day git first shows the
+ * task done (a start after that moves with it).
+ */
+export function backdateTodo(text: string, past: { created?: string; doneDays?: Record<string, string> }): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  for (const s of sections(lines)) {
+    const day = past.doneDays?.[s.id]
+    if (s.status === null || !day) continue
+    const st = parseStatusLine(lines[s.status]!)
+    if (!st || st.status !== 'done' || !st.done || st.done <= day) continue
+    const next: TaskState = { ...st, done: day }
+    if (next.started && next.started > day) next.started = day
+    lines[s.status] = statusLine(next)
+  }
+  let out = lines.join(eol)
+  const created = readFrontMatter(out).fields.created ?? ''
+  if (past.created && DAY.test(created) && created > past.created) out = setFrontMatter(out, { created: past.created })
+  return out
 }
 
 /** A short name for a plan, from the task list's title: `# Tasks: API keys` → `api-keys`. */

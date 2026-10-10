@@ -26,10 +26,10 @@ import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, 
 import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
 import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
 import { archiveDir, archiveReadme } from './lib/archive'
-import { diagnose, doctorText } from './lib/doctor'
+import { diagnose, doctorText, type DoctorPast } from './lib/doctor'
 import { checkpointWarning, gateWarning } from './lib/gate'
 import { editorArgvs } from './lib/specedit'
-import { addQuestion, applyEdit, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './lib/format'
+import { addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './lib/format'
 import {
   bandText,
   bar,
@@ -171,7 +171,7 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
       const counts = testCounts(String((result as { text?: unknown }).text ?? ''))
       if (counts) await setFacts($, p.cwd, f => ({ ...f, tests: counts }))
     }
-    if (p && s === 'commit' && p.list) await countCommits($, p.cwd, p.list.meta?.created ?? p.snapshots[0]?.day ?? dayOf(await $.clock.now()), true)
+    if (p && s === 'commit' && p.list) await countCommits($, p.cwd, began(p, dayOf(await $.clock.now())), true)
     // The progress format (E1): the current task is in progress, at this step.
     if (keepFormat && task && p?.listFile === 'tasks/todo.md') {
       const today = dayOf(await $.clock.now())
@@ -182,7 +182,12 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
 }
 
 /** Facts the timeline's header shows (mockup 11): commits since the plan began, the last test run, the last review. */
-type Facts = { commits?: number; commitsDay?: string; tests?: { passed: number; failed: number }; reviewed?: string }
+/** The plan's first day: its front matter's, or the history's when that is older (the format came in late). */
+function began(p: AsmProject, today: string): string {
+  return [p.list?.meta?.created, p.plan?.created, p.snapshots[0]?.day, today].filter((d): d is string => !!d).sort()[0]!
+}
+
+type Facts = { commits?: number; commitsDay?: string; commitsSince?: string; tests?: { passed: number; failed: number }; reviewed?: string }
 const factsKey = (cwd: string) => `facts:${cwd}`
 async function setFacts($: $, cwd: string, fn: (f: Facts) => Facts) {
   const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
@@ -193,11 +198,11 @@ async function setFacts($: $, cwd: string, fn: (f: Facts) => Facts) {
 async function countCommits($: $, cwd: string, since: string, force = false) {
   const today = dayOf(await $.clock.now())
   const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
-  if (!force && f.commitsDay === today) return
+  if (!force && f.commitsDay === today && f.commitsSince === since) return
   try {
     const out = await $.process.run(['git', 'rev-list', '--count', `--since=${since}T00:00:00`, 'HEAD'], { timeoutMs: 10_000 })
     const n = Number(out.stdout.trim())
-    if (out.exitCode === 0 && Number.isFinite(n)) await setFacts($, cwd, x => ({ ...x, commits: n, commitsDay: today }))
+    if (out.exitCode === 0 && Number.isFinite(n)) await setFacts($, cwd, x => ({ ...x, commits: n, commitsDay: today, commitsSince: since }))
     else await setFacts($, cwd, x => ({ ...x, commitsDay: today }))
   } catch {}
 }
@@ -280,15 +285,53 @@ async function flushPending($: $): Promise<void> {
 }
 
 /** `/progress format`: the format applied to the files here, and its rules in the project's agent instructions. */
+/**
+ * What git shows of a project already under way, for the dates the format
+ * writes: each file's first commit, the spec's approval (the plan's first
+ * commit), each task's first done day. Empty where there is no git.
+ */
+async function pastOf($: $, p: AsmProject): Promise<DoctorPast> {
+  const files: DoctorPast['files'] = {}
+  const first = async (file: string) => {
+    try {
+      const out = await $.process.run(['git', 'log', '--diff-filter=A', '--format=%as', '--', file], { timeoutMs: 10_000 })
+      const days = out.exitCode === 0 ? out.stdout.split('\n').filter(l => /^\d{4}-\d{2}-\d{2}$/.test(l.trim())) : []
+      return days[days.length - 1]?.trim()
+    } catch {
+      return undefined
+    }
+  }
+  const names = [...p.specFiles, 'tasks/plan.md', 'tasks/todo.md']
+  const days = await Promise.all(names.map(first))
+  names.forEach((f, i) => (files[f] = { created: days[i] }))
+  const planned = [files['tasks/plan.md']?.created, files['tasks/todo.md']?.created].filter((d): d is string => !!d).sort()[0]
+  for (const f of p.specFiles) files[f] = { ...files[f], approved: planned }
+  // The plan itself was approved by the time its tasks were.
+  if (files['tasks/plan.md']) files['tasks/plan.md'] = { ...files['tasks/plan.md'], approved: files['tasks/todo.md']?.created ?? files['tasks/plan.md'].created }
+  const src = (await $.store.get(sourcesKey(p.cwd))) as Sources | undefined
+  const byKey = src ? earliestDays(src.git.doneDays, src.messages.doneDays, src.logsChoice === 'yes' ? src.logs.doneDays : {}) : {}
+  const doneDays: Record<string, string> = {}
+  for (const t of p.list?.tasks ?? []) if (byKey[taskKey(t)]) doneDays[t.id] = byKey[taskKey(t)]!
+  return { files, doneDays }
+}
+
+/** A task list stamped with the format, its dates from git where git has them. */
+const stampTodoPast = (text: string, today: string, past: DoctorPast, changes?: Record<string, Partial<TaskState>>) =>
+  backdateTodo(stampTodo(text, today, { changes, plan: planName(text), created: past.files['tasks/todo.md']?.created, doneDays: past.doneDays }), {
+    created: past.files['tasks/todo.md']?.created,
+    doneDays: past.doneDays,
+  })
+
 async function applyFormat($: $): Promise<string> {
   const cwd = await $.session.cwd()
   const today = dayOf(await $.clock.now())
   const done: string[] = []
   const p = await load($)
+  const past = await pastOf($, p)
   const todoPath = `${cwd}/tasks/todo.md`
   const todo = await readText($, todoPath)
   if (todo !== null) {
-    const next = stampTodo(todo, today, { changes: await readPending($, cwd), plan: planName(todo) })
+    const next = stampTodoPast(todo, today, past, await readPending($, cwd))
     if (next !== todo) {
       await $.fs.write(todoPath, next)
       done.push(`tasks/todo.md: ${(next.match(/^\*\*Status:\*\*/gm) ?? []).length} Status lines and front matter`)
@@ -298,9 +341,14 @@ async function applyFormat($: $): Promise<string> {
   for (const file of [...p.specFiles, 'tasks/plan.md']) {
     const text = await readText($, `${cwd}/${file}`)
     if (text === null) continue
-    // A spec agent-skills already planned against was approved before the format came in.
-    const approvedBefore = !readFrontMatter(text).fields.status && file !== 'tasks/plan.md' && !!p.list
-    const next = stampDoc(approvedBefore ? setFrontMatter(text, { status: 'approved', approved: today }) : text, today)
+    // A spec agent-skills already planned against was approved before the format came in;
+    // so was a plan whose tasks are under way.
+    const fp = past.files[file] ?? {}
+    const approvedBefore = !readFrontMatter(text).fields.status && !!p.list && (file !== 'tasks/plan.md' || p.list.done > 0)
+    const approvedOn = fp.approved && fp.created && fp.approved < fp.created ? fp.created : (fp.approved ?? today)
+    const created = readFrontMatter(text).fields.created || (fp.created ?? today)
+    const stamped = stampDoc(approvedBefore ? setFrontMatter(text, { status: 'approved', created, approved: approvedOn }) : text, today, fp)
+    const next = backdateDoc(stamped, fp)
     if (next !== text) {
       await $.fs.write(`${cwd}/${file}`, next)
       done.push(`${file}: front matter`)
@@ -609,17 +657,19 @@ async function doctor($: $, fix: boolean): Promise<string> {
     specs: (await Promise.all(p.specFiles.map(async file => ({ file, text: await read(file) })))).filter((x): x is { file: string; text: string } => x.text !== null),
     today,
     keepFormat,
+    past,
   })
+  const past = await pastOf($, p)
   let input = await gather()
   if (fix) {
     const fixed: string[] = []
     if (input.todo !== null) {
-      const next = stampTodo(input.todo, today, { plan: planName(input.todo) })
+      const next = stampTodoPast(input.todo, today, past)
       if (next !== input.todo) await $.fs.write(`${cwd}/tasks/todo.md`, next), fixed.push('tasks/todo.md')
     }
     for (const [file, text] of [['tasks/plan.md', input.plan] as const, ...input.specs.map(x => [x.file, x.text] as const)]) {
       if (text === null) continue
-      const next = stampDoc(text, today)
+      const next = backdateDoc(stampDoc(text, today, past.files[file]), past.files[file] ?? {})
       if (next !== text) await $.fs.write(`${cwd}/${file}`, next), fixed.push(file)
     }
     await load($)
@@ -1580,7 +1630,7 @@ async function graphView($: $, e: PaneEvent, p: AsmProject | null) {
           </Text>
         </Text>
       )}
-      <Text dimColor>✓ done ◐ current ○ to do ◌ waits ■ blocked</Text>
+      <Text dimColor>✓ done ◐ current ○ to do · waits ■ blocked</Text>
     </Box>
   )
 }
@@ -1590,7 +1640,7 @@ async function timelineView($: $, e: PaneEvent, p: AsmProject | null) {
   const list = p?.list
   if (!p || !list || list.total === 0) return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
   const today = dayOf(await $.clock.now())
-  await countCommits($, p.cwd, list.meta?.created ?? p.snapshots[0]?.day ?? today)
+  await countCommits($, p.cwd, began(p, today))
   const facts = ((await $.store.get(factsKey(p.cwd))) as Facts | undefined) ?? undefined
   const t = timeline({ spec: p.spec, list, plan: p.plan, forecast: p.forecast, dates: p.dates, today, since: p.snapshots[0]?.day, failed: await read($, failed), facts })
   const color = { text: undefined, strong: undefined, muted: 'subtle', done: 'success', run: 'warning', bad: 'error', needsYou: 'permission', accent: 'claude' } as const

@@ -9,7 +9,7 @@ const CWD = '/p'
 const clocks = new WeakMap<object, ReturnType<typeof mock.clock>>()
 
 /** Stands for the engine beneath the mod: a project folder in memory and the UI calls. */
-type Git = { log: string; cat: string; answer?: (argv: string[], stdin?: string) => string; messages?: string; named?: string; diff?: string; revList?: string } | 'no-repo' | 'no-commits'
+type Git = { log: string; cat: string; added?: Record<string, string>; answer?: (argv: string[], stdin?: string) => string; messages?: string; named?: string; diff?: string; revList?: string } | 'no-repo' | 'no-commits'
 
 function world(
   on: On,
@@ -43,6 +43,7 @@ function world(
     if (git === 'no-commits') return { value: { ...out(128, '').value, stderr: "fatal: your current branch 'main' does not have any commits yet" } }
     if (e.argv[1] === 'log' && e.argv.includes('--format=%h %as %s')) return out(0, git.named ?? '')
     if (e.argv[1] === 'diff') return out(0, git.diff ?? '')
+    if (e.argv.includes('--diff-filter=A')) return out(0, git.added?.[e.argv[e.argv.length - 1]!] ? `${git.added[e.argv[e.argv.length - 1]!]}\n` : '')
     if (e.argv[1] === 'rev-list' && e.argv.includes('-1')) return out(0, git.revList ?? '')
     if (e.argv[1] === 'log') return out(0, e.argv.some(a => a.includes('%B')) ? (git.messages ?? '') : git.log)
     return out(0, git.answer ? git.answer([...e.argv], typeof e.init?.stdin === "string" ? e.init.stdin : "") : git.cat)
@@ -857,7 +858,7 @@ test('the timeline: header, milestones, a tree with step bars, and the legend', 
   expect(await pane.find({ text: /│  ├─ ● T3 Issue and revoke keys +▬▬▫ testing · 1d$/ })).toBeDefined()
   expect(await pane.find({ text: /│  └─ ♦ T4 Rate limit per key +needs you: Q2, Upstash or self-hosted\?$/ })).toBeDefined()
   expect(await pane.find({ text: /^ +○ \/review → \/ship$/ })).toBeDefined()
-  expect(await pane.find({ text: /^■ done  ■ running  ■ slow  × failed  ♦ needs you  ▫ to come  ◌ waits on another task$/ })).toBeDefined()
+  expect(await pane.find({ text: /^■ done  ■ running  ■ slow  × failed  ♦ needs you  ▫ to come  · waits on another task$/ })).toBeDefined()
 })
 
 test('progress format: a task list the agent writes gets front matter and Status lines', async ($, on) => {
@@ -920,6 +921,31 @@ test('with progressFormat off, files go through as written and Claude is not tol
   await $.command.run(run('refresh'))
   const composed = await $.prompt.compose(COMPOSE)
   expect(composed.sections.some(x => x.id === 'agent-skills-mods:format')).toBe(false)
+})
+
+test('/progress format on a project under way dates its files and done tasks from git, and doctor fix moves late ones back', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE, [`${CWD}/SPEC.md`]: '# Spec: Keys\n', [`${CWD}/tasks/plan.md`]: '# Plan: Keys\n', [`${CWD}/CLAUDE.md`]: '# Project\n' }
+  const git = {
+    ...gitOutput([['2026-10-08', TODO_T3_DONE], ['2026-10-03', TODO_T2_DONE], ['2026-09-29', TODO_NONE_DONE]]),
+    added: { 'SPEC.md': '2026-09-24', 'tasks/plan.md': '2026-09-25', 'tasks/todo.md': '2026-09-29' },
+  }
+  world(on, files, git)
+  await $.command.run(run('format'))
+  expect(readFm(files[`${CWD}/SPEC.md`]!)).toBe('status: approved\ncreated: 2026-09-24\napproved: 2026-09-25')
+  expect(readFm(files[`${CWD}/tasks/plan.md`]!)).toBe('status: approved\ncreated: 2026-09-25\napproved: 2026-09-29')
+  expect(readFm(files[`${CWD}/tasks/todo.md`]!)).toMatch(/created: 2026-09-29/)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 3: [^\n]*\n\*\*Status:\*\* done · done 2026-10-08/)
+
+  // Files a version before this stamped with the day the format came in.
+  files[`${CWD}/SPEC.md`] = '---\nstatus: approved\ncreated: 2026-10-09\napproved: 2026-10-09\n---\n# Spec: Keys\n'
+  files[`${CWD}/tasks/todo.md`] = files[`${CWD}/tasks/todo.md`]!.replace('created: 2026-09-29', 'created: 2026-10-09').replace('done 2026-10-08', 'done 2026-10-09')
+  const report = (await $.command.run(run('doctor'))).text
+  expect(report).toMatch(/created 2026-10-09, but git has the file from 24 Sep  \(fixable\)/)
+  expect(report).toMatch(/done dates later than git shows: T3 9 Oct → 8 Oct/)
+  await $.command.run(run('doctor fix'))
+  expect(readFm(files[`${CWD}/SPEC.md`]!)).toBe('status: approved\ncreated: 2026-09-24\napproved: 2026-09-25')
+  expect(readFm(files[`${CWD}/tasks/todo.md`]!)).toMatch(/created: 2026-09-29/)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/done 2026-10-08/)
 })
 
 const readFm = (text: string) => /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? ''

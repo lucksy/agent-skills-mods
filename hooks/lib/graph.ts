@@ -7,7 +7,7 @@ import type { Task, TaskList } from './parse'
 import type { Line, SegTone } from './timeline'
 
 const TONE: Record<Task['status'], SegTone> = { done: 'done', next: 'run', todo: 'muted', waiting: 'muted', blocked: 'needsYou' }
-const GLYPH: Record<Task['status'], string> = { done: '✓', next: '◐', todo: '○', waiting: '◌', blocked: '■' }
+const GLYPH: Record<Task['status'], string> = { done: '✓', next: '◐', todo: '○', waiting: '·', blocked: '■' }
 
 export function graphLines(list: TaskList): Line[] {
   const byId = new Map(list.tasks.map(t => [t.id, t]))

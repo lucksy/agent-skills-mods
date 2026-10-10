@@ -5,7 +5,7 @@ import { taskKey, type Spec, type Task, type TaskList, type PlanDoc } from './pa
 import { shortDay, type Forecast } from './forecast'
 import type { Backfill } from './history'
 
-export const GLYPH = { done: '✓', next: '●', todo: '○', waiting: '◌', blocked: '■', needsYou: '♦', failed: '×' } as const
+export const GLYPH = { done: '✓', next: '●', todo: '○', waiting: '·', blocked: '■', needsYou: '♦', failed: '×' } as const
 
 export type Stage = 'spec' | 'plan' | 'build' | 'test' | 'review' | 'ship'
 
@@ -316,7 +316,7 @@ const MAX_ROWS = 12
 
 /** How Claude lays out an answer about progress (mockup 10): one short card per topic, its source named. */
 export const ANSWER_CARDS = [
-  'Lay the answer out as cards inside one ```text block: one card per topic (a checkpoint, a blocked task, the next task), each opening with a header line that names its source file on the right, then the task line with its glyph (◐ current, ○ to do, ◌ waiting, ■ blocked, ✓ done), its open boxes as "☐ ..." lines, and what follows. Then one plain sentence after the block saying what the user can do. For example:',
+  'Lay the answer out as cards inside one ```text block: one card per topic (a checkpoint, a blocked task, the next task), each opening with a header line that names its source file on the right, then the task line with its glyph (◐ current, ○ to do, · waiting, ■ blocked, ✓ done), its open boxes as "☐ ..." lines, and what follows. Then one plain sentence after the block saying what the user can do. For example:',
   '```text',
   'Checkpoint 1 · 1 task left                         from tasks/todo.md',
   '◐ T4 Rate limit per key',
