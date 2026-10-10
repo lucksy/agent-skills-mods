@@ -53,7 +53,10 @@ describe('empty and partial projects (T12)', () => {
   for (const [name, files] of cases) {
     test(`${name}: every view renders with words, never empty`, async () => {
       const html = dashboardHtml(await buildState(io(files)))
-      for (const id of VIEW_IDS) {
+      // Every tab this page has (Modules only with a capability map).
+      const tabs = [...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1]!)
+      expect(tabs.length).toBeGreaterThanOrEqual(VIEW_IDS.length - 1)
+      for (const id of tabs) {
         const p = panel(html, id)
         expect(p).not.toBe('')
         // Something to read under the heading: a message or the view itself.

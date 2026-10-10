@@ -4,6 +4,7 @@ import { moduleRows, modulesText, parseCapabilityMap } from '../packages/core/mo
 import { moduleTimeline } from '../packages/core/module-timeline'
 import { parseSpec } from '../packages/core/parse'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
+import { dashboardHtml, VIEW_IDS } from '../packages/core/dashboard/page'
 
 // format-v2 T10 (F7): every module of the capability map at a glance, archived plans included.
 
@@ -119,5 +120,39 @@ describe('one module\'s run timeline (T11)', () => {
     expect(moduleTimeline(rows, 'format-v2', { 'tasks/todo.md': ACTIVE }, '2026-10-10').split('\n')[0]).toBe('Module format-v2 · building · 9/13 · plan format-v2 in tasks/todo.md')
     expect(moduleTimeline(rows, 'nope', {}, '2026-10-10')).toBe('No module "nope". Modules: core, dashboard, format-v2, team-view.')
     expect(moduleTimeline(rows, 'team-view', {}, '2026-10-10')).toBe('team-view has no plan yet (not started; needs format-v2, dashboard).')
+  })
+})
+
+describe('the dashboard Modules tab (T12)', () => {
+  const io = (files: Record<string, string>): ProjectIo => ({
+    cwd: '/p',
+    now: Date.parse('2026-10-10T10:00:00Z'),
+    read: async r => files[r] ?? null,
+    list: async r => Object.keys(files).filter(f => (r ? f.startsWith(`${r}/`) && !f.slice(r.length + 1).includes('/') : !f.includes('/'))).map(f => f.split('/').pop()!),
+    dirs: async r => [...new Set(Object.keys(files).filter(f => f.startsWith(`${r}/`) && f.slice(r.length + 1).includes('/')).map(f => f.slice(r.length + 1).split('/')[0]!))],
+  })
+  const files = { 'SPEC.md': MAP, 'SPEC-core.md': spec('approved', '2026-10-01'), 'tasks/todo.md': ACTIVE, 'tasks/archive/2026-10-10-core-dashboard/todo.md': ARCHIVED }
+  const tab = (html: string) => html.match(/<section[^>]*id="view-modules"[\s\S]*?<\/section>\s*<!-- \/view-modules -->/)?.[0] ?? ''
+  const words = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ')
+
+  test('a tab of its own, last, when there is a capability map; none without one', async () => {
+    const html = dashboardHtml(await buildState(io(files)))
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'roadmap', 'flow', 'spec', 'modules'])
+    const none = dashboardHtml(await buildState(io({ 'tasks/todo.md': ACTIVE })))
+    expect(none).not.toContain('id="tab-modules"')
+    expect(VIEW_IDS).toContain('modules')
+  })
+
+  test('a row per module: its state in a glyph and a word, what it needs, its spec, its progress and dates', async () => {
+    const t = tab(dashboardHtml(await buildState(io(files))))
+    expect([...t.matchAll(/data-module="([\w-]+)"/g)].map(m => m[1])).toEqual(['core', 'dashboard', 'format-v2', 'team-view'])
+    const w = words(t)
+    expect(w).toMatch(/✓ core done Shared library and state\.json 14\/14 spec approved 1 Oct · finished 9 Oct/)
+    expect(w).toMatch(/● format-v2 building Owners, review, approvals 9\/13 needs core, dashboard · no spec file · started 10 Oct/)
+    expect(w).toMatch(/○ team-view not started Board across branches needs format-v2, dashboard/)
+    expect(t).toMatch(/role="img" aria-label="9 of 13 tasks done"/)
+    // The module under way links to its Overview.
+    expect(t).toMatch(/data-module="format-v2"[\s\S]*?<a href="#overview">/)
+    expect(w).toMatch(/2 of 4 modules done/)
   })
 })

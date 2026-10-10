@@ -83,10 +83,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 ### Phase 4: Modules
 - [x] Task 10: Module rows, /progress modules and --modules
 - [x] Task 11: /progress modules <id>: an archived module's timeline
-- [ ] Task 12: Dashboard Modules tab
+- [x] Task 12: Dashboard Modules tab
 
 ### Checkpoint: Modules
-- [ ] This repo's own modules show: core and dashboard done, format-v2 under way
+- [x] This repo's own modules show: core and dashboard done, format-v2 under way
 
 ### Phase 5: Finish
 - [ ] Task 13: Format docs and rules, README, version 0.38.0, final checks

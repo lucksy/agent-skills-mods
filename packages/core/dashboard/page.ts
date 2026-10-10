@@ -11,12 +11,13 @@ import { FLOW_STYLE, flowHtml } from './flow'
 import { overviewHtml } from './overview'
 import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
 import { SPEC_STYLE, specHtml } from './spec'
+import { MODULES_STYLE, modulesHtml } from './modules'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
 
 export { chartMount, type ChartSpec }
 
-export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec'
+export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
@@ -25,7 +26,12 @@ const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
   { id: 'roadmap', label: 'Roadmap', render: roadmapHtml },
   { id: 'flow', label: 'Flow', render: flowHtml },
   { id: 'spec', label: 'Spec', render: specHtml },
+  // format-v2 (F7): only for a project with a capability map.
+  { id: 'modules', label: 'Modules', render: modulesHtml },
 ]
+
+/** The views this page has: Modules only with a capability map. */
+const viewsFor = (s: State) => VIEWS.filter(v => v.id !== 'modules' || !!s.modules?.length)
 
 /** The views a page can open on, in tab order. */
 export const VIEW_IDS: readonly ViewId[] = VIEWS.map(v => v.id)
@@ -65,15 +71,16 @@ const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u0
 
 /** The page for `state`, opening on `view` unless the address names another. */
 export function dashboardHtml(s: State, opts: { view?: ViewId } = {}): string {
-  const view = VIEWS.some(v => v.id === opts.view) ? opts.view! : 'overview'
+  const views = viewsFor(s)
+  const view = views.some(v => v.id === opts.view) ? opts.view! : 'overview'
   const name = projectName(s)
   const sources = [s.specFile, s.listFile].filter((f): f is string => !!f)
   const asOf = `${shortDay(s.today)} ${s.today.slice(0, 4)}`
   const stageItems = stages(s)
     .map(st => `<li class="stage t-${st.tone}"><span aria-hidden="true">${st.glyph}</span> ${esc(st.label)}${st.tone === 'needs' ? '<span class="vh"> (awaiting approval)</span>' : ''}</li>`)
     .join('')
-  const tabs = VIEWS.map(v => `<a role="tab" id="tab-${v.id}" href="#${v.id}" aria-controls="view-${v.id}">${v.label}</a>`).join('')
-  const panels = VIEWS.map(
+  const tabs = views.map(v => `<a role="tab" id="tab-${v.id}" href="#${v.id}" aria-controls="view-${v.id}">${v.label}</a>`).join('')
+  const panels = views.map(
     v => `<section id="view-${v.id}" role="tabpanel" aria-labelledby="tab-${v.id}" tabindex="-1">
 <h2 class="view-title">${v.label}</h2>
 ${v.render(s)}
@@ -224,6 +231,7 @@ ${BOARD_STYLE()}
 ${ROADMAP_STYLE}
 ${FLOW_STYLE}
 ${SPEC_STYLE}
+${MODULES_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {

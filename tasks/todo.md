@@ -380,7 +380,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** S
 
 ## Task 12: Dashboard Modules tab
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A Modules tab appears when a capability map exists. Each module is a row showing:
 - its state glyph, id and responsibility;
@@ -391,11 +391,16 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 The active module's row links to the Overview. `/progress dashboard modules` opens on it.
 
 **Acceptance criteria:**
-- [ ] The tab shows a row per module, with glyphs and words; it is absent when there is no capability map
-- [ ] Checked in Chrome on this repo: light and dark, 360 px, no console messages
+- [x] The tab shows a row per module, with glyphs and words; it is absent when there is no capability map
+- [x] Checked in Chrome on this repo: light and dark, 360 px, no console messages
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The page builds its tab list per project, so Modules appears only with a capability map. `VIEW_IDS` still lists it, so `/progress dashboard modules` is a valid view; without a map the page falls back to the Overview.
+- The empty-projects test now loops over the tabs each page actually has.
+- Checked in Chrome on this repo: seven rows (core and dashboard done 14/14, format-v2 building, four not started); "its Overview" opens the Overview; 360 px light with no sideways scroll; no console messages.
 
 **Dependencies:** T10
 
@@ -407,14 +412,14 @@ The active module's row links to the Overview. `/progress dashboard modules` ope
 **Estimated scope:** S
 
 ## Checkpoint: Modules
-- [ ] All tests pass
-- [ ] This repo's modules show: core and dashboard done, format-v2 building
+- [x] All tests pass
+- [x] This repo's modules show: core and dashboard done, format-v2 building
 - [ ] Review with human before proceeding
 
 ## Phase 5: Finish
 
 ## Task 13: Format docs and rules, README, version 0.38.0, final checks
-**Status:** todo
+**Status:** in progress · started 2026-10-11 · step build
 
 **Description:**
 - `docs/progress-format.md` gains a v2 section.
