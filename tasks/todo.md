@@ -1,0 +1,368 @@
+---
+plan: core-dashboard
+created: 2026-10-10
+---
+# Tasks: core + dashboard
+
+## Phase 1: Core
+
+## Task 1: Spike: hooks module importing from ../packages/core
+**Status:** todo
+
+**Description:** Find out whether the mods engine loads a hooks module that imports a file outside `hooks/` (SPEC-core Q1). Add `packages/core/spike.ts`, import it from `hooks/register.tsx`, check it loads, record the answer in tasks/plan.md under Q1, then remove the spike.
+
+**Acceptance criteria:**
+- [ ] Q1 in tasks/plan.md records yes or no, with the evidence (validate output, a session log or the error)
+- [ ] The spike files are removed and the tree is back to clean
+
+**Verification:**
+- [ ] `claude plugin validate .` with the spike in place
+- [ ] Manual check: `claude --plugin-dir .` session, `/progress` opens, no load error
+
+**Dependencies:** None
+
+**Files likely touched:**
+- `packages/core/spike.ts` (temporary)
+- `hooks/register.tsx` (temporary)
+- `tasks/plan.md`
+
+**Estimated scope:** XS
+
+## Task 2: Move hooks/lib to packages/core with a purity guard
+**Status:** todo
+
+**Description:** Run `git mv hooks/lib packages/core` and update the imports in the plugin, CLI and tests. Add a test that fails if any core file imports something other than a sibling module or a `node:` built-in, or uses the Claude Code API. If T1 said no, skip the move and add only the purity guard over `hooks/lib`. This is a mechanical move, so it touches more than 5 files.
+
+**Acceptance criteria:**
+- [ ] `hooks/lib/` is gone, and nothing imports from it (`grep -r "hooks/lib"` finds only docs history)
+- [ ] The purity-guard test passes
+- [ ] README Development layout lists `packages/core/`
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+- [ ] Tests pass: `bash scripts/test.sh` and `bash statusline/test.sh`
+- [ ] Build succeeds: `claude plugin validate .`
+- [ ] Manual check: `claude --plugin-dir .`, `/progress` and `/spec-view` look as before on this repo
+
+**Dependencies:** T1
+
+**Files likely touched:**
+- `hooks/lib/*` → `packages/core/*`
+- `hooks/register.tsx`, `hooks/ui/*.tsx`
+- `scripts/agent-skills-progress.mjs`
+- `tests/*.test.ts`, `tests/purity.test.ts`
+- `README.md`
+
+**Estimated scope:** M (mechanical, many files)
+
+## Task 3: State v1: toState, buildState and --json
+**Status:** todo
+
+**Description:** Add `packages/core/state.ts`, holding:
+- the State v1 type: `schema: 1`, `today`, every spec file with its parsed spec, the list, the plan, the forecast, snapshots, dates, alerts, `needsYou`, the history note and commits;
+- a pure `toState(parts)`;
+- `buildState(io)`, which replaces `gather()` in `cli.ts`.
+
+`renderJson` prints State v1 and keeps every field it printed before.
+
+**Acceptance criteria:**
+- [ ] `buildState` on the fixtures returns `schema: 1` and the documented fields
+- [ ] `agent-skills-progress --json` keeps all fields printed before, adds the new ones, and parses back to the same object
+- [ ] `toState` called with the same parts the CLI used gives the same State (the plugin and CLI paths agree)
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .` (new `tests/state.test.ts`)
+- [ ] Tests pass: `bash scripts/test.sh`
+
+**Dependencies:** T2
+
+**Files likely touched:**
+- `packages/core/state.ts`
+- `packages/core/cli.ts`
+- `tests/state.test.ts`
+- `scripts/test.sh`
+
+**Estimated scope:** M
+
+## Checkpoint: Core
+- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [ ] The plugin loads with `claude --plugin-dir .` and behaves as before
+- [ ] Review with human before proceeding
+
+## Phase 2: Dashboard path end to end
+
+## Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
+**Status:** todo
+
+**Description:** Build `dashboardHtml(state, { view? })` in `packages/core/dashboard/page.ts`. It contains:
+- a tablist for the five views, with only Overview filled in for now and the others showing "coming";
+- CSS tokens for light and dark;
+- the CSP meta tag;
+- the embedded State JSON, with `<` escaped;
+- the inline script for tabs and `#view` hash state.
+
+The no-JS page shows every view stacked. The Overview shows done/total, the ETA range, scope added, the current task and the decisions waiting. Add `--dashboard [out]` to the CLI, defaulting to `tasks/progress-dashboard.html`. It prints the path and size.
+
+**Acceptance criteria:**
+- [ ] `node scripts/agent-skills-progress.mjs --dashboard` writes the page; the Overview numbers equal those `--json` prints
+- [ ] A task titled `</script><script>alert(1)</script>` renders as text; the page has no `http(s)://` in `src`, `href` or `url(`, and carries the CSP meta tag
+- [ ] The same state and `today` give byte-identical HTML, and the inline script parses (`new Function`)
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .` (new `tests/dashboard.test.ts`)
+- [ ] Tests pass: `bash scripts/test.sh` (new `--dashboard` cases, including an empty project)
+- [ ] Manual check: open the file in Chrome; tabs and `#overview` work; no console errors or network requests
+
+**Dependencies:** T3
+
+**Files likely touched:**
+- `packages/core/dashboard/page.ts`
+- `packages/core/dashboard/overview.ts`
+- `scripts/agent-skills-progress.mjs`
+- `tests/dashboard.test.ts`
+- `scripts/test.sh`
+
+**Estimated scope:** M
+
+## Task 5: /progress dashboard [view] in the plugin
+**Status:** todo
+
+**Description:** Add the `dashboard` subcommand to `/progress`, with an optional view argument. It builds State with `toState` from what `load($)` gives, writes `tasks/progress-dashboard.html`, and opens it at `#<view>` the way `writeReport` opens the report. Where no browser can be opened, it prints the path. Update the command's description, argument hint and unknown-argument message.
+
+**Acceptance criteria:**
+- [ ] `/progress dashboard` writes the page and opens it; `/progress dashboard board` opens on `#board`; an unknown view gets a message listing the five
+- [ ] With no task list, it still writes a page with an explanatory Overview instead of failing
+- [ ] The page uses the plugin's own history, so its ETA matches the board pane
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .` (`tests/mod.test.ts` cases for the subcommand)
+- [ ] Manual check: `claude --plugin-dir .` on this repo, then `/progress dashboard`, and the browser opens the page
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `hooks/register.tsx`
+- `tests/mod.test.ts`
+
+**Estimated scope:** S
+
+## Task 6: Overview health and ETA drift figure
+**Status:** todo
+
+**Description:** Add `forecastHistory(snapshots)` to `forecast.ts`, which replays `forecast()` as of each past day. The Overview gets two additions:
+- **Health:** *on track* or *at risk*, listing every reason: band alerts, blocked tasks, building while the spec is a draft, and checkpoints reached but not signed off.
+- **ETA drift:** how the median moved over the last 7 days, in ±days.
+
+**Acceptance criteria:**
+- [ ] `forecastHistory` gives one forecast per snapshot day, and its last entry equals `forecast()` for the whole history
+- [ ] Health is *at risk*, with the matching reasons, for fixtures with an alert, a blocked task, a draft spec plus tasks in progress, or an unsigned checkpoint; it is *on track* otherwise
+- [ ] ETA drift shows "+N d", "−N d" or "no change", or a "needs history" message when there's too little history
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/core/forecast.ts`
+- `packages/core/dashboard/overview.ts`
+- `tests/dashboard.test.ts`
+- `tests/parse.test.ts`
+
+**Estimated scope:** S
+
+## Checkpoint: Dashboard path
+- [ ] All tests pass
+- [ ] The CLI and `/progress dashboard` produce a working page on this repo, checked in Chrome: tabs, hash, back button, light and dark, no network requests
+- [ ] Review with human before proceeding
+
+## Phase 3: Views
+
+## Task 7: Board view
+**Status:** todo
+
+**Description:** `board.ts` draws five columns: to do, waiting, in progress, blocked and done. Each card shows:
+- id and title;
+- open boxes;
+- age in days while in progress;
+- the blocking question while blocked.
+
+Checkpoint rows sit between their tasks. A toggle groups the board by phase. Phase and state filters are kept in the hash (`#board?phase=2&state=blocked`).
+
+**Acceptance criteria:**
+- [ ] Each fixture task appears once, in the column matching its parsed status, with the right open-box count and age
+- [ ] A blocked card names its question; checkpoints appear after the task they follow
+- [ ] Filters and the phase toggle change what is shown and survive a reload and the back button
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+- [ ] Manual check: filters and the toggle work in Chrome; with JS off the full board is shown
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/core/dashboard/board.ts`
+- `packages/core/dashboard/page.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** S
+
+## Task 8: Roadmap view
+**Status:** todo
+
+**Description:** `roadmap.ts` draws three things:
+- the run timeline as styled HTML, using the same rows as `/progress timeline` with each segment tone mapped to a CSS class;
+- the dependency tree from `graphLines()`, with loops listed;
+- the critical path from `criticalPath()`, highlighted.
+
+**Acceptance criteria:**
+- [ ] The timeline rows' text equals `plain()` of the rows `/progress timeline` prints for the fixture
+- [ ] The dependency tree lists every task, and loops when the fixture has one
+- [ ] The critical path is shown as `T2 → T3 → T4` and its tasks are marked in the tree
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/core/dashboard/roadmap.ts`
+- `packages/core/dashboard/page.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** S
+
+## Task 9: Flow view: burn-up, flow, cycle time, aging WIP
+**Status:** todo
+
+**Description:** `flow.ts` places the existing `burnupSvg` and `flowSvg` charts and adds two new ones to `svg.ts`:
+- `cycleTimeSvg`: days per done task, from `daysPerTask`;
+- `agingWipSvg`: days in progress for each open task, against the usual days per task.
+
+Each chart has a one-line text summary. With too little history, a chart shows "needs N days" instead.
+
+**Acceptance criteria:**
+- [ ] The four charts render for the fixture with history; each has a text summary that names its latest numbers
+- [ ] Aging WIP marks tasks running over twice the usual days, the same threshold as the band alert
+- [ ] Without enough history, each chart shows its "needs" message instead
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+- [ ] Manual check: charts readable in light and dark in Chrome
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/core/svg.ts`
+- `packages/core/dashboard/flow.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** M
+
+## Task 10: Flow view: ETA drift chart
+**Status:** todo
+
+**Description:** `etaDriftSvg` plots, for each past day from `forecastHistory`, the median ETA with its fast–slow range as a whisker. It goes in the Flow view under the other charts.
+
+**Acceptance criteria:**
+- [ ] One point and whisker for each day with a range forecast, with days without one left out
+- [ ] The text summary says how far the median moved since the first range forecast
+- [ ] Below 2 range forecasts it shows its "needs" message
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+
+**Dependencies:** T6, T9
+
+**Files likely touched:**
+- `packages/core/svg.ts`
+- `packages/core/dashboard/flow.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** S
+
+## Task 11: Spec view
+**Status:** todo
+
+**Description:** `spec.ts` draws one section per spec file (`SPEC.md`, `SPEC-*.md`, `specs/*.md`), with a picker. Each section shows:
+- approval and its date;
+- the six areas with state and hint;
+- boundaries in three columns;
+- open questions.
+
+**Acceptance criteria:**
+- [ ] Every spec file in State appears in the picker, and each section's area states and hints match the spec pane's `areaSummary`
+- [ ] Approval shows *approved* with its date, or *awaiting approval*
+- [ ] With no spec, the view says where one would go
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+- [ ] Manual check: on this repo the picker lists SPEC.md, SPEC-core.md and SPEC-dashboard.md
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/core/dashboard/spec.ts`
+- `packages/core/dashboard/page.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** S
+
+## Checkpoint: Views
+- [ ] All tests pass
+- [ ] All five views render from the CLI and from `/progress dashboard` on this repo and on a fixture project
+- [ ] Review with human before proceeding
+
+## Phase 4: Finish
+
+## Task 12: Empty states, accessibility and the size and speed budget
+**Status:** todo
+
+**Description:** Go through every view for an empty or partial project: no spec, no list, no history, all done, one task. Finish the keyboard tabs (`role="tablist"` and arrow keys), the chart text alternatives and the layout at 360 px. Add a generated fixture with 60 tasks and 90 days of history, and test the budget against it.
+
+**Acceptance criteria:**
+- [ ] Each empty or partial fixture renders every view with a message and no exception
+- [ ] The 60-task, 90-day fixture renders in under 200 ms, and the page is under 250 KB
+- [ ] Tabs work with arrow keys, every chart has `role="img"` with a label, and the page has no horizontal scroll at 360 px
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`
+- [ ] Manual check: Chrome DevTools at 360 px, keyboard only, light and dark, no console errors
+
+**Dependencies:** T7, T8, T10, T11
+
+**Files likely touched:**
+- `packages/core/dashboard/*.ts`
+- `tests/dashboard.test.ts`
+- `tests/fixtures.ts`
+
+**Estimated scope:** M
+
+## Task 13: README, version bump and a final browser check
+**Status:** todo
+
+**Description:** Document `/progress dashboard [view]` and `--dashboard [out]` in the README: the command table, "What you get", the CLI section and the layout. Bump the version to 0.37.0 in `.claude-plugin/plugin.json`. Do a final browser check on this repo.
+
+**Acceptance criteria:**
+- [ ] The README documents both entry points and the five views
+- [ ] The version is 0.37.0
+- [ ] Every success-criteria box in SPEC-core.md and SPEC-dashboard.md is checked
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [ ] Build succeeds: `claude plugin validate .`
+- [ ] Manual check: `/progress dashboard` on this repo in Chrome, all views, no network requests
+
+**Dependencies:** T5, T12
+
+**Files likely touched:**
+- `README.md`
+- `.claude-plugin/plugin.json`
+- `SPEC-core.md`, `SPEC-dashboard.md`
+
+**Estimated scope:** S
+
+## Checkpoint: Complete
+- [ ] All tests pass and `claude plugin validate .` is clean
+- [ ] Every success criterion in SPEC-core.md and SPEC-dashboard.md is met
+- [ ] Review with human before release
