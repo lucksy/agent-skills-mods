@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from '../packages/core/parse'
+import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type Spec, type TaskList } from '../packages/core/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
@@ -22,7 +22,8 @@ import { criticalPath, graphLines } from '../packages/core/graph'
 import { TABS, type Tab } from './ui/tabs'
 import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
-import { toState } from '../packages/core/state'
+import { readModules, toState } from '../packages/core/state'
+import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -626,6 +627,36 @@ async function writeReport($: $, p: AsmProject): Promise<string> {
     : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`
 }
 
+/** Every spec file here, parsed: the one in focus is already. */
+async function allSpecs($: $, p: AsmProject): Promise<{ file: string; spec: Spec }[]> {
+  const out = await Promise.all(
+    p.specFiles.map(async file => {
+      if (file === p.specFile && p.spec) return { file, spec: p.spec as Spec }
+      const text = await readText($, `${p.cwd}/${file}`)
+      return text === null ? null : { file, spec: parseSpec(text) }
+    }),
+  )
+  return out.filter(x => x !== null)
+}
+
+/** The capability map's modules (format-v2, F7): their specs, the active plan and the archived ones. */
+async function projectModules($: $, p: AsmProject, specs?: { file: string; spec: Spec }[]): Promise<ModuleRow[] | null> {
+  const io = {
+    read: (rel: string) => readText($, `${p.cwd}/${rel}`),
+    dirs: async (rel: string) => (await $.fs.list(`${p.cwd}/${rel}`).catch(() => [])).filter(e => e.kind === 'dir').map(e => e.name),
+  }
+  return readModules(io, specs ?? (await allSpecs($, p)), await readText($, `${p.cwd}/tasks/todo.md`))
+}
+
+/** `/progress modules` (F7): every module of the capability map at a glance. */
+async function modulesCommand($: $): Promise<string> {
+  const p = await load($)
+  const rows = await projectModules($, p)
+  return rows
+    ? modulesText(rows, 'SPEC.md')
+    : 'No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).'
+}
+
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
 async function gitEmail($: $): Promise<string | null> {
   const r = await $.process.run(['git', 'config', 'user.email'], { timeoutMs: 10_000 }).catch(() => null)
@@ -781,16 +812,7 @@ async function reviewCommand($: $, words: string[]): Promise<string> {
  */
 async function writeDashboard($: $, p: AsmProject, view: string): Promise<string> {
   if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
-  // Every spec file, for the Spec view: the one in focus is parsed already.
-  const specs = (
-    await Promise.all(
-      p.specFiles.map(async file => {
-        if (file === p.specFile && p.spec) return { file, spec: p.spec }
-        const text = await readText($, `${p.cwd}/${file}`)
-        return text === null ? null : { file, spec: parseSpec(text) }
-      }),
-    )
-  ).filter(x => x !== null)
+  const specs = await allSpecs($, p)
   const state = toState({
     cwd: p.cwd,
     today: dayOf(await $.clock.now()),
@@ -807,6 +829,7 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
       const team = await readTeam($, p.cwd)
       return { team, me: team ? whoIs(team, await gitEmail($)) : null }
     })()),
+    modules: await projectModules($, p, specs),
   })
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`
@@ -1234,13 +1257,14 @@ export const register: Register = (on, options) => {
       const words = rawWords.slice(1)
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
       if (verb === 'review') return reply(await reviewCommand($, words))
+      if (verb === 'modules') return reply(await modulesCommand($))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

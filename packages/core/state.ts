@@ -11,6 +11,7 @@ import { parsePlan, parseSpec, parseTasks, withBlockers, type PlanDoc, type Spec
 import { decisions } from './report'
 import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './view'
 import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
+import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -21,6 +22,8 @@ export type ProjectIo = {
   list: (rel: string) => Promise<string[]>
   /** Runs git; absent, history starts today. */
   run?: Runner
+  /** The folder names in a folder relative to the project (format-v2: tasks/archive); absent, none are read. */
+  dirs?: (rel: string) => Promise<string[]>
   now: number
 }
 
@@ -48,6 +51,8 @@ export type StateParts = {
   /** format-v2: tasks/team.md, and who is looking (from `git config user.email`). */
   team?: Team | null
   me?: Member | null
+  /** format-v2 (F7): every module of SPEC.md's capability map, with its spec and plans; null without a map. */
+  modules?: ModuleRow[] | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -70,6 +75,7 @@ export function toState(p: StateParts): State {
     ...p,
     team: p.team ?? null,
     me: p.me ?? null,
+    modules: p.modules ?? null,
     spec,
     specFiles: p.specs.map(x => x.file),
     alerts: alerts({ list: p.list, snapshots: p.snapshots, today: p.today }),
@@ -97,7 +103,7 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string } = {}
   const teamText = await io.read(TEAM_FILE)
   const team = teamText === null ? null : parseTeam(teamText)
   const email = team && io.run ? await io.run(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null), () => null) : null
-  const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email) }
+  const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email), modules: await readModules(io, specs, todoText) }
   if (!list || !listFile || list.total === 0) return toState(parts)
 
   const src = io.run ? await gitSources(io.run, listFile, list) : null
@@ -121,6 +127,20 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string } = {}
       ? 'history from today (no git)'
       : `history since ${shortDay(since)}: ${gitDays} day${gitDays === 1 ? '' : 's'} from git`
   return toState(parts)
+}
+
+/** The capability map's modules with their specs, the active plan and the archived ones (format-v2, F7). */
+export async function readModules(io: Pick<ProjectIo, 'read' | 'dirs'>, specs: { file: string; spec: Spec }[], todoText: string | null): Promise<ModuleRow[] | null> {
+  const mapText = await io.read('SPEC.md')
+  const map = mapText === null ? null : parseCapabilityMap(mapText)
+  if (!map) return null
+  const plans: { where: 'active' | 'archive'; dir: string; text: string }[] = []
+  for (const d of ((await io.dirs?.('tasks/archive')) ?? []).sort()) {
+    const text = await io.read(`tasks/archive/${d}/todo.md`)
+    if (text !== null) plans.push({ where: 'archive', dir: `tasks/archive/${d}`, text })
+  }
+  if (todoText !== null) plans.push({ where: 'active', dir: 'tasks', text: todoText })
+  return moduleRows(map, specs, plans)
 }
 
 /** A task as other tools see it. */
@@ -162,6 +182,7 @@ export type StateJson = {
   /** format-v2: handles and roles only; emails stay in tasks/team.md, out of shared pages. */
   team: { members: { handle: string; roles: string[] }[]; approvals: string[] } | null
   me: string | null
+  modules: ModuleRow[] | null
 }
 
 export function stateJson(s: State): StateJson {
@@ -209,5 +230,6 @@ export function stateJson(s: State): StateJson {
     commits: s.commits ?? null,
     team: s.team ? { members: s.team.members.map(m => ({ handle: m.handle, roles: m.roles })), approvals: s.team.approvals } : null,
     me: s.me?.handle ?? null,
+    modules: s.modules,
   }
 }

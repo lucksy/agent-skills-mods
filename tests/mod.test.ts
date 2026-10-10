@@ -64,7 +64,9 @@ function world(
     const names = Object.keys(files)
       .filter(f => f.startsWith(dir) && !f.slice(dir.length).includes('/'))
       .map(f => f.slice(dir.length))
-    return { value: names.map(name => ({ name, kind: 'file', size: files[dir + name]!.length })) as never }
+    // Folders too, from deeper paths (format-v2: tasks/archive/<plan>/).
+    const dirs = [...new Set(Object.keys(files).filter(f => f.startsWith(dir) && f.slice(dir.length).includes('/')).map(f => f.slice(dir.length).split('/')[0]!))]
+    return { value: [...names.map(name => ({ name, kind: 'file', size: files[dir + name]!.length })), ...dirs.map(name => ({ name, kind: 'dir', size: 0 }))] as never }
   })
   on('fs.read', (_$, e) => {
     const text = files[e.path]
@@ -1441,4 +1443,22 @@ test('signing needs a role the spec still waits on, and to know who you are', as
   files[`${CWD}/tasks/team.md`] = TEAM_MD.replace('sara@example.com', 'sara@elsewhere.org')
   await pane.press({ key: 'spec-approve' })
   expect(seen.toasts).toContain("Can't sign: sara@example.com is not in tasks/team.md.")
+})
+
+// format-v2 T10 (F7): every module at a glance.
+const MAP_MD = '---\nstatus: approved\n---\n# Capability Map: keys\n\n| Module id | Responsibility | Depends on |\n|---|---|---|\n| core | Library | — |\n| api | The API | core |\n| ui | Console | api |\n'
+test('/progress modules lists each module of the capability map, archived plans included', async ($, on) => {
+  const archived = '---\nplan: core\ncreated: 2026-09-20\n---\n## Task 1: Lib\n**Status:** done · started 2026-09-20 · done 2026-09-25\n- [x] lib\n'
+  const active = `---\nplan: api\nmodule: api\ncreated: 2026-10-01\n---\n${TODO_TEMPLATE.replace(/^# .*\n/, '')}`
+  world(on, { [`${CWD}/SPEC.md`]: MAP_MD, [`${CWD}/SPEC-api.md`]: SPEC, [`${CWD}/tasks/todo.md`]: active, [`${CWD}/tasks/archive/2026-09-26-core/todo.md`]: archived, [`${CWD}/tasks/archive/2026-09-26-core/README.md`]: '# x\n' })
+  const out = (await $.command.run(run('modules'))).text
+  expect(out).toMatch(/^Modules · SPEC\.md · 3 modules · 1 done/)
+  expect(out).toMatch(/✓ core +done · 1\/1 · no spec file · finished 25 Sep \(tasks\/archive\/2026-09-26-core\)/)
+  expect(out).toMatch(/● api +building · 1\/4 · spec draft · started 1 Oct/)
+  expect(out).toMatch(/○ ui +not started · needs api/)
+})
+
+test('/progress modules without a capability map says where one goes', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
+  expect((await $.command.run(run('modules'))).text).toBe('No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).')
 })

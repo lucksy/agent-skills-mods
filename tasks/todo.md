@@ -317,7 +317,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 ## Phase 4: Modules
 
 ## Task 10: Module rows, /progress modules and --modules
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `packages/core/modules.ts` builds one row per module of the capability map, from the first table under a "Capability Map" heading in `SPEC.md`: its id, responsibility and dependencies. Each row then gets:
 - **spec:** its `SPEC-<id>.md` status and approval date;
@@ -327,13 +327,19 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 `/progress modules` replies with a table, and `agent-skills-progress --modules` prints it. State gains `modules`.
 
 **Acceptance criteria:**
-- [ ] On this repo: core ✓ and dashboard ✓ (both from the archived core-dashboard plan, 14/14), format-v2 building, the others not started
-- [ ] A missing or free-form capability map gives an explanatory message, never an error
-- [ ] `--modules` and `--json` show the rows
+- [x] On this repo: core ✓ and dashboard ✓ (both from the archived core-dashboard plan, 14/14), format-v2 building, the others not started
+- [x] A missing or free-form capability map gives an explanatory message, never an error
+- [x] `--modules` and `--json` show the rows
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (new `tests/modules.test.ts`), `bash scripts/test.sh`
-- [ ] Manual check: `/progress modules` on this repo
+- [x] Tests pass: `claude plugin test .` (new `tests/modules.test.ts`), `bash scripts/test.sh`
+- [x] Manual check: `/progress modules` on this repo
+
+**Notes:**
+- A plan starts on its `created` date, else with its first task. A plan without `module:` counts for each id its name contains, bounded by dashes, so the archived `core-dashboard` counts for core and for dashboard.
+- States: not started, speccing, ready to plan, planned, building, done. The plan's list was one state short: a module with an approved spec and no plan is "ready to plan".
+- The reading interface (`ProjectIo`) gains an optional `dirs`, which the CLI and the plugin both provide. The test world now lists folders too.
+- Checked on this repo in a real session and the CLI: core and dashboard done (14/14, archived), format-v2 building 9/13, the rest not started.
 
 **Dependencies:** T1
 
@@ -347,7 +353,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** M
 
 ## Task 11: /progress modules <id>: an archived module's timeline
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `/progress modules dashboard` prints that module's run timeline, the same rows as `/progress timeline`. It reads them from its plan: the active plan, or the archived `todo.md` with that archive's `history.json` for dates. `--modules <id>` does the same in the CLI.
 

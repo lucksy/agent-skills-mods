@@ -62,6 +62,13 @@ if node --check "$tmp/charts.js" 2>/dev/null; then echo "ok   charts-bundle-pars
 size=$(wc -c < "$tmp/charts.js" | tr -d ' ')
 if (( size < 600 * 1024 )); then echo "ok   charts-bundle-size ($((size / 1024)) KB of 600)"; else echo "FAIL charts-bundle-size: $((size / 1024)) KB, over 600"; fail=1; fi
 
+# Modules (format-v2 T10): the capability map with an archived plan.
+mkdir -p "$tmp/mods/tasks/archive/2026-09-26-core"
+printf -- '---\nstatus: approved\n---\n# Capability Map: keys\n\n| Module id | Responsibility | Depends on |\n|---|---|---|\n| core | Library | — |\n| api | The API | core |\n' > "$tmp/mods/SPEC.md"
+printf -- '---\nplan: core\ncreated: 2026-09-20\n---\n## Task 1: Lib\n**Status:** done · started 2026-09-20 · done 2026-09-25\n- [x] lib\n' > "$tmp/mods/tasks/archive/2026-09-26-core/todo.md"
+check modules-cli '✓ core   done · 1/1' node "$script" "$tmp/mods" --modules --no-color --no-git
+check modules-json '"state": "not started"' node "$script" "$tmp/mods" --json --no-git
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

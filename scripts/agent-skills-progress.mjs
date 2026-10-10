@@ -44,6 +44,7 @@ Usage: agent-skills-progress [dir] [options]
   --brief         one line: stages and the current task
   --timeline      the run timeline: phases as a tree, a build · test · commit bar per task
   --json          the parsed state as JSON, for other tools
+  --modules       every module of SPEC.md's capability map, archived plans included
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
@@ -61,6 +62,7 @@ function parseArgs(argv) {
     else if (a === '--brief') o.mode = 'brief'
     else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
+    else if (a === '--modules') o.mode = 'modules'
     else if (a === '--dashboard') {
       o.mode = 'dashboard'
       if (/\.html?$/i.test(argv[i + 1] ?? '')) o.out = argv[++i]
@@ -126,6 +128,11 @@ async function main() {
         es => es.filter(e => e.isFile()).map(e => e.name),
         () => [],
       ),
+    dirs: rel =>
+      readdir(resolve(cwd, rel || '.'), { withFileTypes: true }).then(
+        es => es.filter(e => e.isDirectory()).map(e => e.name),
+        () => [],
+      ),
     run: o.git ? runner(cwd) : undefined,
   }
   let specFile
@@ -140,6 +147,10 @@ async function main() {
   const env = process.env
   const color = o.color ?? (env.NO_COLOR ? false : env.FORCE_COLOR ? true : !!process.stdout.isTTY)
   if (o.mode === 'json') return console.log(renderJson(state))
+  if (o.mode === 'modules') {
+    const { modulesText } = await import('../packages/core/modules.ts')
+    return console.log(state.modules ? modulesText(state.modules, 'SPEC.md') : 'No capability map in SPEC.md.')
+  }
   if (o.mode === 'dashboard') {
     const { dashboardHtml } = await import('../packages/core/dashboard/page.ts')
     const html = dashboardHtml(state)
