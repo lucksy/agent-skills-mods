@@ -8,6 +8,8 @@
 import { shortDay } from '../forecast'
 import type { Spec } from '../parse'
 import type { State } from '../state'
+import { approvalStatus } from '../approvals'
+import type { Team } from '../team'
 import { areaSummary, specApproval } from '../view'
 import { esc, inline, plural } from './html'
 
@@ -22,14 +24,14 @@ export function specHtml(s: State): string {
     s.specs.length > 1
       ? `<nav class="spec-pick" aria-label="Spec files"><ul>${s.specs
           .map(({ file, spec }, i) => {
-            const a = approvalOf(spec, hasPlan)
+            const a = approvalOf(spec, hasPlan, s.team)
             return `<li><a href="#${ids[i]}"><code>${esc(file)}</code>${spec.title ? ` <span class="pk-t">${inline(spec.title)}</span>` : ''} <span class="pk-a a-${a.key}"><span aria-hidden="true">${a.glyph}</span> ${a.short}</span></a></li>`
           })
           .join('')}</ul><a class="pk-all" href="#spec">Show every spec</a></nav>`
       : ''
   return `<div class="specs">
 ${picker}
-${s.specs.map(({ file, spec }, i) => articleHtml(file, spec, ids[i]!, hasPlan)).join('\n')}
+${s.specs.map(({ file, spec }, i) => articleHtml(file, spec, ids[i]!, hasPlan, s.team)).join('\n')}
 </div>`
 }
 
@@ -48,16 +50,23 @@ function anchors(files: string[]): string[] {
 const longDay = (d: string) => `${shortDay(d)} ${d.slice(0, 4)}`
 
 /** Approval as the spec pane reads it: front matter first, else a plan existing means approved. */
-function approvalOf(spec: Spec, hasPlan: boolean): { key: 'approved' | 'awaiting'; glyph: string; short: string; long: string } {
-  if (specApproval(spec, hasPlan) !== 'approved') return { key: 'awaiting', glyph: '♦', short: 'awaiting', long: 'Awaiting approval' }
+function approvalOf(spec: Spec, hasPlan: boolean, team: Team | null = null): { key: 'approved' | 'awaiting'; glyph: string; short: string; long: string } {
+  if (specApproval(spec, hasPlan) !== 'approved') {
+    // format-v2 (F5): signed by role, the count and who it waits on.
+    if (team?.approvals.length) {
+      const st = approvalStatus(spec.approvals ?? [], team)
+      return { key: 'awaiting', glyph: '♦', short: `${st.signed.length}/${team.approvals.length}`, long: st.text }
+    }
+    return { key: 'awaiting', glyph: '♦', short: 'awaiting', long: 'Awaiting approval' }
+  }
   const when = spec.approvedOn ? ` ${longDay(spec.approvedOn)}` : spec.status === 'approved' ? '' : ' · a plan exists'
   return { key: 'approved', glyph: '✓', short: 'approved', long: `Approved${when}` }
 }
 
 const AREA_GLYPH = { ok: '✓', weak: '!', empty: '○', missing: '×' } as const
 
-function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean): string {
-  const a = approvalOf(spec, hasPlan)
+function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean, team: Team | null = null): string {
+  const a = approvalOf(spec, hasPlan, team)
   const meta = [
     `<span class="appr a-${a.key}"><span aria-hidden="true">${a.glyph}</span> ${esc(a.long)}</span>`,
     spec.created ? `<span>Written ${esc(longDay(spec.created))}</span>` : '',
@@ -92,13 +101,27 @@ function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean): st
 <h3 id="${id}-h"><code>${esc(file)}</code>${spec.title ? ` <span class="spec-t">${inline(spec.title)}</span>` : ''}</h3>
 <p class="spec-meta">${meta.join('<span aria-hidden="true"> · </span>')}</p>
 </header>
-<div class="card spec-areas"><h4>Core areas <span class="n">${weak ? plural(weak, 'gap') : 'all six written'}</span></h4><ol class="areas">${areas}</ol></div>
+${approvalsCard(spec, team)}<div class="card spec-areas"><h4>Core areas <span class="n">${weak ? plural(weak, 'gap') : 'all six written'}</span></h4><ol class="areas">${areas}</ol></div>
 <div class="bnds">${column('always', 'Always', '✓')}${column('ask', 'Ask first', '?')}${column('never', 'Never', '×')}</div>
 <div class="spec-cols">
 <div class="card"><h4>Open questions <span class="n">${spec.openQuestions.length}</span></h4>${questions}</div>
 <div class="card"><h4>Success criteria <span class="n">${spec.successCriteria.length}</span></h4>${criteria}</div>
 </div>
 </article>`
+}
+
+/** Each required role (format-v2, F5): who signed it and when, or who it waits on. */
+function approvalsCard(spec: Spec, team: Team | null): string {
+  if (!team?.approvals.length) return ''
+  const st = approvalStatus(spec.approvals ?? [], team)
+  const rows = team.approvals.map(role => {
+    const sig = st.signed.find(x => x.role === role)
+    if (sig) return `<li class="ap-ok"><span class="g" aria-hidden="true">✓</span> <b>${esc(role)}</b> ${esc(sig.handle)} <span class="muted">${esc(longDay(sig.day))}</span></li>`
+    const who = st.waiting.find(w => w.role === role)?.who ?? []
+    return `<li class="ap-wait"><span class="g" aria-hidden="true">○</span> <b>${esc(role)}</b> <span class="muted">${who.length ? `waiting on ${esc(who.join(' or '))}` : 'nobody on the team has this role'}</span></li>`
+  })
+  return `<div class="card spec-appr"><h4>Approvals <span class="n">${st.signed.length}/${team.approvals.length}</span></h4><ul class="appr-list">${rows.join('')}</ul></div>
+`
 }
 
 /** No spec: say where one would go and what writes it. */
@@ -118,6 +141,8 @@ const marks = Array.from(
 
 /** This view's CSS, added to the page's stylesheet. */
 export const SPEC_STYLE = `
+.spec-appr{margin-bottom:var(--s4)}.appr-list{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:var(--s2) var(--s5)}
+.appr-list .ap-ok .g{color:var(--done)}.appr-list .ap-wait .g{color:var(--needs)}
 .spec-pick{margin-bottom:var(--s5)}
 .spec-pick ul{display:flex;flex-wrap:wrap;gap:var(--s2);list-style:none;margin:0;padding:0}
 .spec-pick a{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line2);border-radius:var(--r);background:var(--surface);text-decoration:none;color:var(--ink2);min-width:0}

@@ -5,6 +5,8 @@
 
 import { decisions } from './report'
 import { buildState, stateJson, type ProjectIo, type State } from './state'
+import { approvalStatus } from './approvals'
+import { shortDay } from './forecast'
 import { forecastText, specApproval, timelineRows } from './view'
 import { timeline, type SegTone } from './timeline'
 
@@ -86,6 +88,11 @@ export function renderCli(s: CliState, o: CliOptions): string {
     const tag = approval === 'approved' ? p('✓ approved', 'green', 'bold') : p('♦ awaiting approval', 'magenta', 'bold')
     const present = s.spec.areas.filter(a => a.state === 'present').length
     line(`${tag}  ${p(`${present}/${s.spec.areas.length} core areas`, 'grey')}${s.specFiles.length > 1 ? p(`  · ${s.specFiles.length} specs`, 'grey') : ''}`)
+    // format-v2 (F5): signed by role.
+    if (s.team?.approvals.length) {
+      const st = approvalStatus(s.spec.approvals ?? [], s.team)
+      line(fit(`${p('approvals', 'grey')} ${st.text}${st.signed.map(x => ` · ${p('✓', 'green')} ${x.role} ${x.handle} ${shortDay(x.day)}`).join('')}`, inner))
+    }
     const glyph = { present: '✓', empty: '○', missing: '×' } as const
     const tone = { present: 'green', empty: 'yellow', missing: 'red' } as const
     const cells = s.spec.areas.map(a => (a.hint ? `${p('!', 'yellow')} ${a.label}` : `${p(glyph[a.state], tone[a.state])} ${a.label}`))

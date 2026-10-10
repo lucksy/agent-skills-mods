@@ -149,8 +149,8 @@ export type StateJson = {
   schema: 1
   today: string
   cwd: string
-  spec: { file: string | null; title: string | null; approval: ReturnType<typeof specApproval>; areas: Record<string, { state: string; hint: string | null }>; openQuestions: string[] } | null
-  specs: { file: string; title: string | null; status: Spec['status']; created: string | null; approved: string | null }[]
+  spec: { file: string | null; title: string | null; approval: ReturnType<typeof specApproval>; areas: Record<string, { state: string; hint: string | null }>; openQuestions: string[]; approvals: Spec['approvals'] } | null
+  specs: { file: string; title: string | null; status: Spec['status']; created: string | null; approved: string | null; approvals: Spec['approvals'] }[]
   plan: { status: PlanDoc['status'] | null; created: string | null; approved: string | null; openQuestions: string[] } | null
   tasks: { file: string | null; done: number; total: number; current: string | null; items: TaskJson[] } | null
   forecast: Forecast | null
@@ -176,8 +176,9 @@ export function stateJson(s: State): StateJson {
       approval: specApproval(s.spec, !!list),
       areas: Object.fromEntries(s.spec.areas.map(a => [a.key, { state: a.state, hint: a.hint }])),
       openQuestions: s.spec.openQuestions,
+      approvals: s.spec.approvals ?? [],
     },
-    specs: s.specs.map(({ file, spec }) => ({ file, title: spec.title, status: spec.status, created: spec.created ?? null, approved: spec.approvedOn ?? null })),
+    specs: s.specs.map(({ file, spec }) => ({ file, title: spec.title, status: spec.status, created: spec.created ?? null, approved: spec.approvedOn ?? null, approvals: spec.approvals ?? [] })),
     plan: s.plan && { status: s.plan.status ?? null, created: s.plan.created ?? null, approved: s.plan.approvedOn ?? null, openQuestions: s.plan.openQuestions },
     tasks: list && {
       file: s.listFile,

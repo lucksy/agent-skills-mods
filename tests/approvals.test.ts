@@ -4,7 +4,10 @@ import { approvalStatus, clearApprovals, parseApprovals, signSpec } from '../pac
 import { driftedSpec, readFrontMatter } from '../packages/core/format'
 import { parseSpec } from '../packages/core/parse'
 import { parseTeam } from '../packages/core/team'
-import { SPEC } from './fixtures'
+import { SPEC, TODO_TEMPLATE } from './fixtures'
+import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
+import { dashboardHtml } from '../packages/core/dashboard/page'
+import { renderCli } from '../packages/core/cli'
 
 // format-v2 T8 (F5): a spec signed by role. status: approved only once every
 // required role has signed; with no approvals: in tasks/team.md, nothing changes.
@@ -58,5 +61,41 @@ describe('approvals by role (T8)', () => {
     const drifted = driftedSpec(signed, signed.replace('Developers create', 'Admins create'))!
     expect(readFrontMatter(drifted).fields).toMatchObject({ status: 'draft' })
     expect(readFrontMatter(drifted).fields).not.toHaveProperty('approvals')
+  })
+})
+
+describe('approvals in the Spec tab, the CLI and the JSON (T9)', () => {
+  const TEAM_MD = '---\napprovals: design, eng\n---\n| Handle | Role | Email |\n|---|---|---|\n| @amila | lead, eng | a@x.io |\n| @sara | design | s@x.io |\n'
+  const signedOnce = '---\nstatus: draft\ncreated: 2026-10-01\napprovals: design @sara 2026-10-09\n---\n' + SPEC.replace(/^---[\s\S]*?---\n/, '')
+  const state = (spec = signedOnce, team: string | null = TEAM_MD) => {
+    const files: Record<string, string> = { 'SPEC.md': spec, 'tasks/todo.md': TODO_TEMPLATE, ...(team ? { 'tasks/team.md': team } : {}) }
+    const io: ProjectIo = { cwd: '/p', now: Date.parse('2026-10-09T10:00:00Z'), read: async r => files[r] ?? null, list: async r => (r ? [] : Object.keys(files).filter(f => !f.includes('/'))) }
+    return buildState(io)
+  }
+  const specTab = (html: string) => html.match(/<section[^>]*id="view-spec"[\s\S]*?<\/section>\s*<!-- \/view-spec -->/)![0]
+  const words = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ')
+
+  test('the Spec tab lists each role with its signer and day, or who it waits on', async () => {
+    const tab = specTab(dashboardHtml(await state()))
+    expect(tab).toMatch(/<div class="card spec-appr">/)
+    expect(words(tab)).toMatch(/Approvals 1\/2 .*✓ design @sara 9 Oct 2026 .*○ eng waiting on @amila/)
+    expect(words(tab)).toContain('1/2 approved · waiting on @amila (eng)')
+  })
+
+  test('without approvals: in team.md, the tab is as before', async () => {
+    const tab = specTab(dashboardHtml(await state(signedOnce, null)))
+    expect(tab).not.toContain('spec-appr')
+    expect(words(tab)).toContain('Awaiting approval')
+  })
+
+  test('the CLI says who signed and who it waits on', async () => {
+    const out = renderCli(await state(), { color: false, width: 90 })
+    expect(out).toMatch(/approvals 1\/2 approved · waiting on @amila \(eng\) · ✓ design @sara 9 Oct/)
+  })
+
+  test("the JSON carries each spec's signatures", async () => {
+    const json = stateJson(await state())
+    expect(json.spec!.approvals).toEqual([{ role: 'design', handle: '@sara', day: '2026-10-09' }])
+    expect(json.specs[0]!.approvals).toEqual([{ role: 'design', handle: '@sara', day: '2026-10-09' }])
   })
 })

@@ -75,7 +75,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 3: Approvals
 - [x] Task 8: Approvals by role in the spec pane
-- [ ] Task 9: Approvals in the dashboard's Spec tab and the CLI
+- [x] Task 9: Approvals in the dashboard's Spec tab and the CLI
 
 ### Checkpoint: Approvals
 - [ ] A spec signed by two roles flips to approved only on the last signature

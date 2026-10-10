@@ -283,7 +283,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 **Estimated scope:** M
 
 ## Task 9: Approvals in the dashboard's Spec tab and the CLI
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:**
 - The Spec tab shows each required role with its signer and date, or *waiting*, and the picker shows `2/3`.
@@ -291,11 +291,13 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 - State JSON adds each spec's approvals.
 
 **Acceptance criteria:**
-- [ ] The Spec tab and the picker show approvals by role, with names and dates
-- [ ] `agent-skills-progress` shows them in its spec section, and `--json` carries them
+- [x] The Spec tab and the picker show approvals by role, with names and dates
+- [x] `agent-skills-progress` shows them in its spec section, and `--json` carries them
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+
+**Notes:** Checked in Chrome and the CLI on a scratch spec with design signed and eng waiting.
 
 **Dependencies:** T8
 
@@ -315,7 +317,7 @@ Spec drift (an approved spec edited by the agent) also clears the signatures.
 ## Phase 4: Modules
 
 ## Task 10: Module rows, /progress modules and --modules
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `packages/core/modules.ts` builds one row per module of the capability map, from the first table under a "Capability Map" heading in `SPEC.md`: its id, responsibility and dependencies. Each row then gets:
 - **spec:** its `SPEC-<id>.md` status and approval date;
