@@ -125,15 +125,16 @@ export const DASHBOARD_SCRIPT = `(() => {
   const parse = h => { const [v, q = ''] = h.slice(1).split('?'); return [v, new URLSearchParams(q)] }
   b.classList.add('js')
   // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase.
-  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group')
+  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner')
   const board = q => {
     if (!ph) return
     ph.value = q.get('phase') || ''
     st.value = q.get('state') || ''
+    if (ow) ow.value = q.get('owner') || ''
     if (gr) gr.checked = q.get('group') === 'phase'
     b.classList.toggle('grouped', !!gr && gr.checked)
     for (const el of $('view-board').querySelectorAll('[data-state]'))
-      el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value)
+      el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value) || (!!ow && !!ow.value && el.dataset.owner !== (ow.value === '-' ? '' : ow.value))
     for (const c of $('view-board').querySelectorAll('.col'))
       c.querySelector('.n').textContent = c.querySelectorAll('[data-task]:not([hidden])').length
   }
@@ -141,10 +142,11 @@ export const DASHBOARD_SCRIPT = `(() => {
     const q = new URLSearchParams()
     if (ph.value) q.set('phase', ph.value)
     if (st.value) q.set('state', st.value)
+    if (ow && ow.value) q.set('owner', ow.value)
     if (gr && gr.checked) q.set('group', 'phase')
     location.hash = 'board' + (String(q) ? '?' + q : '')
   }
-  for (const c of [ph, st, gr]) if (c) c.addEventListener('change', write)
+  for (const c of [ph, st, gr, ow]) if (c) c.addEventListener('change', write)
   const show = h => {
     let [id, q] = parse(h)
     // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
@@ -278,7 +280,7 @@ function BOARD_STYLE(): string {
 .js .board-tools{display:flex}
 .board-tools select{margin-left:var(--s1);font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r);padding:2px var(--s2)}
 .board-tools .check{display:flex;align-items:center;gap:var(--s1);cursor:pointer}
-.cols5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s3);align-items:start}
+.cols5{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:var(--s3);align-items:start}
 /* The lanes show only when grouped; the plain columns otherwise. */
 .js .swim.js-only{display:none}.js.grouped .swim.js-only{display:block}.js.grouped .flat{display:none}
 .col{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:var(--s2);min-width:0}
@@ -286,13 +288,14 @@ function BOARD_STYLE(): string {
 .col .n{color:var(--ink3);font-weight:500;margin-left:2px}
 .col ul{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}
 .none{margin:var(--s1);color:var(--ink3);font-size:13px}
-.card.c-todo,.card.c-waiting,.card.c-doing,.card.c-blocked,.card.c-done{padding:var(--s2) var(--s3);border-left:3px solid var(--line2)}
+.card.c-todo,.card.c-waiting,.card.c-doing,.card.c-review,.card.c-blocked,.card.c-done{padding:var(--s2) var(--s3);border-left:3px solid var(--line2)}
 .c-doing{border-left-color:var(--doing)!important}.c-blocked{border-left-color:var(--blocked)!important}.c-done{border-left-color:var(--done)!important}.c-waiting{border-left-style:dashed!important}
 .c-title{margin:0;font-weight:550;line-height:1.35}.c-title .id{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
 .c-done .c-title{color:var(--ink2)}
 .c-meta{margin:var(--s1) 0 0;font-size:12.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:2px var(--s2);justify-content:space-between}
 .c-meta .why{color:var(--blocked)}
-.c-phase{color:var(--ink3);white-space:nowrap}.lane .c-phase{display:none}
+.c-phase{color:var(--ink3);white-space:nowrap}.c-owner{color:var(--ink);font-weight:550;white-space:nowrap}
+.c-review{border-left-color:var(--focus)!important}.lane .c-phase{display:none}
 .cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
 .cp span{color:var(--needs)}
 .lane+.lane{margin-top:var(--s5)}

@@ -294,3 +294,39 @@ describe('Board (K2)', () => {
     expect(text(section(dashboardHtml(await buildState(io({}))), 'board'))).toContain('No task list yet')
   })
 })
+
+describe('Board with a team (format-v2 T6)', () => {
+  // T1 done by @amila; T2 in review (owner @amila, PR #42, reviewer @sara); T3 waiting, owned by @sara; T4 unowned.
+  const own = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n**Status:** ${line}\n`)
+  const todo = own(own(own(TODO_TEMPLATE, '1', 'Monorepo scaffold', 'done · @amila · started 2026-09-29 · done 2026-10-01'), '2', 'Prisma schema for keys', 'in review · @amila · started 2026-10-07 · PR #42 · reviewer @sara'), '3', 'Issue and revoke keys', 'todo · @sara')
+  const board = async (t = todo) => section(dashboardHtml(await buildState(io({ 'tasks/todo.md': t }))), 'board')
+  const column = (html: string, key: string) => {
+    const col = html.match(new RegExp(`<section class="col" data-col="${key}"[\\s\\S]*?</section>`))?.[0] ?? ''
+    return [...col.matchAll(/data-task="(T\d+)"/g)].map(m => m[1])
+  }
+
+  test('an In review column between In progress and Blocked, only when a task is in review', async () => {
+    const flat = (await board()).split('<div class="swim')[0]!
+    expect([...flat.matchAll(/data-col="(\w+)"/g)].map(m => m[1])).toEqual(['todo', 'waiting', 'doing', 'review', 'blocked', 'done'])
+    expect(column(flat, 'review')).toEqual(['T2'])
+    expect(column(flat, 'doing')).toEqual([])
+    const none = (await board(TODO_TEMPLATE)).split('<div class="swim')[0]!
+    expect([...none.matchAll(/data-col="(\w+)"/g)].map(m => m[1])).not.toContain('review')
+  })
+
+  test('cards name their owner, and a card in review its PR and reviewer', async () => {
+    const t = text(await board())
+    expect(t).toMatch(/T2 Prisma schema for keys .*@amila · PR #42 · reviewer @sara/)
+    expect(t).toMatch(/T3 Issue and revoke keys .*waits on T2 .*@sara/)
+    expect(await board()).toMatch(/data-task="T3"[^>]*data-owner="sara"/)
+    expect(await board()).toMatch(/data-task="T4"[^>]*data-owner=""/)
+  })
+
+  test('a person filter lists the owners; without owners there is none', async () => {
+    const html = await board()
+    expect(html).toMatch(/<select [^>]*id="board-owner"[\s\S]*?<option value="">Everyone<\/option><option value="amila">@amila<\/option><option value="sara">@sara<\/option><option value="-">No owner<\/option>/)
+    expect(await board(TODO_TEMPLATE)).not.toContain('id="board-owner"')
+    expect(DASHBOARD_SCRIPT).toContain('board-owner')
+    expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+  })
+})
