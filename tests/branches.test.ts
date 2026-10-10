@@ -199,6 +199,18 @@ describe('collisions', () => {
     expect(collisions(b, NOW).map(c => [c.id, c.why])).toEqual([['T1', ['under way']]])
   })
 
+  test('a branch cut while the task was under way carries the same claim: same owner, same start day, not a collision', () => {
+    const b = board(todo(['in review · @amila · started 2026-10-10']), [{ name: 'feat/t2', text: todo(['in progress · @amila · started 2026-10-10']) }])
+    expect(collisions(b, NOW)).toEqual([])
+    const t = parseTasks(todo(['in progress · @amila · started 2026-10-10'])).tasks[0]!
+    expect(collisionOf(t, b, NOW)).toBeNull()
+  })
+
+  test('an owner written in another case is the same person', () => {
+    const b = board(todo(['in progress · @Amila · started 2026-10-10']), [{ name: 'feat/x', text: todo(['todo · @amila']) }])
+    expect(collisions(b, NOW)).toEqual([])
+  })
+
   test('two different owners is a collision, even when only one branch has started it', () => {
     const b = board(todo(['in progress · @amila · started 2026-10-10']), [{ name: 'feat/x', text: todo(['todo · @sara']) }])
     const [c] = collisions(b, NOW)

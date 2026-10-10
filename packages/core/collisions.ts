@@ -24,6 +24,9 @@ export type Collision = {
 
 const UNDER_WAY = new Set<TaskStatusWord>(['in progress', 'in review'])
 
+/** An owner as a handle compares: `@Sara` and `sara` are one person. */
+const handle = (owner: string) => owner.replace(/^@/, '').toLowerCase()
+
 /** The branch a ref stands for: `origin/feat/x` is the same branch as `feat/x`. */
 export const branchOf = (r: Pick<RefState, 'ref' | 'remote'>) => (r.remote ? r.ref.replace(/^[^/]+\//, '') : r.ref)
 
@@ -39,16 +42,19 @@ function ageOf(r: RefState, now: number): string | null {
  * Whether these refs' copies of one task collide: under way (in progress or in
  * review) on two branches, or two different owners where it is not done. Done
  * on one branch while under way on another is not a collision. A branch read
- * twice (local and remote-tracking) counts once, its first copy kept.
+ * twice (local and remote-tracking) counts once, its first copy kept. A copy a
+ * branch carried over when it was cut (the same owner and start day) is the same
+ * claim, not a second one. Owners compare as handles do, in any case.
  */
 function clash(on: RefState[]): { why: Collision['why']; on: RefState[] } | null {
   const seen = new Set<string>()
   const refs = on.filter(r => !seen.has(branchOf(r)) && seen.add(branchOf(r)))
   const under = refs.filter(r => UNDER_WAY.has(r.state))
   const owned = refs.filter(r => r.state !== 'done' && r.owner)
+  const claims = new Set(under.map(r => (r.owner && r.started ? `${handle(r.owner)} ${r.started}` : branchOf(r))))
   const why: Collision['why'] = []
-  if (under.length >= 2) why.push('under way')
-  if (new Set(owned.map(r => r.owner)).size >= 2) why.push('owners')
+  if (claims.size >= 2) why.push('under way')
+  if (new Set(owned.map(r => handle(r.owner!))).size >= 2) why.push('owners')
   if (why.length === 0) return null
   const involved = new Set([...(why.includes('under way') ? under : []), ...(why.includes('owners') ? owned : [])])
   return { why, on: refs.filter(r => involved.has(r)) }
