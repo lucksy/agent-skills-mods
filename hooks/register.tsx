@@ -36,6 +36,7 @@ import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
+import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
 import {
   bandText,
@@ -736,6 +737,73 @@ async function signoffCommand($: $): Promise<string> {
 }
 
 /**
+ * `/progress merge-driver [install|uninstall|status]` (team-view, T8): git's
+ * task-aware merge for tasks/todo.md, the plan and the specs. install and
+ * uninstall say what they would write and ask first; `yes` writes. The lines
+ * go in .gitattributes (committed) and the driver, with this copy's absolute
+ * script path, in .git/config (each clone). Every other byte of both is kept.
+ */
+async function mergeDriverCommand($: $, words: string[]): Promise<string> {
+  const cwd = await $.session.cwd()
+  const verb = (words[0] ?? 'status').toLowerCase()
+  const yes = words[1]?.toLowerCase() === 'yes'
+  if (!['install', 'uninstall', 'status'].includes(verb) || words.length > 2 || (words[1] !== undefined && (!yes || verb === 'status'))) {
+    return 'Use: /progress merge-driver [install|uninstall|status]. install and uninstall ask first.'
+  }
+  const r = await $.process.run(['git', 'rev-parse', '--git-common-dir'], { timeoutMs: 10_000 }).catch(() => null)
+  const gitDir = r && r.exitCode === 0 ? r.stdout.trim() : ''
+  if (!gitDir) return 'Not a git repository here, so there is no merge for the driver to run.'
+  const configPath = `${gitDir.startsWith('/') ? gitDir : `${cwd}/${gitDir}`}/config`
+  const attrPath = `${cwd}/.gitattributes`
+  const [attrs, config] = [await readText($, attrPath), await readText($, configPath)]
+  const script = `${$.plugin.root}/scripts/agent-skills-progress.mjs`
+  const now = driverStatus(attrs, config)
+  if (verb === 'status') return driverStatusText(now, now.script !== null && (await $.fs.exists(now.script)))
+
+  if (verb === 'install') {
+    const [nextAttrs, nextConfig] = [addAttributes(attrs), addDriverConfig(config, script)]
+    if (nextAttrs === (attrs ?? '') && nextConfig === config) return `The merge driver is already installed; it runs ${script}.`
+    if (!yes) {
+      return [
+        'Installing the merge driver writes:',
+        `.gitattributes (commit it, so everyone's git uses it):`,
+        ...ATTRIBUTE_LINES.map(l => `  ${l}`),
+        `.git/config (this clone only):`,
+        ...driverSection(script).trimEnd().split('\n').map(l => `  ${l}`),
+        'Run `/progress merge-driver install yes` to write them.',
+      ].join('\n')
+    }
+    if (nextAttrs !== (attrs ?? '')) await $.fs.write(attrPath, nextAttrs)
+    if (nextConfig !== config) await $.fs.write(configPath, nextConfig)
+    return 'Installed the merge driver: git now merges tasks/todo.md by task and specs\' approvals by role, with conflict markers only where it can\'t. Commit .gitattributes; each clone runs install once for its .git/config.'
+  }
+
+  const nextConfig = config === null ? null : removeDriverConfig(config)
+  const nextAttrs = attrs === null ? null : removeAttributes(attrs)
+  if (nextConfig === config && nextAttrs === attrs) return 'The merge driver is not installed, so there is nothing to remove.'
+  if (!yes) {
+    return [
+      'Uninstalling the merge driver removes:',
+      ...(now.attributes.length ? [`.gitattributes: ${now.attributes.length} line${now.attributes.length === 1 ? '' : 's'} (${now.attributes.map(l => l.split(/\s+/)[0]).join(', ')})`] : []),
+      ...(now.driver !== null || nextConfig !== config ? [`.git/config: the [merge "agent-skills"] section`] : []),
+      'Every other line stays. Run `/progress merge-driver uninstall yes` to remove them.',
+    ].join('\n')
+  }
+  if (nextConfig !== null && nextConfig !== config) await $.fs.write(configPath, nextConfig)
+  if (attrs !== null && nextAttrs !== attrs) {
+    // Only the driver's lines were in it: the file goes, as it was before install.
+    let removed = false
+    if (nextAttrs === null) {
+      try {
+        removed = (await $.process.run(['rm', '--', attrPath], { timeoutMs: 10_000 })).exitCode === 0
+      } catch {}
+    }
+    if (!removed) await $.fs.write(attrPath, nextAttrs ?? '')
+  }
+  return 'Removed the merge driver: git merges tasks/todo.md and the specs line by line again. Commit the .gitattributes change.'
+}
+
+/**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
  * board shows (the plugin's own history included), opened on `view`. Written even
  * without a task list, since the page then says how to start.
@@ -1198,12 +1266,13 @@ export const register: Register = (on, options) => {
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
+      if (verb === 'merge-driver') return reply(await mergeDriverCommand($, words))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

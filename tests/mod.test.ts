@@ -1496,3 +1496,66 @@ test('/progress signoff signs the checkpoint that is due; with none due it says 
   expect(files[`${CWD}/tasks/todo.md`]).toContain('## Checkpoint: After Tasks 1-2\n**Signed off:** @amila 2026-10-09\n- [ ] All tests pass\n- [x] Review with human before proceeding\n')
   expect((await $.command.run(run('signoff'))).text).toBe('No checkpoint is due: every checkpoint reached is signed off.')
 })
+
+// team-view T8: the merge driver is installed only after a yes, and uninstall puts both files back.
+const ATTRS_BEFORE = '*.png binary\n'
+const CONFIG_BEFORE = '[core]\n\trepositoryformatversion = 0\n\tbare = false\n[remote "origin"]\n\turl = git@example.com:x.git\n'
+const inRepo = { log: '', cat: '', answer: (argv: string[]) => (argv[1] === 'rev-parse' ? '.git\n' : '') }
+test('/progress merge-driver install asks first, writes exactly the spec\'s lines, and uninstall restores both files byte for byte', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/.gitattributes`]: ATTRS_BEFORE, [`${CWD}/.git/config`]: CONFIG_BEFORE }
+  world(on, files, inRepo)
+  expect((await $.command.run(run('merge-driver'))).text).toBe('The merge driver is not installed. /progress merge-driver install shows what it writes and asks first.')
+
+  const asked = (await $.command.run(run('merge-driver install'))).text
+  // This copy's CLI, by its absolute path.
+  const script = /driver = node (\/\S+\/scripts\/agent-skills-progress\.mjs) --merge/.exec(asked ?? '')?.[1] ?? ''
+  expect(script).not.toBe('')
+  files[script] = '// the CLI\n'
+  expect(asked).toContain('tasks/todo.md   merge=agent-skills\n')
+  expect(asked).toContain(`driver = node ${script} --merge %O %A %B %P`)
+  expect(asked).toMatch(/Run `\/progress merge-driver install yes` to write them\.$/)
+  expect(files[`${CWD}/.gitattributes`]).toBe(ATTRS_BEFORE)
+  expect(files[`${CWD}/.git/config`]).toBe(CONFIG_BEFORE)
+
+  expect((await $.command.run(run('merge-driver install yes'))).text).toMatch(/^Installed the merge driver/)
+  expect(files[`${CWD}/.gitattributes`]).toBe(
+    `${ATTRS_BEFORE}tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n`,
+  )
+  expect(files[`${CWD}/.git/config`]).toBe(`${CONFIG_BEFORE}[merge "agent-skills"]\n    name = agent-skills task-aware merge\n    driver = node ${script} --merge %O %A %B %P\n`)
+  expect((await $.command.run(run('merge-driver status'))).text).toBe(`The merge driver is installed: git merges tasks/todo.md by task and specs' approvals by role. It runs ${script}.`)
+  expect((await $.command.run(run('merge-driver install'))).text).toBe(`The merge driver is already installed; it runs ${script}.`)
+
+  // A broken path: the plugin moved.
+  delete files[script]
+  expect((await $.command.run(run('merge-driver status'))).text).toMatch(new RegExp(`^Broken path: \\.git/config runs ${script.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}, which isn't there`))
+
+  const removing = (await $.command.run(run('merge-driver uninstall'))).text
+  expect(removing).toMatch(/Run `\/progress merge-driver uninstall yes` to remove them\.$/)
+  expect(files[`${CWD}/.git/config`]).toContain('[merge "agent-skills"]')
+  expect((await $.command.run(run('merge-driver uninstall yes'))).text).toMatch(/^Removed the merge driver/)
+  expect(files[`${CWD}/.gitattributes`]).toBe(ATTRS_BEFORE)
+  expect(files[`${CWD}/.git/config`]).toBe(CONFIG_BEFORE)
+  expect((await $.command.run(run('merge-driver uninstall yes'))).text).toBe('The merge driver is not installed, so there is nothing to remove.')
+})
+
+test('/progress merge-driver: a .gitattributes install created goes again on uninstall; outside git it says so', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/.git/config`]: CONFIG_BEFORE }
+  world(on, files, inRepo)
+  await $.command.run(run('merge-driver install yes'))
+  expect(files[`${CWD}/.gitattributes`]).toBe(ATTRIBUTE_TEXT)
+  // Half installed: the lines without the driver.
+  files[`${CWD}/.git/config`] = CONFIG_BEFORE
+  expect((await $.command.run(run('merge-driver status'))).text).toMatch(/^\.gitattributes names the driver, but \.git\/config has no \[merge "agent-skills"\] entry/)
+  await $.command.run(run('merge-driver uninstall yes'))
+  expect(`${CWD}/.gitattributes` in files).toBe(false)
+  expect(files[`${CWD}/.git/config`]).toBe(CONFIG_BEFORE)
+  expect((await $.command.run(run('merge-driver install now'))).text).toBe('Use: /progress merge-driver [install|uninstall|status]. install and uninstall ask first.')
+})
+
+test('/progress merge-driver outside a git repository writes nothing', async ($, on) => {
+  const files: Record<string, string> = {}
+  world(on, files)
+  expect((await $.command.run(run('merge-driver install yes'))).text).toBe('Not a git repository here, so there is no merge for the driver to run.')
+  expect(Object.keys(files)).toEqual([])
+})
+const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n'

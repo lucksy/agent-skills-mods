@@ -187,18 +187,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 8: The merge driver, installed and run by git
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** The CLI's `--merge %O %A %B %P` reads the three files and picks the merge by path. For a task list it calls `mergeTodo`, and for a spec or plan it calls `mergeFrontMatter` plus `git merge-file`. It writes `%A`, prints renumbers to stderr and exits 0 or 1. `/progress merge-driver install` asks first, then writes the `.gitattributes` lines and the `.git/config` entry with an absolute script path. `uninstall` removes both. `status` reports installed, missing or a broken path.
 
 **Acceptance criteria:**
-- [ ] In `scripts/test.sh`, a real `git merge` of two branches that ticked boxes and moved different tasks is clean, with no markers
-- [ ] A delete on one side and an edit on the other leaves markers around that task only, and git reports the conflict
-- [ ] `install` asks before it writes, writes exactly the spec's lines, and `uninstall` restores both files byte for byte
+- [x] In `scripts/test.sh`, a real `git merge` of two branches that ticked boxes and moved different tasks is clean, with no markers
+- [x] A delete on one side and an edit on the other leaves markers around that task only, and git reports the conflict
+- [x] `install` asks before it writes, writes exactly the spec's lines, and `uninstall` restores both files byte for byte
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T7
 

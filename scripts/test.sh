@@ -105,6 +105,66 @@ fi
 kill "$serve_pid" 2>/dev/null; wait "$serve_pid" 2>/dev/null
 check serve-bad-port '--port takes a number' node "$script" "$tmp/live" --serve --port nope
 
+# The merge driver (team-view T8): a real `git merge` in a throwaway repo, never this repo's config.
+repo="$tmp/merge"; mkdir -p "$repo/tasks"
+g() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@"; }
+g init -q -b main
+g config merge.agent-skills.name 'agent-skills task-aware merge'
+g config merge.agent-skills.driver "node '$script' --merge %O %A %B %P"
+printf 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n' > "$repo/.gitattributes"
+cat > "$repo/tasks/todo.md" <<'MD'
+# Tasks: keys
+
+## Task 1: Scaffold
+**Status:** in progress · started 2026-10-02
+
+- [ ] Builds
+- [ ] Lints
+
+**Dependencies:** None
+
+## Task 2: Schema
+**Status:** todo
+
+- [ ] Table
+
+**Dependencies:** T1
+
+## Task 3: Rate limit
+**Status:** todo
+
+- [ ] 429 after 60 req/min
+
+**Dependencies:** T2
+MD
+g add -A; g commit -qm base
+# Both sides tick a box in T1 (neighbouring lines: a line merge conflicts) and move a different task.
+g checkout -qb ann
+sed -i.bak -e 's/- \[ \] Builds/- [x] Builds/' -e '/## Task 2/{n;s/.*/**Status:** in progress · started 2026-10-10/;}' "$repo/tasks/todo.md"; rm -f "$repo/tasks/todo.md.bak"
+g commit -qam ann
+g checkout -q main; g checkout -qb bob
+sed -i.bak -e 's/- \[ \] Lints/- [x] Lints/' -e '/## Task 3/{n;s/.*/**Status:** blocked · started 2026-10-10/;}' "$repo/tasks/todo.md"; rm -f "$repo/tasks/todo.md.bak"
+g commit -qam bob
+g checkout -q ann
+if out=$(g merge -q --no-edit bob 2>&1) && ! grep -q '^<<<<<<<\|^>>>>>>>' "$repo/tasks/todo.md"; then echo "ok   merge-driver-clean"; else echo "FAIL merge-driver-clean:"; echo "$out" | sed 's/^/       /'; sed 's/^/       /' "$repo/tasks/todo.md"; fail=1; fi
+merged=$(cat "$repo/tasks/todo.md")
+if [[ $merged == *'- [x] Builds'*'- [x] Lints'* && $merged == *$'## Task 2: Schema\n**Status:** in progress · started 2026-10-10'* && $merged == *$'## Task 3: Rate limit\n**Status:** blocked · started 2026-10-10'* ]]; then echo "ok   merge-driver-both-sides-kept"; else echo "FAIL merge-driver-both-sides-kept:"; echo "$merged" | sed 's/^/       /'; fail=1; fi
+# A delete on one side, an edit on the other: markers around that task only, and git reports the conflict.
+g checkout -qb del
+awk '/^## Task 3/{skip=1} !skip' "$repo/tasks/todo.md" > "$repo/todo.tmp" && mv "$repo/todo.tmp" "$repo/tasks/todo.md"
+g commit -qam 'drop T3'
+g checkout -q ann; g checkout -qb edit
+sed -i.bak 's/- \[ \] 429 after 60 req\/min/- [x] 429 after 60 req\/min/' "$repo/tasks/todo.md"; rm -f "$repo/tasks/todo.md.bak"
+g commit -qam 'tick T3'
+g checkout -q del
+out=$(g merge --no-edit edit 2>&1); code=$?
+if (( code != 0 )) && [[ $(g diff --name-only --diff-filter=U) == tasks/todo.md ]]; then echo "ok   merge-driver-conflict-reported"; else echo "FAIL merge-driver-conflict-reported (exit $code):"; echo "$out" | sed 's/^/       /'; fail=1; fi
+if [[ $out == *'T3: deleted in ours, changed in theirs'* ]]; then echo "ok   merge-driver-says-which-task"; else echo "FAIL merge-driver-says-which-task:"; echo "$out" | sed 's/^/       /'; fail=1; fi
+inside=$(awk '/^<<<<<<< /{m=1} m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
+outside=$(awk '/^<<<<<<< /{m=1} !m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
+if [[ $(grep -c '^<<<<<<< ' "$repo/tasks/todo.md") == 1 && $inside == *'## Task 3: Rate limit'*'- [x] 429 after 60 req/min'* && $inside != *'Task 1'* && $inside != *'Task 2'* && $outside == *'- [x] Builds'*'## Task 2: Schema'* ]]; then echo "ok   merge-driver-markers-one-task"; else echo "FAIL merge-driver-markers-one-task:"; sed 's/^/       /' "$repo/tasks/todo.md"; fail=1; fi
+check merge-driver-usage '--merge takes <base> <ours> <theirs> <path>' node "$script" --merge a b
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

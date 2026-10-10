@@ -5,16 +5,18 @@
 //
 //   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
+//   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
 // No dependencies: Node 22.6 or newer (it runs the plugin's TypeScript through
 // Node's type stripping), or Bun.
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { watch } from 'node:fs'
+import { mkdtempSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import * as nodeModule from 'node:module'
 
 // Node notes that it strips types and guesses the module format; neither is news here.
@@ -55,6 +57,10 @@ Usage: agent-skills-progress [dir] [options]
                   it reloads when the plan changes. Ctrl-C stops it
   --port <n>      the port --serve listens on (default 7357; 0 picks a free one)
   --no-open       don't open the page in a browser
+  --merge <base> <ours> <theirs> <path>
+                  git's merge driver (%O %A %B %P): merges tasks/todo.md by task and a
+                  spec's approvals by role, writes <ours>, exits 1 on a conflict.
+                  /progress merge-driver install sets it up
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
   --no-git        skip git history (no ETA until 3 tasks are done today)
   --no-color      plain text (also NO_COLOR=1, or when not a terminal)
@@ -85,6 +91,12 @@ function parseArgs(argv) {
       if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) throw new Error(`--port takes a number from 0 to 65535`)
     }
     else if (a === '--no-open') o.open = false
+    else if (a === '--merge') {
+      o.mode = 'merge'
+      o.merge = argv.slice(i + 1, i + 5)
+      if (o.merge.length < 4) throw new Error('--merge takes <base> <ours> <theirs> <path>, as git passes %O %A %B %P')
+      i += 4
+    }
     else if (a === '--no-git') o.git = false
     else if (a === '--no-color') o.color = false
     else if (a === '--color') o.color = true
@@ -134,6 +146,7 @@ function spinner(text) {
 async function main() {
   const o = parseArgs(process.argv.slice(2))
   if (o.mode === 'help') return console.log(HELP)
+  if (o.mode === 'merge') return mergeDriver(...o.merge)
   const { gather, renderBrief, renderCli, renderJson, renderTimelineCli } = await import('../packages/core/cli.ts')
   const { specCandidates } = await import('../packages/core/view.ts')
   const cwd = resolve(o.dir)
@@ -188,6 +201,52 @@ async function main() {
   if (o.mode === 'brief') return console.log(renderBrief(state, { color }))
   const width = o.width || Math.min(110, process.stdout.columns || 80)
   console.log(o.mode === 'timeline' ? renderTimelineCli(state, { color, width }) : renderCli(state, { color, width }))
+}
+
+/**
+ * --merge (team-view T8): git's merge driver. Reads the three files, merges by
+ * path (packages/core/mergedriver.ts) with `git merge-file` for the lines it
+ * doesn't own, writes the result over <ours>, prints renumbers and conflicts to
+ * stderr and exits 1 when markers are left, as git expects.
+ */
+async function mergeDriver(basePath, oursPath, theirsPath, path) {
+  const { driverReport, mergeByPath } = await import('../packages/core/mergedriver.ts')
+  const { parseTeam } = await import('../packages/core/team.ts')
+  const [base, ours, theirs] = await Promise.all([basePath, oursPath, theirsPath].map(f => readFile(f, 'utf8')))
+  // git runs the driver at the top of the work tree, where tasks/team.md names the roles a spec needs.
+  const team = await readFile('tasks/team.md', 'utf8').then(parseTeam, () => null)
+  let r
+  try {
+    r = mergeByPath(path, base, ours, theirs, { lineMerge: gitMergeFile, required: team?.approvals })
+  } catch (err) {
+    // Never leave <ours> alone as if it had won: the plain line merge, markers and all.
+    const m = gitMergeFile(base, ours, theirs)
+    r = { text: m.text, conflicts: m.clean ? [] : [`the task-aware merge failed (${err?.message ?? err}); merged line by line`], renumbered: [] }
+  }
+  await writeFile(oursPath, r.text)
+  for (const line of driverReport(path, r)) console.error(`agent-skills merge: ${line}`)
+  process.exitCode = r.conflicts.length ? 1 : 0
+}
+
+/** `git merge-file -p` over temp copies: markers read `<<<<<<< ours` / `>>>>>>> theirs`, as the core's do. */
+function gitMergeFile(base, ours, theirs) {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-skills-merge-'))
+  try {
+    const [b, o, t] = ['base', 'ours', 'theirs'].map(n => join(dir, n))
+    writeFileSync(b, base)
+    writeFileSync(o, ours)
+    writeFileSync(t, theirs)
+    const r = spawnSync('git', ['merge-file', '-p', '-L', 'ours', '-L', 'base', '-L', 'theirs', o, b, t], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    // 0 clean, 1-127 the number of conflicts; anything else (no git, an error) falls back to whole sides.
+    if (r.error || r.status === null || r.status < 0 || r.status > 127) throw new Error(r.error?.message ?? r.stderr ?? 'git merge-file failed')
+    return { text: r.stdout, clean: r.status === 0 }
+  } catch {
+    if (ours === theirs || theirs === base) return { text: ours, clean: true }
+    if (ours === base) return { text: theirs, clean: true }
+    return { text: `<<<<<<< ours\n${ours}=======\n${theirs}>>>>>>> theirs\n`, clean: false }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 /**
