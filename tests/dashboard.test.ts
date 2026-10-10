@@ -81,6 +81,12 @@ describe('the dashboard page (K6)', () => {
     }
   })
 
+  test('a link to one spec (#spec-<file>) opens the Spec view on it, and the picker says which is chosen', () => {
+    // The script runs only in a browser (checked in Chrome); here, that it handles those addresses.
+    expect(DASHBOARD_SCRIPT).toContain("id.startsWith('spec-')")
+    expect(DASHBOARD_SCRIPT).toContain('aria-current')
+  })
+
   test('it opens on the view asked for, else the Overview', async () => {
     const s = await project()
     expect(dashboardHtml(s, { view: 'overview' })).toContain('data-view="overview"')
@@ -200,8 +206,10 @@ describe('the chart bundle (K4)', () => {
   test('it is inlined only when the page has a chart to draw', async () => {
     expect(chartsScript('<p>no charts here</p>')).toBe('')
     expect(chartsScript(chartMount({ kind: 'line', data: [], colors: ['--done'] }, 'Tasks done: 3 of 4.'))).toBe(`<script>${CHARTS_JS}</script>`)
-    // The Overview has no charts: the page carries only its own two scripts.
-    expect(dashboardHtml(await project()).match(/<script\b/g)!.length).toBe(2)
+    // A project without two days of history has no chart: the page carries only its own two scripts.
+    expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_T3_DONE }))).match(/<script\b/g)!.length).toBe(2)
+    // With history the Flow view draws, and the bundle comes along.
+    expect(dashboardHtml(await project())).toContain(`<script>${CHARTS_JS}</script>`)
   })
 
   test('the bundle cannot end its script block, and is generated, not hand-written', () => {

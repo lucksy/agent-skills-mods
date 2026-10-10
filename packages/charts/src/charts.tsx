@@ -110,7 +110,7 @@ function lineLayers(spec: Spec) {
           d={lineGenerator(s.data.map((d: any) => d.position)) ?? ''}
           fill="none"
           stroke={s.color}
-          strokeWidth={dashed.has(s.id) ? 1.5 : 2}
+          strokeWidth={dashed.has(s.id) ? 1.5 : Number(spec.props?.lineWidth ?? 2)}
           strokeDasharray={dashed.has(s.id) ? '5 4' : undefined}
         />
       ))}

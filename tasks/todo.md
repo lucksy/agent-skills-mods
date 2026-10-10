@@ -273,7 +273,7 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 **Estimated scope:** S
 
 ## Task 9: Flow view: burn-up, cumulative flow, cycle time, aging WIP (Nivo)
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `flow.ts` gives each chart a `<div data-chart="…">` mount point, a one-line text summary, and the series the chart is handed, built from State in TypeScript and so testable. The chart bundle from T14 draws:
 - burn-up: `@nivo/line`, with scope, done, and the forecast band to the ETA;
@@ -284,13 +284,24 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 With too little history, a chart shows "needs N days" instead. Without JS, the summaries show.
 
 **Acceptance criteria:**
-- [ ] For the fixture with history, each chart's series match the state (the same numbers as `/progress charts`), and each summary names its latest numbers
-- [ ] Aging WIP marks tasks running over twice the usual days, the same threshold as the band alert
-- [ ] Without enough history, each chart shows its "needs" message and the bundle is left out of the page
+- [x] For the fixture with history, each chart's series match the state (the same numbers as `/progress charts`), and each summary names its latest numbers
+- [x] Aging WIP marks tasks running over twice the usual days, the same threshold as the band alert
+- [x] Without enough history, each chart shows its "needs" message and the bundle is left out of the page
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check in Chrome: all four charts draw, tooltips on hover, light and dark, no console errors or requests
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check in Chrome: all four charts draw, tooltips on hover, light and dark, no console errors or requests
+
+**Notes:**
+- Built by a workflow agent on branch `t9-flow-view`, reviewed independently, merged with fixes.
+- Tooltips are words carried on each datum (`tip`). The bundle reads the named fields `format`, `dashed`, `cone` and `guides`.
+- Checked in Chrome on a project with git history: all four charts draw, tooltips work, light and dark, no console messages.
+- Review fixes:
+  - `chartMount` moved to `html.ts`, which removed the copy kept to avoid an import cycle.
+  - The legends use the page's state glyphs.
+  - The custom line layer honours `lineWidth`.
+  - An outdated script-count assertion was fixed.
+- Not done: aging WIP leaves out a started task that is now blocked, as the band alert does. Cycle-time dots sit on the axis ends; see T12.
 
 **Dependencies:** T4, T14
 
@@ -328,7 +339,7 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** S
 
 ## Task 11: Spec view
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `spec.ts` draws one section per spec file (`SPEC.md`, `SPEC-*.md`, `specs/*.md`), with a picker. Each section shows:
 - approval and its date;
@@ -337,13 +348,19 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 - open questions.
 
 **Acceptance criteria:**
-- [ ] Every spec file in State appears in the picker, and each section's area states and hints match the spec pane's `areaSummary`
-- [ ] Approval shows *approved* with its date, or *awaiting approval*
-- [ ] With no spec, the view says where one would go
+- [x] Every spec file in State appears in the picker, and each section's area states and hints match the spec pane's `areaSummary`
+- [x] Approval shows *approved* with its date, or *awaiting approval*
+- [x] With no spec, the view says where one would go
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: on this repo the picker lists SPEC.md, SPEC-core.md and SPEC-dashboard.md
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: on this repo the picker lists SPEC.md, SPEC-core.md and SPEC-dashboard.md
+
+**Notes:**
+- Built by a workflow agent on branch `t11-spec-view`, reviewed (ready), merged.
+- The picker is in-page links plus CSS `:target`, so it works without JS. The page script now opens the Spec view for a `#spec-<file>` link and sets `aria-current` on the chosen spec.
+- Success criteria show without checkboxes, because the parser drops `[ ]`/`[x]`.
+- Boundaries and lists are split at commas by the shared spec parser, as in the spec pane. That needs a parser change, outside this task.
 
 **Dependencies:** T4
 

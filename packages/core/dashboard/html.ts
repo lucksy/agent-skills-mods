@@ -3,6 +3,21 @@
 /** Text from markdown, safe in HTML content and in double-quoted attributes. */
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+/** A chart as a view describes it: what packages/charts draws with Nivo. Colours name the page's CSS tokens. */
+export type ChartSpec = {
+  kind: 'line' | 'bar' | 'scatter'
+  data: unknown[]
+  colors: string[]
+  /** Plain Nivo props: anything JSON can carry. */
+  props?: Record<string, unknown>
+  height?: number
+}
+
+/** A chart's mount: its spec for the bundle, and its one-line summary, which is what a page without JS shows. */
+export function chartMount(spec: ChartSpec, summary: string): string {
+  return `<div class="chart" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
+}
+
 /** `1 task`, `3 tasks`. */
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 

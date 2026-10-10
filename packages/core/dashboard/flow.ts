@@ -13,15 +13,9 @@ import { daily, throughput } from '../chart'
 import { shortDay, type Snapshot } from '../forecast'
 import { taskDays, type ReportInput } from '../report'
 import type { State } from '../state'
-// Types only from the page: page.ts imports this view for its stylesheet, and a
+// chartMount lives in html.ts, not page.ts: page.ts imports this view, so a
 // runtime import back would make a cycle the engine may evaluate this side first.
-import type { ChartSpec } from './page'
-import { esc, plainInline, plural } from './html'
-
-/** A chart's mount, exactly as page.ts's chartMount writes it (a test holds the two together). */
-export function mountHtml(spec: ChartSpec, summary: string): string {
-  return `<div class="chart" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
-}
+import { chartMount, esc, plainInline, plural, type ChartSpec } from './html'
 
 /** A named axis format the bundle maps to a function: JSON cannot carry one. */
 export type AxisFormat = 'day' | 'int' | 'days'
@@ -121,10 +115,10 @@ export function burnupChart(s: State): FlowChart {
 // ------------------------------------------------------------------ cumulative flow
 
 const STATES = [
-  { key: 'done', label: 'done', token: '--done' },
-  { key: 'doing', label: 'in progress', token: '--doing' },
-  { key: 'blocked', label: 'blocked', token: '--blocked' },
-  { key: 'todo', label: 'to do', token: '--todo' },
+  { key: 'done', label: 'done', token: '--done', glyph: '✓' },
+  { key: 'doing', label: 'in progress', token: '--doing', glyph: '●' },
+  { key: 'blocked', label: 'blocked', token: '--blocked', glyph: '■' },
+  { key: 'todo', label: 'to do', token: '--todo', glyph: '○' },
 ] as const
 
 /** A day's tasks by state; snapshots from before 0.5.0 keep no in progress or blocked, which count as 0. */
@@ -137,7 +131,8 @@ const countsOf = (d: Snapshot) => {
 /** Tasks by state per day, stacked bottom to top: done, in progress, blocked, to do (as `/progress charts` stacks them). */
 export function cumulativeFlowChart(s: State): FlowChart {
   const series = daily(s.snapshots)
-  const legend = STATES.map(k => ({ glyph: '■', token: k.token, label: k.label }))
+  // The page's state glyphs, as the Overview and the Board use them.
+  const legend = STATES.map(k => ({ glyph: k.glyph, token: k.token, label: k.label }))
   const base = { key: 'cfd' as const, title: 'Cumulative flow', legend }
   if (series.length < MIN_DAYS) return { ...base, spec: null, summary: needsHistory('flow chart', series) }
   const counts = series.map(d => ({ day: d.day, c: countsOf(d) }))
@@ -238,7 +233,7 @@ export function agingWipChart(s: State): FlowChart {
   const series = daily(s.snapshots)
   const usual = usualDays(s)
   const legend = [
-    { glyph: '▬', token: '--doing', label: 'in progress' },
+    { glyph: '●', token: '--doing', label: 'in progress' },
     { glyph: '▲', token: '--blocked', label: 'over twice the usual' },
   ]
   const base = { key: 'aging' as const, title: 'Aging work in progress', legend }
@@ -305,7 +300,7 @@ export function flowHtml(s: State): string {
     .map(c => {
       const id = `flow-${c.key}`
       const body = c.spec
-        ? `${mountHtml(c.spec, c.summary)}
+        ? `${chartMount(c.spec, c.summary)}
 <ul class="flow-legend" aria-hidden="true">${c.legend.map(l => `<li><span class="g ${tokenClass(l.token)}">${l.glyph}</span> ${esc(l.label)}</li>`).join('')}</ul>`
         : `<p class="flow-needs">${esc(c.summary)}</p>`
       return `<section class="card flow-chart" aria-labelledby="${id}"><h3 id="${id}">${esc(c.title)}</h3>

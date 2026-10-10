@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { chartMount, dashboardHtml } from '../packages/core/dashboard/page'
-import { agingWipChart, burnupChart, cumulativeFlowChart, cycleTimeChart, flowCharts, flowHtml, mountHtml, usualDays } from '../packages/core/dashboard/flow'
+import { chartMount as htmlChartMount } from '../packages/core/dashboard/html'
+import { agingWipChart, burnupChart, cumulativeFlowChart, cycleTimeChart, flowCharts, flowHtml, usualDays } from '../packages/core/dashboard/flow'
 import { CHARTS_JS } from '../packages/core/dashboard/charts-bundle'
 import { chartLegends, daily, throughput } from '../packages/core/chart'
 import { shortDay } from '../packages/core/forecast'
@@ -223,12 +224,10 @@ describe('Flow view (K4): safety', () => {
     expect(tips.join('')).toContain('</script><script>alert(1)</script>')
   })
 
-  test("a mount is the page's chartMount, byte for byte", async () => {
-    for (const c of flowCharts(await wip())) {
-      expect(mountHtml(c.spec!, c.summary)).toBe(chartMount(c.spec!, c.summary))
-      expect(flowHtml(await wip())).toContain(chartMount(c.spec!, c.summary))
-    }
-    expect(mountHtml({ kind: 'line', data: [{ id: '</div>"x' }], colors: [] }, 'a <b> & "c"')).toBe(chartMount({ kind: 'line', data: [{ id: '</div>"x' }], colors: [] }, 'a <b> & "c"'))
+  test("each chart is mounted with the page's one chartMount", async () => {
+    // One function, shared through html.ts, so the two can never drift.
+    expect(chartMount).toBe(htmlChartMount)
+    for (const c of flowCharts(await wip())) expect(flowHtml(await wip())).toContain(chartMount(c.spec!, c.summary))
   })
 
   test('the same state gives the same bytes', async () => {
@@ -240,6 +239,8 @@ describe('Flow view (K4): safety', () => {
     const html = flowHtml(await project())
     const legends = [...html.matchAll(/<ul class="flow-legend"[^>]*>([\s\S]*?)<\/ul>/g)].map(m => text(m[1]!).trim())
     expect(legends[0]).toMatch(/━ scope ━ done ┅ likely finish ┅ fast to slow/)
-    expect(legends[1]).toBe('■ done ■ in progress ■ blocked ■ to do')
+    expect(legends[1]).toBe('✓ done ● in progress ■ blocked ○ to do')
+    const wipLegends = [...flowHtml(await wip()).matchAll(/<ul class="flow-legend"[^>]*>([\s\S]*?)<\/ul>/g)].map(m => text(m[1]!).trim())
+    expect(wipLegends).toContainEqual(expect.stringMatching(/^● in progress ▲ over twice the usual/))
   })
 })

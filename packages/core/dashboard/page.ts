@@ -12,7 +12,9 @@ import { overviewHtml } from './overview'
 import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
 import { SPEC_STYLE, specHtml } from './spec'
 import { CHARTS_JS } from './charts-bundle'
-import { esc } from './html'
+import { chartMount, esc, type ChartSpec } from './html'
+
+export { chartMount, type ChartSpec }
 
 export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec'
 
@@ -52,20 +54,6 @@ export function stages(s: State): { label: string; glyph: string; tone: 'done' |
 /** A note as one sentence: a capital first, one full stop last (the CLI's notes have neither, the plugin's both). */
 const sentence = (note: string) => `${note.charAt(0).toUpperCase()}${note.slice(1).replace(/\.+$/, '')}.`
 
-/** A chart as a view describes it: what packages/charts draws with Nivo. Colours name the page's CSS tokens. */
-export type ChartSpec = {
-  kind: 'line' | 'bar' | 'scatter'
-  data: unknown[]
-  colors: string[]
-  /** Plain Nivo props: anything JSON can carry. */
-  props?: Record<string, unknown>
-  height?: number
-}
-
-/** A chart's mount: its spec for the bundle, and its one-line summary, which is what a page without JS shows. */
-export function chartMount(spec: ChartSpec, summary: string): string {
-  return `<div class="chart" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
-}
 
 /** The chart bundle, only for a page that has a chart: a page without one stays small. */
 export function chartsScript(body: string): string {
@@ -159,6 +147,11 @@ export const DASHBOARD_SCRIPT = `(() => {
   for (const c of [ph, st, gr]) if (c) c.addEventListener('change', write)
   const show = h => {
     let [id, q] = parse(h)
+    // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
+    const pick = id.startsWith('spec-') ? id : ''
+    if (pick) id = 'spec'
+    for (const a of d.querySelectorAll('.spec-pick a[href^="#spec-"]'))
+      a.getAttribute('href') === '#' + pick ? a.setAttribute('aria-current', 'true') : a.removeAttribute('aria-current')
     if (!ids.includes(id)) id = ids.includes(b.dataset.view) ? b.dataset.view : ids[0]
     for (const t of tabs) {
       const on = t.getAttribute('href') === '#' + id
