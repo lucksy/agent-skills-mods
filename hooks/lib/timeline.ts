@@ -56,6 +56,32 @@ function question(t: Task): string {
   return id ? `${id[1]}, ${id[2]}` : q
 }
 
+/** Checkpoint items named on its row; the rest are counted. */
+const CP_ITEMS = 3
+const CP_ITEM_W = 28
+
+/**
+ * A checkpoint item in a few words: `tests`, `build`, `review with you`, or its
+ * first clause cut to fit. Struck-through items (superseded) come back null.
+ */
+export function shortItem(text: string): string | null {
+  if (/^\s*~~/.test(text)) return null
+  const t = text.replace(/~~[^~]*~~/g, '').replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim()
+  if (/^all tests pass/i.test(t)) return 'tests'
+  if (/^(the )?application builds/i.test(t)) return 'build'
+  if (/^(human )?review with (the )?human|^human review/i.test(t)) return 'review with you'
+  const clause = t.split(/(?<=\w)[.;:](?:\s|$)|\s[—–(]\s?|,\s/)[0]!.trim()
+  return clause.length > CP_ITEM_W ? `${clause.slice(0, CP_ITEM_W - 1).trimEnd()}…` : clause
+}
+
+/** What a checkpoint row lists: a few items in short (only the open ones once it is due), and how many more. */
+function checkpointWhat(items: { text: string; isDone: boolean }[], isDue: boolean): string {
+  const shown = items.filter(b => !isDue || !b.isDone).map(b => shortItem(b.text)).filter((x): x is string => x !== null && x !== '')
+  const more = shown.length - CP_ITEMS
+  const head = shown.slice(0, CP_ITEMS).join(' · ')
+  return more > 0 ? `${head} · +${more} more` : head
+}
+
 /**
  * The timeline: a header (name, size, ETA with its slow case, commits, tests,
  * last review), then the milestones and phases as a tree, then the legend.
@@ -168,7 +194,7 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
         const items = t.checkpoint.items
         const isDone = items.length > 0 && items.every(b => b.isDone)
         const isDue = t.status === 'done' && !isDone
-        const what = items.map(b => b.text.replace(/^All tests pass$/i, 'tests').replace(/^Application builds.*$/i, 'build').replace(/^Review with human.*$/i, 'review with you')).join(' · ')
+        const what = checkpointWhat(items, isDue)
         rows.push([
           date(dates[t.id] ?? null),
           s('├─ ', 'muted'),

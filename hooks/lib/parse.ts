@@ -28,6 +28,11 @@ export type Task = {
   state?: TaskState
   /** Which part of the section each box is in, parallel to `boxes`: acceptance criteria or verification. */
   kinds?: ('criteria' | 'verification')[]
+  /**
+   * How its line in the task index is ticked, when the list has one: `[x]` done,
+   * `[~]` under way. The person's own mark, so it wins over the section's open boxes.
+   */
+  mark?: 'done' | 'doing'
 }
 
 export type Checkpoint = { title: string; items: Box[] }
@@ -48,10 +53,14 @@ export type TaskList = {
   meta?: { plan?: string; created?: string }
 }
 
-const BOX = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/
+/** `[ ]` open, `[x]` done, `[~]` under way (counted as open in a section, as under way in the index). */
+const BOX = /^\s*[-*+]\s+\[([ xX~])\]\s+(.*)$/
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/
 const TASK_HEADING = /^Task\s+(\d+)\s*[:.\-–—]\s*(.*)$/i
-const TASK_LINE = /^Task\s+(\d+)\s*[:.\-–—]\s*(.*)$/i
+/** An index line: `Task 3: title`, or `T3 · title` as hand-kept indexes write it. */
+const TASK_LINE = /^(?:Task\s+|T)(\d+)\s*[:.\-–—·]\s*(.*)$/i
+/** What an index line adds after its title: ` — **found; 2 items left**`. */
+const LINE_NOTE = /\s+[—–]\s+.*$/
 const CHECKPOINT = /^Checkpoint\b\s*[:.\-–—]?\s*(.*)$/i
 const PHASE = /^Phase\b/i
 const DEPS = /^\s*\*\*Dependencies:?\*\*:?\s*(.*)$/i
@@ -75,6 +84,7 @@ export function parseTasks(text: string): TaskList {
   const tasks: Task[] = []
   const checkpoints: Checkpoint[] = []
   const loose: Box[] = []
+  const fromIndex = new Set<Task>()
 
   let phase: string | null = null
   // What the lines under the current heading belong to.
@@ -142,7 +152,7 @@ export function parseTasks(text: string): TaskList {
 
     const box = BOX.exec(line)
     if (!box) continue
-    const item: Box = { text: stripMd(box[2] ?? ''), isDone: box[1] !== ' ' }
+    const item: Box = { text: stripMd(box[2] ?? ''), isDone: box[1] === 'x' || box[1] === 'X' }
 
     if (section.kind === 'task') {
       section.task.boxes.push(item)
@@ -150,17 +160,21 @@ export function parseTasks(text: string): TaskList {
     } else if (section.kind === 'checkpoint') {
       section.cp.items.push(item)
     } else {
-      const line = TASK_LINE.exec(item.text)
+      // A struck-through line (`~~T1 · title~~ — superseded`) still names its task.
+      const line = TASK_LINE.exec(item.text.replace(/^~~/, '').replace(/~~(?=\s|$)/, ''))
       if (line) {
-        tasks.push({
+        const t: Task = {
           id: `T${line[1] ?? ''}`,
-          title: (line[2] ?? '').trim(),
+          title: (line[2] ?? '').replace(LINE_NOTE, '').trim(),
           phase,
           boxes: [item],
           deps: [],
           status: 'todo',
           checkpoint: null,
-        })
+          mark: item.isDone ? 'done' : box[1] === '~' ? 'doing' : undefined,
+        }
+        tasks.push(t)
+        fromIndex.add(t)
       } else {
         loose.push(item)
       }
@@ -181,7 +195,7 @@ export function parseTasks(text: string): TaskList {
     )
     return withMeta(finish(tasks, checkpoints, 'checklist'), text)
   }
-  return withMeta(finish(tasks, checkpoints, tasks.length > 0 ? 'tasks' : 'empty'), text)
+  return withMeta(finish(tasks, checkpoints, tasks.length > 0 ? 'tasks' : 'empty', fromIndex), text)
 }
 
 function withMeta(list: TaskList, text: string): TaskList {
@@ -190,21 +204,37 @@ function withMeta(list: TaskList, text: string): TaskList {
   return { ...list, meta: { plan: fields.plan || undefined, created: /^\d{4}-\d{2}-\d{2}$/.test(fields.created ?? '') ? fields.created : undefined } }
 }
 
-/** Detailed sections win over the one-line index when both name the same task. */
-function dedupe(tasks: Task[]): Task[] {
-  const byId = new Map<string, Task>()
-  for (const t of tasks) {
+/**
+ * Detailed sections win over the one-line index when both name the same task,
+ * and the tasks keep the sections' order. A task only the index has goes after
+ * the one listed before it there. The index line's mark is kept.
+ */
+function dedupe(all: Task[], fromIndex: ReadonlySet<Task> = new Set()): Task[] {
+  const byId = new Map<string, { task: Task; at: number; isIndex: boolean }>()
+  all.forEach((t, i) => {
     const had = byId.get(t.id)
-    if (!had || t.boxes.length > had.boxes.length) {
-      byId.set(t.id, had ? { ...t, phase: t.phase ?? had.phase, checkpoint: t.checkpoint ?? had.checkpoint } : t)
+    if (!had) byId.set(t.id, { task: t, at: i, isIndex: fromIndex.has(t) })
+    else if (t.boxes.length > had.task.boxes.length) {
+      const h = had.task
+      byId.set(t.id, { task: { ...t, phase: t.phase ?? h.phase, checkpoint: t.checkpoint ?? h.checkpoint, mark: t.mark ?? h.mark }, at: i, isIndex: fromIndex.has(t) })
+    } else if (!had.task.mark && t.mark) byId.set(t.id, { ...had, task: { ...had.task, mark: t.mark } })
+  })
+  if (fromIndex.size > 0) {
+    let prev = -1
+    for (const t of all) {
+      if (!fromIndex.has(t)) continue
+      const e = byId.get(t.id)!
+      if (e.isIndex) e.at = prev += 1e-3
+      else prev = e.at
     }
   }
-  return [...byId.values()]
+  return [...byId.values()].sort((a, b) => a.at - b.at).map(e => e.task)
 }
 
-function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind']): TaskList {
-  const tasks = dedupe(all)
-  const isDone = (t: Task) => t.boxes.length > 0 && t.boxes.every(b => b.isDone)
+function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind'], fromIndex?: ReadonlySet<Task>): TaskList {
+  const tasks = dedupe(all, fromIndex)
+  // Done: every box ticked, or the person said so (its index line, its Status line).
+  const isDone = (t: Task) => t.mark === 'done' || t.state?.status === 'done' || (t.boxes.length > 0 && t.boxes.every(b => b.isDone))
   const doneIds = new Set(tasks.filter(isDone).map(t => t.id))
   const known = new Set(tasks.map(t => t.id))
 
@@ -222,7 +252,7 @@ function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind']):
     } else t.status = 'todo'
   }
   // A task its Status line says is in progress is the current one, wherever it is.
-  const active = tasks.find(t => t.state?.status === 'in progress' && (t.status === 'todo' || t.status === 'next' || t.status === 'waiting'))
+  const active = tasks.find(t => (t.state?.status === 'in progress' || (!t.state && t.mark === 'doing')) && (t.status === 'todo' || t.status === 'next' || t.status === 'waiting'))
   if (active && active !== current) {
     if (current) current.status = 'todo'
     active.status = 'next'

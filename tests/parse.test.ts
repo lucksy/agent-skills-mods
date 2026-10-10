@@ -5,7 +5,7 @@ import { checkOverwrite } from '../hooks/lib/guard'
 import { archiveDir } from '../hooks/lib/archive'
 import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
 import { criticalPath, graphLines } from '../hooks/lib/graph'
-import { plain } from '../hooks/lib/timeline'
+import { plain, shortItem, timeline } from '../hooks/lib/timeline'
 import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
@@ -1001,5 +1001,67 @@ describe('headline figures', () => {
       'Needs a decision: 0 (nothing waiting)',
     ])
     expect(nowCounts(list)).toEqual({ done: 1, doing: 1, blocked: 0, todo: 2 })
+  })
+})
+
+describe('a hand-kept index over task sections', () => {
+  const TODO = [
+    '# Task List',
+    '',
+    '## Index',
+    '',
+    '**Phase 0 — Baseline**',
+    '- [x] ~~T1 · Find the host repository~~ — **superseded by T9**',
+    '- [x] T2 · Baseline commit',
+    '- [~] T3 · CI pipeline — **done; merge-blocking needs GitHub Pro**',
+    '- [x] T4 · Plugin shell — **manual checks pending**',
+    '- [x] T9 · Stand up the web app — **live**',
+    '- [ ] **Checkpoint 0**',
+    '',
+    '## Phase 0: Baseline',
+    '',
+    '## Task 1: Find the host repository — SUPERSEDED',
+    '- [ ] Repository located',
+    '',
+    '## Task 2: Baseline commit',
+    '- [x] Committed',
+    '',
+    '## Task 4: Plugin shell',
+    '**Acceptance criteria:**',
+    '- [x] Opens at 480×640',
+    '**Verification:**',
+    '- [ ] Manual check: duplicate the file',
+    '',
+    '## Task 3: CI pipeline',
+    '- [x] Lint runs',
+    '- [ ] Merge blocked on red',
+    '',
+    '## Checkpoint 0',
+    '- [x] All tests pass',
+    '- [ ] ~~Q1 is answered.~~ Superseded: there is no host repository.',
+    '- [ ] Human review before Phase 1 starts. *(Phase 1 was in fact built first)*',
+  ].join('\n')
+
+  test('its [x] wins over open boxes, [~] is under way, struck lines still count, sections set the order', async () => {
+    const list = parseTasks(TODO)
+    expect(list.tasks.map(t => `${t.id}:${t.status}`)).toEqual(['T1:done', 'T2:done', 'T4:done', 'T9:done', 'T3:next'])
+    expect(list.tasks.find(t => t.id === 'T9')?.title).toBe('Stand up the web app')
+    expect(list.current?.id).toBe('T3')
+    expect([list.done, list.total]).toEqual([4, 5])
+  })
+
+  test('a checkpoint row names its open items in a few words; struck items are left out', async () => {
+    expect(shortItem('All tests pass')).toBe('tests')
+    expect(shortItem('Human review before Phase 1 starts. *(Phase 1 was in fact built first)*')).toBe('review with you')
+    expect(shortItem('~~Q1 is answered.~~ Superseded: there is no host repository.')).toBe(null)
+    expect(shortItem('pnpm install --frozen-lockfile, typecheck, lint, test and build all pass')).toBe('pnpm install --frozen-lockf…')
+    const list = parseTasks(TODO)
+    const t = timeline({ spec: null, list, plan: null, forecast: null, dates: {}, today: '2026-10-10' })
+    const row = t.rows.map(plain).find(r => r.includes('checkpoint 1'))
+    // Not due yet (T3 is open): every live item, in short.
+    expect(row?.trimEnd().endsWith('checkpoint 1   tests · review with you')).toBe(true)
+    const done = parseTasks(TODO.replace('- [ ] Merge blocked on red', '- [x] Merge blocked on red').replace('- [~] T3', '- [x] T3'))
+    const due = timeline({ spec: null, list: done, plan: null, forecast: null, dates: {}, today: '2026-10-10' }).rows.map(plain).find(r => r.includes('checkpoint 1'))
+    expect(due?.trimEnd().endsWith('checkpoint 1   needs you: review with you')).toBe(true)
   })
 })

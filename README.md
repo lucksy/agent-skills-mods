@@ -185,7 +185,7 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 147 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 149 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
