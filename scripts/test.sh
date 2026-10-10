@@ -70,6 +70,41 @@ check modules-cli '✓ core   done · 1/1' node "$script" "$tmp/mods" --modules 
 check modules-json '"state": "not started"' node "$script" "$tmp/mods" --json --no-git
 check modules-one '✓ T1 Lib' node "$script" "$tmp/mods" --modules core --no-color --no-git
 
+# The live server (team-view T10): a random port, the token, a write on disk, a `changed` event.
+mkdir -p "$tmp/live/tasks"; cp "$tmp/build/tasks/todo.md" "$tmp/live/tasks/todo.md"
+node "$script" "$tmp/live" --serve --port 0 --no-open --no-git > "$tmp/serve.out" 2>&1 &
+serve_pid=$!
+url=''
+for _ in $(seq 1 100); do url=$(grep -o 'http://127.0.0.1:[0-9]*/?token=[0-9a-f]*' "$tmp/serve.out" | head -1); [[ -n $url ]] && break; sleep 0.1; done
+if [[ -n $url ]]; then
+  echo "ok   serve-url"
+  base=${url%%/?token=*}; token=${url##*token=}
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$base/")
+  if [[ $code == 401 ]]; then echo "ok   serve-no-token-401"; else echo "FAIL serve-no-token-401: got $code"; fail=1; fi
+  head=$(curl -s -D - -o "$tmp/live.html" "$url")
+  rev=$(printf '%s' "$head" | tr -d '\r' | sed -n 's/^x-agent-skills-rev: //Ip')
+  if [[ -n $rev ]] && grep -q '<html' "$tmp/live.html"; then echo "ok   serve-get-page"; else echo "FAIL serve-get-page"; fail=1; fi
+  if printf '%s' "$head" | grep -qi '^access-control-'; then echo "FAIL serve-no-cors"; fail=1; else echo "ok   serve-no-cors"; fi
+  curl -s -N --max-time 8 "$base/events?token=$token" > "$tmp/events.out" &
+  events_pid=$!
+  sleep 0.5
+  out=$(curl -s -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" -H 'Content-Type: application/json' \
+    --data "{\"action\":\"tick\",\"args\":{\"id\":\"T3\",\"index\":0},\"rev\":\"$rev\"}" "$base/action")
+  if [[ $out == *'T3 ticked: 429 after 60 req/min'* ]]; then echo "ok   serve-post-action"; else echo "FAIL serve-post-action: $out"; fail=1; fi
+  if grep -q -- '- \[x\] 429 after 60 req/min' "$tmp/live/tasks/todo.md"; then echo "ok   serve-wrote-file"; else echo "FAIL serve-wrote-file"; fail=1; fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" \
+    --data "{\"action\":\"tick\",\"args\":{\"id\":\"T3\",\"index\":0},\"rev\":\"$rev\"}" "$base/action")
+  if [[ $code == 409 ]]; then echo "ok   serve-stale-409"; else echo "FAIL serve-stale-409: got $code"; fail=1; fi
+  for _ in $(seq 1 40); do grep -q 'event: changed' "$tmp/events.out" && break; sleep 0.1; done
+  if grep -q 'event: changed' "$tmp/events.out"; then echo "ok   serve-changed-event"; else echo "FAIL serve-changed-event:"; sed 's/^/       /' "$tmp/events.out"; fail=1; fi
+  kill "$events_pid" 2>/dev/null; wait "$events_pid" 2>/dev/null
+  if lsof -nP -a -p "$serve_pid" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q '127.0.0.1:'; then echo "ok   serve-loopback-only"; elif ! command -v lsof >/dev/null; then echo "ok   serve-loopback-only (no lsof; skipped)"; else echo "FAIL serve-loopback-only:"; lsof -nP -a -p "$serve_pid" -iTCP -sTCP:LISTEN | sed 's/^/       /'; fail=1; fi
+else
+  echo "FAIL serve-url:"; sed 's/^/       /' "$tmp/serve.out"; fail=1
+fi
+kill "$serve_pid" 2>/dev/null; wait "$serve_pid" 2>/dev/null
+check serve-bad-port '--port takes a number' node "$script" "$tmp/live" --serve --port nope
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

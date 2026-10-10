@@ -4,12 +4,16 @@
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
 //   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //
 // No dependencies: Node 22.6 or newer (it runs the plugin's TypeScript through
 // Node's type stripping), or Bun.
 
 import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { watch } from 'node:fs'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { dirname, relative, resolve } from 'node:path'
 import * as nodeModule from 'node:module'
 
@@ -47,6 +51,10 @@ Usage: agent-skills-progress [dir] [options]
   --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
+  --serve         the live dashboard on 127.0.0.1, behind a token printed with its URL;
+                  it reloads when the plan changes. Ctrl-C stops it
+  --port <n>      the port --serve listens on (default 7357; 0 picks a free one)
+  --no-open       don't open the page in a browser
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
   --no-git        skip git history (no ETA until 3 tasks are done today)
   --no-color      plain text (also NO_COLOR=1, or when not a terminal)
@@ -55,7 +63,7 @@ Usage: agent-skills-progress [dir] [options]
   -h, --help      this text`
 
 function parseArgs(argv) {
-  const o = { dir: '.', mode: 'full', git: true, color: undefined, width: undefined, spec: undefined, out: undefined }
+  const o = { dir: '.', mode: 'full', git: true, color: undefined, width: undefined, spec: undefined, out: undefined, port: 7357, open: true }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '-h' || a === '--help') o.mode = 'help'
@@ -71,6 +79,12 @@ function parseArgs(argv) {
       o.mode = 'dashboard'
       if (/\.html?$/i.test(argv[i + 1] ?? '')) o.out = argv[++i]
     }
+    else if (a === '--serve') o.mode = 'serve'
+    else if (a === '--port') {
+      o.port = Number(argv[++i])
+      if (!Number.isInteger(o.port) || o.port < 0 || o.port > 65535) throw new Error(`--port takes a number from 0 to 65535`)
+    }
+    else if (a === '--no-open') o.open = false
     else if (a === '--no-git') o.git = false
     else if (a === '--no-color') o.color = false
     else if (a === '--color') o.color = true
@@ -145,6 +159,7 @@ async function main() {
     specFile = specCandidates(o.spec).find(f => names.includes(f))
     if (!specFile) throw new Error(`no ${specCandidates(o.spec).join(' or ')} in ${cwd}`)
   }
+  if (o.mode === 'serve') return serve(io, { specFile, port: o.port, open: o.open })
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
   const state = await gather(io, { specFile }).finally(stop)
 
@@ -173,6 +188,110 @@ async function main() {
   if (o.mode === 'brief') return console.log(renderBrief(state, { color }))
   const width = o.width || Math.min(110, process.stdout.columns || 80)
   console.log(o.mode === 'timeline' ? renderTimelineCli(state, { color, width }) : renderCli(state, { color, width }))
+}
+
+/**
+ * --serve (team-view): the live dashboard. node:http on 127.0.0.1 only, a fresh
+ * token per run, and packages/core/serve.ts deciding every response. Writes
+ * run one at a time; a change under tasks/, specs/ or to SPEC*.md sends
+ * `changed` to every open event stream.
+ */
+async function serve(io, { specFile, port, open }) {
+  const { handle } = await import('../packages/core/serve.ts')
+  const { dashboardHtml } = await import('../packages/core/dashboard/page.ts')
+  const { gather } = await import('../packages/core/cli.ts')
+  const { dayOf } = await import('../packages/core/forecast.ts')
+  const cwd = io.cwd
+  const git = runner(cwd)
+  const sio = {
+    token: randomBytes(16).toString('hex'),
+    origin: '',
+    today: () => dayOf(Date.now()),
+    read: io.read,
+    list: io.list,
+    write: (rel, text) => writeFile(resolve(cwd, rel), text),
+    email: () => git(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null)),
+    // T11 gives the page its buttons and the rev; for now it is the dashboard as --dashboard writes it.
+    page: async () => dashboardHtml(await gather({ ...io, now: Date.now() }, { specFile })),
+  }
+
+  const streams = new Set()
+  let writes = Promise.resolve()
+  const server = createServer((req, res) => {
+    let body = ''
+    let size = 0
+    req.setEncoding('utf8')
+    req.on('data', d => {
+      size += d.length
+      if (size > 64 * 1024) {
+        res.writeHead(413, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end('{"reply":"Too large."}')
+        req.destroy()
+      } else body += d
+    })
+    req.on('end', async () => {
+      if (res.writableEnded) return
+      const request = { method: req.method ?? 'GET', url: req.url ?? '/', headers: req.headers, body }
+      // One write at a time, so a rev check and its write can't interleave with another's.
+      const respond = () => handle(request, sio)
+      const r = await (req.method === 'POST' ? (writes = writes.then(respond, respond)) : respond()).catch(err => ({
+        status: 500,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+        body: JSON.stringify({ reply: `Server error: ${err?.message ?? err}` }),
+      }))
+      res.writeHead(r.status, r.headers)
+      if (!r.events) return res.end(r.body)
+      res.write(r.body)
+      streams.add(res)
+      req.on('close', () => streams.delete(res))
+    })
+  })
+
+  // A save often fires several events; one `changed` per burst.
+  let timer
+  const changed = file => {
+    if (!/\.md$/.test(file ?? '')) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      for (const s of streams) s.write(`event: changed\ndata: ${JSON.stringify({ file })}\n\n`)
+    }, 100)
+  }
+  const watchers = []
+  const watchDir = (rel, keep) => {
+    try {
+      watchers.push(watch(resolve(cwd, rel), (_, name) => name && keep(String(name)) && changed(rel ? `${rel}/${name}` : String(name))))
+    } catch {}
+  }
+  watchDir('', name => /^SPEC(-[\w.-]+)?\.md$/.test(name))
+  watchDir('tasks', () => true)
+  watchDir('specs', () => true)
+  // Keeps proxies and the browser from closing an idle stream.
+  const ping = setInterval(() => {
+    for (const s of streams) s.write(': ping\n\n')
+  }, 20_000)
+
+  await new Promise((done, fail) => {
+    server.once('error', err => fail(err.code === 'EADDRINUSE' ? new Error(`port ${port} is in use; try --port 0 for a free one`) : err))
+    server.listen(port, '127.0.0.1', done)
+  })
+  sio.origin = `http://127.0.0.1:${server.address().port}`
+  const url = `${sio.origin}/?token=${sio.token}`
+  console.log(`Serving ${cwd} at ${url}`)
+  console.log('Only this machine can reach it, and only with the token. Ctrl-C stops it.')
+  if (open) {
+    const argv = process.platform === 'darwin' ? ['open', url] : process.platform === 'win32' ? ['cmd', '/c', 'start', '', url] : ['xdg-open', url]
+    try {
+      spawn(argv[0], argv.slice(1), { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+    } catch {}
+  }
+  const stop = () => {
+    clearInterval(ping)
+    for (const w of watchers) w.close()
+    for (const s of streams) s.end()
+    server.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', stop)
+  process.on('SIGTERM', stop)
 }
 
 main().catch(err => {

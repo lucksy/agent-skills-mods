@@ -244,18 +244,18 @@ created: 2026-10-11
 ## Phase 5: Live dashboard
 
 ## Task 10: The live server
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/serve.ts` exports `handle(request, io)`. It checks the token (header or `?token=`) and the `Origin` on writes, and serves `GET /` in live mode and `POST /action`. A write runs the action from T1 only when the file's hash equals `rev`, and returns 409 otherwise. The CLI's `--serve [--port] [--no-open]` binds 127.0.0.1, makes a random token and prints the URL. It watches `tasks/`, `SPEC*.md` and `specs/`, and sends `changed` on `GET /events`.
 
 **Acceptance criteria:**
-- [ ] Handler tests cover a missing or wrong token (401), a foreign `Origin` (403), a stale `rev` (409, nothing written), bad args (400) and each action's happy path
-- [ ] `scripts/test.sh` starts `--serve` on a random port, POSTs an action, finds the file changed on disk, and sees a `changed` event
-- [ ] The server listens on 127.0.0.1 only and sends no CORS headers
+- [x] Handler tests cover a missing or wrong token (401), a foreign `Origin` (403), a stale `rev` (409, nothing written), bad args (400) and each action's happy path
+- [x] `scripts/test.sh` starts `--serve` on a random port, POSTs an action, finds the file changed on disk, and sees a `changed` event
+- [x] The server listens on 127.0.0.1 only and sends no CORS headers
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2
 
