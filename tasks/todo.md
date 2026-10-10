@@ -88,18 +88,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 4: Collision alerts
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/collisions.ts` finds collisions in the branch rows and the current list. A task collides when it is in progress or in review on two refs, or when it has two different owners. Done on one ref while in progress on another is not a collision. The band shows `! T4 is also in progress on feat/rate-limit by @bob (2d)` when the current task collides. The board pane marks colliding tasks, and `--json` lists `collisions`.
 
 **Acceptance criteria:**
-- [ ] Each collision rule and the done-elsewhere exception are covered by unit tests
-- [ ] Starting a task that is under way on another ref shows the collision in the band in the same prompt
-- [ ] `--json` has `collisions` with the task, ref, owner and age
+- [x] Each collision rule and the done-elsewhere exception are covered by unit tests
+- [x] Starting a task that is under way on another ref shows the collision in the band in the same prompt
+- [x] `--json` has `collisions` with the task, ref, owner and age
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T3
 

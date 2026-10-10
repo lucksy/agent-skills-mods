@@ -87,6 +87,11 @@ check branches-fetched 'fetched 0m ago' node "$script" "$repo" --branches --no-c
 check branches-json '"ref": "feat/rate-limit"' node "$script" "$repo" --json
 check branches-no-repo 'Not a git repository' node "$script" "$tmp/build" --branches
 if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   branches-untouched"; else echo "FAIL branches-untouched: the repository changed"; fail=1; fi
+# Collisions (team-view T4): T2 started here too, by someone else, collides with feat/rate-limit.
+check collisions-none '"collisions": []' node "$script" "$repo" --json
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** in progress · @amila · started 2026-10-10\n- [ ] 429\n' > "$repo/tasks/todo.md"
+check collisions-json '"under way"' node "$script" "$repo" --json
+check collisions-ref '"ref": "feat/rate-limit"' node "$script" "$repo" --json
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

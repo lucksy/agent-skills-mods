@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { branchRows, branchesText, fetchAge, MAX_REFS, parseRefs, pickRefs, readBranches, REFS_ARGV, type Ref } from '../packages/core/branches'
+import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
 import { parseTasks } from '../packages/core/parse'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 
@@ -172,5 +173,78 @@ describe('--json', () => {
     expect(withBranches.branches?.rows.find(r => r.id === 'T2')).toMatchObject({ state: 'done', ref: 'b0' })
     expect(stateJson(await buildState(io(git.run))).branches).toBeNull()
     expect(stateJson(await buildState(io(), { branches: true })).branches).toBeNull()
+  })
+})
+
+// team-view T4 (V1): collisions, from the branch rows and the current list.
+
+describe('collisions', () => {
+  const ref = (name: string, sha: string, remote = false, ms = NOW - DAY): Ref => ({ ref: `refs/${remote ? 'remotes' : 'heads'}/${name}`, name, sha, ms, remote })
+  const board = (here: string, theirs: { name: string; text: string; remote?: boolean; ms?: number }[]) =>
+    branchRows({ name: 'main', list: parseTasks(here) }, theirs.map((t, i) => ({ ref: ref(t.name, `${i}`, t.remote, t.ms), text: t.text })), null)
+
+  test('in progress on two branches is a collision, with each ref, owner and age', () => {
+    const b = board(todo([null, 'in progress · @amila · started 2026-10-11']), [{ name: 'feat/rate-limit', text: todo([null, 'in progress · @bob · started 2026-10-09']) }])
+    const found = collisions(b, NOW)
+    expect(found.map(c => [c.id, c.why])).toEqual([['T2', ['under way', 'owners']]])
+    expect(found[0]!.on.map(o => [o.ref, o.state, o.owner, o.age])).toEqual([
+      ['main', 'in progress', '@amila', 'today'],
+      ['feat/rate-limit', 'in progress', '@bob', '2d'],
+    ])
+    expect(collisionLine(found[0]!, 'main')).toBe('T2 is also in progress on feat/rate-limit by @bob (2d)')
+  })
+
+  test('in review on one branch and in progress on another, by the same owner, is a collision', () => {
+    const b = board(todo(['in progress · @bob · started 2026-10-10']), [{ name: 'feat/x', text: todo(['in review · @bob · started 2026-10-08']) }])
+    expect(collisions(b, NOW).map(c => [c.id, c.why])).toEqual([['T1', ['under way']]])
+  })
+
+  test('two different owners is a collision, even when only one branch has started it', () => {
+    const b = board(todo(['in progress · @amila · started 2026-10-10']), [{ name: 'feat/x', text: todo(['todo · @sara']) }])
+    const [c] = collisions(b, NOW)
+    expect(c?.why).toEqual(['owners'])
+    // No Status date there: the age is the ref's newest commit.
+    expect(collisionLine(c!, 'main')).toBe('T1 is also assigned to @sara on feat/x (1d)')
+  })
+
+  test('done on one branch while in progress on another is not a collision', () => {
+    const b = board(todo(['in progress · @amila · started 2026-10-10']), [{ name: 'feat/x', text: todo(['done · @bob · started 2026-10-01 · done 2026-10-02']) }])
+    expect(collisions(b, NOW)).toEqual([])
+  })
+
+  test('one branch and its own remote-tracking copy are one branch, not two', () => {
+    const b = board(todo(['in progress · @amila · started 2026-10-10']), [{ name: 'origin/main', remote: true, text: todo(['in progress · @amila · started 2026-10-10']) }])
+    expect(collisions(b, NOW)).toEqual([])
+    const c = board(todo([null]), [
+      { name: 'feat/x', text: todo(['in progress · @bob · started 2026-10-10']) },
+      { name: 'origin/feat/x', remote: true, text: todo(['in progress · @bob · started 2026-10-09']) },
+    ])
+    expect(collisions(c, NOW)).toEqual([])
+  })
+
+  test('the current task as the working tree has it now, against the board read earlier', () => {
+    // The board was read while T2 was still todo here; then T2 was started.
+    const b = board(todo([null, null]), [{ name: 'feat/rate-limit', text: todo([null, 'in progress · @bob · started 2026-10-09']) }])
+    expect(collisions(b, NOW)).toEqual([])
+    const now = parseTasks(todo([null, 'in progress · @amila · started 2026-10-11']))
+    const c = collisionOf(now.tasks[1]!, b, NOW)
+    expect(c && collisionLine(c, b.here)).toBe('T2 is also in progress on feat/rate-limit by @bob (2d)')
+    expect(collisionOf(now.tasks[0]!, b, NOW)).toBeNull()
+    expect(collisionOf(now.tasks[1]!, null, NOW)).toBeNull()
+  })
+
+  test('--json lists collisions with the task, ref, owner and age', async () => {
+    const io: ProjectIo = {
+      cwd: '/p',
+      now: NOW,
+      read: async rel => (rel === 'tasks/todo.md' ? todo([null, 'in progress · @amila · started 2026-10-11']) : null),
+      list: async () => [],
+      run: fakeGit({ ['a'.repeat(40)]: todo([null, 'in review · @bob · started 2026-10-09']) }).run,
+    }
+    const json = stateJson(await buildState(io, { branches: true }))
+    expect(json.collisions?.map(c => [c.id, c.on.map(o => [o.ref, o.owner, o.age])])).toEqual([
+      ['T2', [['main', '@amila', 'today'], ['b0', '@bob', '2d']]],
+    ])
+    expect(stateJson(await buildState(io)).collisions).toBeNull()
   })
 })

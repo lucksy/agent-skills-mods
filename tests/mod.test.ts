@@ -1504,3 +1504,45 @@ test('/progress branches outside a git repository says why there is no board', a
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   expect((await $.command.run(run('branches'))).text).toBe('Not a git repository: the board across branches reads the other branches from git.')
 })
+
+// team-view T4 (V1): collision alerts.
+test('starting a task under way on another branch shows the collision in the reply, the band and the board pane', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/main\t${'a'.repeat(40)}\t${Date.parse('2026-10-09T09:00:00Z') / 1000}\nrefs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(l => (l.startsWith('b') ? `@@asm blob\n${theirs}\n` : `${l} missing\n`)).join('')
+    return ''
+  }
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const props = { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props })
+  // T2 is current but not started here: no collision yet.
+  expect(await band.find({ text: /is also/ })).toBeUndefined()
+  const said = (await $.command.run(run('start T2'))).text
+  expect(said).toContain('! T2 is also in progress on feat/rate-limit by @bob (2d)')
+  await band.redraw(props)
+  expect((await band.find({ text: /^! T2 is also in progress on feat\/rate-limit by @bob \(2d\)$/ }))?.props).toMatchObject({ color: 'warning' })
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^ {2}! T2 is also in progress on feat\/rate-limit by @bob \(2d\)$/ })).toBeDefined()
+  // Read from git objects already here: nothing that fetches.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+})
+
+test('done on another branch is no collision: the band stays quiet', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · @bob · started 2026-10-01 · done 2026-10-03\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(() => `@@asm blob\n${theirs}\n`).join('')
+    return ''
+  }
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect((await $.command.run(run('start T2'))).text).not.toContain('is also')
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never })
+  expect(await band.find({ text: /is also/ })).toBeUndefined()
+})

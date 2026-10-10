@@ -66,8 +66,11 @@ const RANK: Record<TaskStatusWord, number> = { done: 4, 'in review': 3, 'in prog
 /** What a task's Status line says, or done when all its boxes are ticked. */
 export const stateWord = (t: Task): TaskStatusWord => t.state?.status ?? (t.status === 'done' ? 'done' : 'todo')
 
-/** A task as one ref has it. */
-export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null }
+/**
+ * A task as one ref has it: its state and owner, the day its Status line says
+ * it started, and the ref's newest commit time (null for the working tree).
+ */
+export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null; started: string | null; at: number | null }
 
 /** One task across the refs: its furthest state and where, plus every ref's own (for collisions, T4). */
 export type BranchRow = {
@@ -101,14 +104,14 @@ export function branchRows(
   copies: { ref: Ref; text: string | null }[],
   fetchedAt: number | null,
 ): BranchBoard {
-  const lists: { name: string; remote: boolean; list: TaskList }[] = []
-  if (here.list) lists.push({ name: here.name ?? 'HEAD', remote: false, list: here.list })
-  for (const c of copies) if (c.text !== null) lists.push({ name: c.ref.name, remote: c.ref.remote, list: parseTasks(c.text) })
+  const lists: { name: string; remote: boolean; at: number | null; list: TaskList }[] = []
+  if (here.list) lists.push({ name: here.name ?? 'HEAD', remote: false, at: null, list: here.list })
+  for (const c of copies) if (c.text !== null) lists.push({ name: c.ref.name, remote: c.ref.remote, at: c.ref.ms, list: parseTasks(c.text) })
   const rows = new Map<string, BranchRow>()
-  for (const { name, remote, list } of lists) {
+  for (const { name, remote, at, list } of lists) {
     for (const t of list.tasks) {
       if (!/^T\d+$/.test(t.id)) continue
-      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null }
+      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, at }
       const row = rows.get(t.id)
       if (!row) {
         const started = on.state !== 'todo'

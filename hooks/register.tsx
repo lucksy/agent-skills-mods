@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type Spec, type TaskList } from '../packages/core/parse'
+import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type Spec, type Task, type TaskList } from '../packages/core/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
@@ -25,7 +25,8 @@ import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
-import { branchesText, GIT_DIR_ARGV, readBranches } from '../packages/core/branches'
+import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
+import { collisionLine, collisionOf } from '../packages/core/collisions'
 import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -99,6 +100,8 @@ const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, fal
 /** The plan pane's tab (mockup 12): timeline, charts or tasks. */
 const tab = atom({ plugin: 'agent-skills-mods', key: 'tab' } as const, 'tasks' as Tab)
 const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as const, 1)
+/** The board across branches as last read (team-view): the band and the board pane find collisions in it. */
+const branchBoard = atom({ plugin: 'agent-skills-mods', key: 'branchBoard' } as const, null as BranchBoard | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -676,14 +679,31 @@ async function fetchedAt($: $, cwd: string): Promise<number | null> {
   return ms ? ms : null
 }
 
-/** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
-async function branchesCommand($: $): Promise<string> {
-  const p = await load($)
+/**
+ * Reads the board across branches and keeps it for the band and the board pane
+ * (team-view T4). Only `for-each-ref`, `rev-parse` and `cat-file` run, and an
+ * unchanged ref's copy is not read twice. Null outside a git repository.
+ */
+async function readBoard($: $, p: AsmProject): Promise<BranchBoard | null> {
   const now = await $.clock.now()
   const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
   const here = p.listFile === 'tasks/todo.md' ? p.list : null
   const board = await readBranches(run, { file: 'tasks/todo.md', now, here, fetchedAt: await fetchedAt($, p.cwd), cache: branchCopies })
-  return board ? branchesText(board, now) : 'Not a git repository: the board across branches reads the other branches from git.'
+  await update($, branchBoard, () => board)
+  return board
+}
+
+/** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
+async function branchesCommand($: $): Promise<string> {
+  const board = await readBoard($, await load($))
+  return board ? branchesText(board, await $.clock.now()) : 'Not a git repository: the board across branches reads the other branches from git.'
+}
+
+/** The band's collision line for a task (team-view T4), from the board last read; null when it collides with nothing. */
+async function collisionText($: $, t: Task): Promise<string | null> {
+  const board = await read($, branchBoard)
+  const c = collisionOf(t, board, await $.clock.now())
+  return c ? collisionLine(c, board?.here ?? null) : null
 }
 
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
@@ -1001,7 +1021,14 @@ async function setTask($: $, verb: string, rawId: string, why: string): Promise<
   }
   if (next !== text) await $.fs.write(path, next)
   await $.store.set(pendingKey(cwd), {})
-  await load($)
+  const after = await load($)
+  // Starting a task someone has under way on another branch says so at once (team-view T4).
+  if (verb === 'start') {
+    await readBoard($, after).catch(() => null)
+    const started = after.list?.tasks.find(t => t.id === id)
+    const clash = started ? await collisionText($, started) : null
+    if (clash) said += `\n! ${clash}`
+  }
   return said
 }
 
@@ -1202,7 +1229,9 @@ export const register: Register = (on, options) => {
       }
     })()
     await update($, pixels, () => (style === 'pixels' ? true : style === 'cells' ? false : canDraw))
-    await load($, { recheckLogs: true }).catch(() => undefined)
+    const p = await load($, { recheckLogs: true }).catch(() => undefined)
+    // The other branches, for collisions in the band (team-view T4); never fetches.
+    if (p) await readBoard($, p).catch(() => undefined)
     return next(e)
   })
 
@@ -1378,8 +1407,10 @@ export const register: Register = (on, options) => {
   // lasts the person's whole turn, so a subagent finishing inside it leaves it alone.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) await flushPending($).catch(() => undefined)
-    await load($).catch(() => undefined)
+    const p = await load($).catch(() => undefined)
     if (e.agentId === undefined) {
+      // A commit, checkout or fetch this turn changes the other branches; unchanged copies are not read again.
+      if (p && (await read($, branchBoard))) await readBoard($, p).catch(() => undefined)
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
       await update($, gateWarned, () => false)
@@ -1461,6 +1492,9 @@ export const register: Register = (on, options) => {
     if ((!list || !t) && !ask) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
+    // The current task under way on another branch too, or with another owner (team-view T4).
+    const clash = t ? await collisionText($, t) : null
+    if (clash) warnings.unshift(clash)
     // ▸ between turns; a turning marker while the agent works, where surface modules run.
     const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
     const Client = working ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
@@ -1713,6 +1747,15 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
     const width = Math.max(24, e.props.bodyColumns)
     const focused = await read($, focus)
     const rows = boardRows(list, { failed: await read($, failed) })
+    // Tasks under way on another branch too, or with two owners (team-view T4): marked under their row.
+    const board = await read($, branchBoard)
+    const now = await $.clock.now()
+    const clashes = new Map(
+      list.tasks.flatMap(t => {
+        const c = collisionOf(t, board, now)
+        return c ? [[t.id, collisionLine(c, board?.here ?? null)] as const] : []
+      }),
+    )
     const color = { done: 'success', now: 'warning', muted: 'subtle', blocked: 'error', accent: 'claude', needsYou: 'permission', text: undefined } as const
     const pct = Math.round((list.done / list.total) * 100)
     const where = phaseOf(list)
@@ -1775,6 +1818,11 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
                   </Text>
                 </Box>
               </Box>
+              {clashes.has(row.id) && (
+                <Text color="warning" wrap="truncate-end">
+                  {'  '}! {clashes.get(row.id)}
+                </Text>
+              )}
               {open === row.id
                 ? (list.tasks.find(t => t.id === row.id)?.boxes ?? []).map((b, bi) => (
                     <Box key={`box-${row.id}-${bi}`} paddingLeft={2}>

@@ -13,6 +13,7 @@ import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './vie
 import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
 import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
 import { readBranches, type BranchBoard } from './branches'
+import { collisions, type Collision } from './collisions'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -58,6 +59,8 @@ export type StateParts = {
   modules?: ModuleRow[] | null
   /** team-view (V1): tasks/todo.md across the other branches; null when not read. */
   branches?: BranchBoard | null
+  /** team-view (V1): tasks under way on two branches or with two owners; null when branches were not read. */
+  collisions?: Collision[] | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -82,6 +85,7 @@ export function toState(p: StateParts): State {
     me: p.me ?? null,
     modules: p.modules ?? null,
     branches: p.branches ?? null,
+    collisions: p.collisions ?? null,
     spec,
     specFiles: p.specs.map(x => x.file),
     alerts: alerts({ list: p.list, snapshots: p.snapshots, today: p.today }),
@@ -116,6 +120,7 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
   if (opts.branches && io.run) {
     const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
     parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
+    parts.collisions = parts.branches ? collisions(parts.branches, io.now) : null
   }
   if (!list || !listFile || list.total === 0) return toState(parts)
 
@@ -198,6 +203,8 @@ export type StateJson = {
   modules: ModuleRow[] | null
   /** team-view (V1): each task's furthest state across branches; null unless asked for (`--json` asks). */
   branches: BranchBoard | null
+  /** team-view (V1): each colliding task with its refs, owners and ages; null unless branches were read. */
+  collisions: Collision[] | null
 }
 
 export function stateJson(s: State): StateJson {
@@ -247,5 +254,6 @@ export function stateJson(s: State): StateJson {
     me: s.me?.handle ?? null,
     modules: s.modules,
     branches: s.branches ?? null,
+    collisions: s.collisions ?? null,
   }
 }
