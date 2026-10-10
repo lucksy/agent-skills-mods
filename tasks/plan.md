@@ -96,10 +96,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 11: Spec view
 
 ### Checkpoint: Views
-- [ ] All five views render from both entry points
+- [x] All five views render from both entry points
 
 ### Phase 4: Finish
-- [ ] Task 12: Empty states, accessibility and the size and speed budget
+- [x] Task 12: Empty states, accessibility and the size and speed budget
 - [ ] Task 13: README, version bump and a final browser check
 
 ### Checkpoint: Complete

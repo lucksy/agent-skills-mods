@@ -15,7 +15,8 @@ export type ChartSpec = {
 
 /** A chart's mount: its spec for the bundle, and its one-line summary, which is what a page without JS shows. */
 export function chartMount(spec: ChartSpec, summary: string): string {
-  return `<div class="chart" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
+  // An image to a screen reader, spoken as its summary: the drawing itself says nothing more.
+  return `<div class="chart" role="img" aria-label="${esc(summary)}" data-chart="${esc(JSON.stringify(spec))}"><p class="chart-text">${esc(summary)}</p></div>`
 }
 
 /** `1 task`, `3 tasks`. */

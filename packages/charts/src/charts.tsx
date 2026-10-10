@@ -138,9 +138,23 @@ function markers(spec: Spec, axis: 'x' | 'y') {
   }))
 }
 
-function Chart({ spec }: { spec: Spec }) {
+/** Below this width a date axis keeps three ticks (first, middle, last), so its labels never run together. */
+const NARROW = 480
+
+/** The first, middle and last day the series cover, as Dates for a time axis. */
+function threeDays(spec: Spec): Date[] {
+  const xs = (spec.data as any[]).flatMap(s => (s.data ?? []).map((d: any) => Date.parse(`${d.x}T00:00:00Z`))).filter(Number.isFinite)
+  if (!xs.length) return []
+  const lo = Math.min(...xs)
+  const hi = Math.max(...xs)
+  const mid = lo + Math.round((hi - lo) / 2 / 86_400_000) * 86_400_000
+  return [...new Set([lo, mid, hi])].map(t => new Date(t))
+}
+
+function Chart({ spec, narrow }: { spec: Spec; narrow: boolean }) {
   const colors = spec.colors.map(token)
   const props: Record<string, any> = { ...spec.props }
+  if (narrow && spec.kind !== 'bar' && props.xScale?.type === 'time') props.axisBottom = { ...(props.axisBottom ?? {}), tickValues: threeDays(spec) }
   for (const [key, side] of [['x', 'axisBottom'], ['y', 'axisLeft']] as const) {
     const f = spec.format?.[key]
     if (f && props[side] !== null) props[side] = { ...(props[side] ?? {}), format: FORMATS[f] }
@@ -186,11 +200,22 @@ function Chart({ spec }: { spec: Spec }) {
   )
 }
 
-const roots: { el: HTMLElement; root: Root; spec: Spec }[] = []
+const roots: { box: HTMLElement; root: Root; spec: Spec; narrow: boolean }[] = []
 
 function draw() {
-  for (const { root, spec } of roots) root.render(<Chart spec={spec} />)
+  for (const r of roots) r.root.render(<Chart spec={r.spec} narrow={r.narrow} />)
 }
+
+/** Redraw a chart when it crosses the narrow width: a hidden tab measures 0, so it is drawn on showing. */
+const resized = new ResizeObserver(entries => {
+  for (const e of entries) {
+    const r = roots.find(x => x.box === e.target)
+    const w = e.contentRect.width
+    if (!r || w === 0 || w < NARROW === r.narrow) continue
+    r.narrow = w < NARROW
+    r.root.render(<Chart spec={r.spec} narrow={r.narrow} />)
+  }
+})
 
 function mount() {
   for (const el of document.querySelectorAll<HTMLElement>('[data-chart]')) {
@@ -202,7 +227,8 @@ function mount() {
       box.setAttribute('aria-hidden', 'true')
       el.prepend(box)
       el.classList.add('has-chart')
-      roots.push({ el, root: createRoot(box), spec })
+      roots.push({ box, root: createRoot(box), spec, narrow: box.clientWidth > 0 && box.clientWidth < NARROW })
+      resized.observe(box)
     } catch {
       // Leave the text summary in place.
     }

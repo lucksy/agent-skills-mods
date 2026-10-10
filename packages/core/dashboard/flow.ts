@@ -202,6 +202,9 @@ export function cycleTimeChart(s: State): FlowChart {
   const median = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
   const longest = points.reduce((a, b) => (b.days > a.days ? b : a))
   const latest = points.reduce((a, b) => (b.day >= a.day ? b : a))
+  // A day of room each side, so no dot sits on an axis end.
+  const shift = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10)
+  const firstDay = points.reduce((a, b) => (b.day < a.day ? b : a)).day
   return {
     ...base,
     spec: {
@@ -209,7 +212,7 @@ export function cycleTimeChart(s: State): FlowChart {
       data: [{ id: 'done tasks', data: points.map(p => ({ x: p.day, y: p.days, tip: `${p.id} ${plainInline(p.title)} · ${p.days} d · done ${shortDay(p.day)}` })) }],
       colors: ['--done'],
       format: { x: 'day', y: 'days' },
-      props: { margin: MARGIN, xScale: TIME_X, yScale: { type: 'linear', min: 0, max: 'auto' }, ...AXES, nodeSize: 10, enableGridX: false, useMesh: true },
+      props: { margin: MARGIN, xScale: { ...TIME_X, min: shift(firstDay, -1), max: shift(latest.day, 1) }, yScale: { type: 'linear', min: 0, max: 'auto' }, ...AXES, nodeSize: 10, enableGridX: false, useMesh: true },
     },
     summary: `${plural(points.length, 'task')} timed: median ${num(median)} d, longest ${longest.id} at ${longest.days} d; latest ${latest.id}, ${latest.days} d (done ${shortDay(latest.day)}).`,
   }

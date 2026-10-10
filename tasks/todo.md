@@ -377,25 +377,32 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** S
 
 ## Checkpoint: Views
-- [ ] All tests pass
-- [ ] All five views render from the CLI and from `/progress dashboard` on this repo and on a fixture project
-- [ ] Review with human before proceeding
+- [x] All tests pass
+- [x] All five views render from the CLI and from `/progress dashboard` on this repo and on a fixture project
+- [x] Review with human before proceeding
 
 ## Phase 4: Finish
 
 ## Task 12: Empty states, accessibility and the size and speed budget
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Go through every view for an empty or partial project: no spec, no list, no history, all done, one task. Finish the keyboard tabs (`role="tablist"` and arrow keys), the chart text alternatives and the layout at 360 px. Add a generated fixture with 60 tasks and 90 days of history, and test the budget against it.
 
 **Acceptance criteria:**
-- [ ] Each empty or partial fixture renders every view with a message and no exception
-- [ ] The 60-task, 90-day fixture renders in under 200 ms, and the page is under 250 KB
-- [ ] Tabs work with arrow keys, every chart has `role="img"` with a label, and the page has no horizontal scroll at 360 px
+- [x] Each empty or partial fixture renders every view with a message and no exception
+- [x] The 60-task, 90-day fixture renders in under 200 ms, and the page is under 250 KB
+- [x] Tabs work with arrow keys, every chart has `role="img"` with a label, and the page has no horizontal scroll at 360 px
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: Chrome DevTools at 360 px, keyboard only, light and dark, no console errors
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: Chrome DevTools at 360 px, keyboard only, light and dark, no console errors
+
+**Notes:**
+- Every view renders words, never an empty panel, across seven project shapes: empty, spec only, list only, all done, one task, no tasks, two specs and no plan.
+- The 60-task, 90-day plan renders well under 200 ms. The page is under 250 KB without the bundle.
+- Each chart mount is `role="img"` with its summary as the label. Cycle time keeps a day of room either side.
+- In the bundle, a chart narrower than 480 px gives its date axis three ticks (first, middle, last); at 360 px the burn-up's labels ran together. It redraws when its width crosses 480 px.
+- Checked in Chrome at 360 px: no view scrolls the page sideways (Roadmap rows scroll inside their card); arrow keys, Home and End move between tabs; no console messages.
 
 **Dependencies:** T7, T8, T10, T11
 
@@ -407,7 +414,7 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** M
 
 ## Task 13: README, version bump and a final browser check
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** Document `/progress dashboard [view]` and `--dashboard [out]` in the README: the command table, "What you get", the CLI section and the layout. Bump the version to 0.37.0 in `.claude-plugin/plugin.json`. Do a final browser check on this repo.
 

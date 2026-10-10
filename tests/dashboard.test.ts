@@ -220,7 +220,7 @@ describe('the chart bundle (K4)', () => {
 
   test('a mount carries its spec as escaped JSON and its summary as text, for pages without JS', () => {
     const html = chartMount({ kind: 'line', data: [{ id: '</div>"x', data: [{ x: '1', y: 2 }] }], colors: ['--done'] }, 'Tasks done: 3 of 4 <ok>.')
-    expect(html).toMatch(/^<div class="chart" data-chart="\{&quot;kind&quot;:&quot;line&quot;/)
+    expect(html).toMatch(/^<div class="chart" role="img" aria-label="Tasks done: 3 of 4 &lt;ok&gt;\." data-chart="\{&quot;kind&quot;:&quot;line&quot;/)
     expect(html).toMatch(/<\/p><\/div>$/)
     expect(html).not.toContain('</div>"x')
     expect(html).toContain('&lt;/div&gt;\\&quot;x')
