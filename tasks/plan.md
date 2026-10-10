@@ -90,7 +90,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 3: Views
 - [x] Task 7: Board view
-- [ ] Task 8: Roadmap view
+- [x] Task 8: Roadmap view
 - [ ] Task 9: Flow view: burn-up, cumulative flow, cycle time, aging WIP (Nivo)
 - [ ] Task 10: Flow view: ETA drift chart (Nivo)
 - [ ] Task 11: Spec view

@@ -248,7 +248,7 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 **Estimated scope:** S
 
 ## Task 8: Roadmap view
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `roadmap.ts` draws three things:
 - the run timeline as styled HTML, using the same rows as `/progress timeline` with each segment tone mapped to a CSS class;
@@ -256,12 +256,12 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 - the critical path from `criticalPath()`, highlighted.
 
 **Acceptance criteria:**
-- [ ] The timeline rows' text equals `plain()` of the rows `/progress timeline` prints for the fixture
-- [ ] The dependency tree lists every task, and loops when the fixture has one
-- [ ] The critical path is shown as `T2 → T3 → T4` and its tasks are marked in the tree
+- [x] The timeline rows' text equals `plain()` of the rows `/progress timeline` prints for the fixture
+- [x] The dependency tree lists every task, and loops when the fixture has one
+- [x] The critical path is shown as `T2 → T3 → T4` and its tasks are marked in the tree
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 
 **Dependencies:** T4
 
