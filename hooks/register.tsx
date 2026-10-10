@@ -27,6 +27,7 @@ import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
 import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
 import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
+import { look, mergeSince, nextSeen, parseSeen, SEEN_FILE, seenOf, seenText, sinceLine, sinceText, type Seen, type Since } from '../packages/core/since'
 import { approvalStatus, clearApprovals } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -105,6 +106,8 @@ const tab = atom({ plugin: 'agent-skills-mods', key: 'tab' } as const, 'tasks' a
 const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as const, 1)
 /** The board across branches as last read (team-view): the band and the board pane find collisions in it. */
 const branchBoard = atom({ plugin: 'agent-skills-mods', key: 'branchBoard' } as const, null as BranchBoard | null)
+/** What the session's first look found (team-view T9); null until then, so the line shows once a session. */
+const sinceLook = atom({ plugin: 'agent-skills-mods', key: 'sinceLook' } as const, null as Since | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -651,12 +654,18 @@ async function modulesCommand($: $, id?: string): Promise<string> {
 /** Each commit's copy of tasks/todo.md, read once a session: an unchanged ref is not read twice (team-view T3). */
 const branchCopies = new Map<string, string | null>()
 
+/** The git folder, as an absolute path; null outside a repository. */
+async function gitDir($: $, cwd: string): Promise<string | null> {
+  const r = await $.process.run(GIT_DIR_ARGV, { timeoutMs: 10_000 }).catch(() => null)
+  const dir = r && r.exitCode === 0 ? r.stdout.trim() : ''
+  return dir ? (dir.startsWith('/') ? dir : `${cwd}/${dir}`) : null
+}
+
 /** When this clone last fetched: FETCH_HEAD's time in the git folder; null when it never has. */
 async function fetchedAt($: $, cwd: string): Promise<number | null> {
-  const r = await $.process.run(GIT_DIR_ARGV, { timeoutMs: 10_000 }).catch(() => null)
-  if (!r || r.exitCode !== 0) return null
-  const dir = r.stdout.trim()
-  const entries = await $.fs.list(dir.startsWith('/') ? dir : `${cwd}/${dir}`).catch(() => [])
+  const dir = await gitDir($, cwd)
+  if (!dir) return null
+  const entries = await $.fs.list(dir).catch(() => [])
   const ms = entries.find(e => e.name === 'FETCH_HEAD')?.mtimeMs
   return ms ? ms : null
 }
@@ -686,6 +695,47 @@ async function collisionText($: $, t: Task): Promise<string | null> {
   const board = await read($, branchBoard)
   const c = collisionOf(t, board, await $.clock.now())
   return c ? collisionLine(c, board?.here ?? null) : null
+}
+
+/** The plan as a look remembers it (team-view T9): every spec, the plan, and the collisions on the board last read. */
+async function seenNow($: $, p: AsmProject): Promise<Seen> {
+  const board = await read($, branchBoard)
+  const now = await $.clock.now()
+  return seenOf({ list: p.list, specs: await allSpecs($, p), plan: p.plan, collisions: board ? collisions(board, now) : null, branches: board }, now)
+}
+
+/**
+ * A look (team-view T9): what changed since `<git dir>/agent-skills/seen.json`,
+ * which then holds now. A missing or corrupt file is a first look. The
+ * session's first look is kept, so /progress since lists all it found (the line
+ * had room for six) plus anything since. Null outside a git repository.
+ */
+async function lookSince($: $, p: AsmProject): Promise<Since | null> {
+  const dir = await gitDir($, p.cwd)
+  if (!dir) return null
+  const path = `${dir}/${SEEN_FILE}`
+  const prev = parseSeen(await readText($, path))
+  const now = await seenNow($, p)
+  const fresh = look(prev, now, await sessionHandle($, p.cwd)).since
+  const first = await read($, sinceLook)
+  if (!first) await update($, sinceLook, () => fresh)
+  await $.fs.write(path, seenText(nextSeen(prev, now))).catch(() => undefined)
+  return first ? mergeSince(first, fresh) : fresh
+}
+
+/** After each turn of a session that has looked, seen.json follows: what you saw happen is not news next time. */
+async function keepSeen($: $, p: AsmProject): Promise<void> {
+  if (!(await read($, sinceLook))) return
+  const dir = await gitDir($, p.cwd)
+  if (!dir) return
+  const path = `${dir}/${SEEN_FILE}`
+  await $.fs.write(path, seenText(nextSeen(parseSeen(await readText($, path)), await seenNow($, p))))
+}
+
+/** `/progress since` (team-view V4): everything that changed since you last looked, with who did it. */
+async function sinceCommand($: $): Promise<string> {
+  const s = await lookSince($, await load($))
+  return s ? sinceText(s) : 'Not a git repository: "since you last looked" keeps its snapshot in the git folder.'
 }
 
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
@@ -1412,6 +1462,7 @@ export const register: Register = (on, options) => {
       if (verb === 'review') return reply(await reviewCommand($, words))
       if (verb === 'modules') return reply(await modulesCommand($, words[0]))
       if (verb === 'branches') return reply(await branchesCommand($))
+      if (verb === 'since' && !words.length) return reply(await sinceCommand($))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
@@ -1422,7 +1473,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1510,6 +1561,7 @@ export const register: Register = (on, options) => {
     if (e.agentId === undefined) {
       // A commit, checkout or fetch this turn changes the other branches; unchanged copies are not read again.
       if (p && (await read($, branchBoard))) await readBoard($, p).catch(() => undefined)
+      if (p) await keepSeen($, p).catch(() => undefined)
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
       await update($, gateWarned, () => false)
@@ -1527,6 +1579,14 @@ export const register: Register = (on, options) => {
     const id = taskInPrompt(e.text, p.list)
     await update($, focus, () => id)
     if (id) void $.ui.open({ id: BOARD_PANE, title: 'Plan' })
+    // Since you last looked (team-view V4): once a session, on the person's first
+    // prompt, one line; nothing when nothing changed or on the very first look.
+    if ((e.origin.kind === 'composer' || e.origin.kind === 'bridge') && !(await read($, sinceLook))) {
+      const s = await lookSince($, p).catch(() => null)
+      if (!s) await update($, sinceLook, () => ({ day: null, first: true, changes: [] }))
+      const line = s && sinceLine(s)
+      if (line) $.ui.log(line)
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 

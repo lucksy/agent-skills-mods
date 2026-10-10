@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -52,6 +52,8 @@ Usage: agent-skills-progress [dir] [options]
   --json          the parsed state as JSON, for other tools
   --branches      the board across branches: each task's furthest state on any
                   local branch or fetched ref, and how long ago this clone fetched
+  --since         what changed since you last looked, with who did it; then
+                  remembers this look (in the git folder, shared with the plugin)
   --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
@@ -79,6 +81,7 @@ function parseArgs(argv) {
     else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
     else if (a === '--branches') o.mode = 'branches'
+    else if (a === '--since') o.mode = 'since'
     else if (a === '--modules') {
       o.mode = 'modules'
       // A module id, not a folder: no slash, not . or ..
@@ -153,6 +156,12 @@ async function main() {
   const { gather, renderBrief, renderCli, renderJson, renderTimelineCli } = await import('../packages/core/cli.ts')
   const { specCandidates } = await import('../packages/core/view.ts')
   const cwd = resolve(o.dir)
+  // The git folder, absolute; null outside a repository. Never fetches.
+  const gitDir = async () => {
+    const r = await runner(cwd)(['git', 'rev-parse', '--git-dir'])
+    return r.exitCode === 0 && r.stdout.trim() ? resolve(cwd, r.stdout.trim()) : null
+  }
+  const { SEEN_FILE } = await import('../packages/core/since.ts')
   const io = {
     cwd,
     now: Date.now(),
@@ -170,10 +179,14 @@ async function main() {
     run: o.git ? runner(cwd) : undefined,
     // FETCH_HEAD's time: when this clone last fetched (team-view). Never fetches.
     fetchedAt: async () => {
-      const r = await runner(cwd)(['git', 'rev-parse', '--git-dir'])
-      if (r.exitCode !== 0) return null
-      return stat(resolve(cwd, r.stdout.trim(), 'FETCH_HEAD')).then(s => s.mtimeMs, () => null)
+      const dir = await gitDir()
+      return dir ? stat(resolve(dir, 'FETCH_HEAD')).then(s => s.mtimeMs, () => null) : null
     },
+    // The last look (team-view T9): <git dir>/agent-skills/seen.json, shared with the plugin.
+    seen: o.git ? async () => {
+      const dir = await gitDir()
+      return dir ? readFile(resolve(dir, SEEN_FILE), 'utf8').catch(() => null) : null
+    } : undefined,
   }
   let specFile
   if (o.spec) {
@@ -184,8 +197,10 @@ async function main() {
   if (o.mode === 'serve') return serve(io, { specFile, port: o.port, open: o.open })
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
   // The dashboard's Board has an All branches switch (team-view T5).
-  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard')
-  const state = await gather(io, { specFile, branches }).finally(stop)
+  // --since reads the branches too, for new collisions; --json reports since without storing a look.
+  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard' || o.mode === 'since')
+  const since = o.git && (o.mode === 'json' || o.mode === 'since')
+  const state = await gather(io, { specFile, branches, since }).finally(stop)
 
   const env = process.env
   const color = o.color ?? (env.NO_COLOR ? false : env.FORCE_COLOR ? true : !!process.stdout.isTTY)
@@ -194,6 +209,18 @@ async function main() {
     const { branchesText } = await import('../packages/core/branches.ts')
     if (!o.git) return console.log('The board across branches reads git; drop --no-git.')
     return console.log(state.branches ? branchesText(state.branches, io.now) : 'Not a git repository: the board across branches reads the other branches from git.')
+  }
+  if (o.mode === 'since') {
+    if (!o.git) return console.log('"Since you last looked" reads git; drop --no-git.')
+    const dir = await gitDir()
+    if (!dir || !state.since) return console.log('Not a git repository: "since you last looked" keeps its snapshot in the git folder.')
+    const { nextSeen, parseSeen, seenOf, seenText, sinceText } = await import('../packages/core/since.ts')
+    console.log(sinceText(state.since))
+    // This look is remembered: the next one, here or in the plugin, starts from now.
+    const path = resolve(dir, SEEN_FILE)
+    const prev = parseSeen(await readFile(path, 'utf8').catch(() => null))
+    await mkdir(dirname(path), { recursive: true })
+    return writeFile(path, seenText(nextSeen(prev, seenOf(state, io.now))))
   }
   if (o.mode === 'modules') {
     const { modulesText } = await import('../packages/core/modules.ts')
