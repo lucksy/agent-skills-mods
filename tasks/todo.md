@@ -447,5 +447,5 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 
 ## Checkpoint: Complete
 - [x] All tests pass and `claude plugin validate .` is clean
-- [ ] Every success criterion in SPEC-core.md and SPEC-dashboard.md is met (one left: the marketplace install, checked after the push)
+- [x] Every success criterion in SPEC-core.md and SPEC-dashboard.md is met (the marketplace install checked after the push, from GitHub)
 - [x] Review with human before release
