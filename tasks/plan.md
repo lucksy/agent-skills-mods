@@ -30,6 +30,20 @@ The risky unknown goes first (Q1). After that, the dashboard is built as a thin 
 - **`/progress report` stays unchanged.** It remains the email-safe page with no JS. The dashboard is a separate file, `tasks/progress-dashboard.html`.
 - **Story ids in comments:** J1–J3 for core, K1–K6 for the dashboard, as in the specs.
 
+## Design Contract (T4)
+
+Every view follows this. It is the "built with intent" bar for the dashboard UI.
+
+- **Job:** answer three questions within a few seconds: is it on track, when will it land, and what needs me. Every view leads with its answer, then shows the detail.
+- **Hierarchy:** a header with the project name, the stage strip and an as-of date with its sources; then the tabs; then the view. The Overview runs: four figures (the same `headline()` the charts tab shows), the forecast's basis in one line, tasks by state, then "Needs you" beside "Now".
+- **Density:** a working tool, not a landing page. Base text 14 px, a 4 px spacing scale, one 6 px radius, 1 px borders and no shadows or gradients. The content is at most 1120 px wide.
+- **Colour:** the report's tokens (done green, in progress amber, blocked red, to do grey, needs-you magenta), redefined for dark mode. Colour never carries meaning alone: every state has a glyph (✓ ● ■ ○ ♦) and words, and bars carry `role="img"` with a spoken label.
+- **Text from markdown:** escaped, with inline marks (`code`, *em*, **strong**) rendered rather than shown raw.
+- **States:** an empty project says how to start, an empty list says why it's empty, and "nothing waiting" reads as good news.
+- **Tabs:** a view gets a tab only once it is built, with no "coming soon". Without JS the tabs are hidden and every view is shown under its own heading.
+- **Responsive:** the figures go from 4 columns to 2 below 640 px, and the two columns stack below 860 px. No horizontal scroll at 360 px.
+- **Rejected:** hero sections, rows of identical cards, purple accents, shadows, colour-only status, and placeholder copy.
+
 ## Dependency Graph
 
 ```
@@ -101,9 +115,9 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ## Open Questions
 
-- Q2: Health is *on track* or *at risk* until a target date exists. Does the target date come from `ceremonies` (sprint end) or from a `format-v2` `target:` field? It affects T6 but doesn't block it.
-- Q3: The output goes to `tasks/progress-dashboard.html`. Should `/progress format` also gitignore it and the report? It affects T4 and T5 but doesn't block them, and isn't in this plan unless you say so.
-- Q4: Is it right to keep `/progress report` unchanged, as the email-safe page? It affects T13 but doesn't block it.
+- Q2: Health is *on track* or *at risk* until a target date exists. Does the target date come from `ceremonies` (sprint end) or from a `format-v2` `target:` field? It shapes the Overview's health figure, which can ship without it.
+- Q3: The output goes to `tasks/progress-dashboard.html`. Should `/progress format` also gitignore it and the report? It isn't in this plan unless you say so.
+- Q4: Is it right to keep `/progress report` unchanged, as the email-safe page? This plan keeps it unchanged.
 
 ## Resolved Questions
 

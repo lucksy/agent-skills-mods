@@ -87,14 +87,14 @@ created: 2026-10-10
 **Estimated scope:** M
 
 ## Checkpoint: Core
-- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] The plugin loads with `claude --plugin-dir .` and behaves as before
-- [ ] Review with human before proceeding
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] The plugin loads with `claude --plugin-dir .` and behaves as before
+- [x] Review with human before proceeding
 
 ## Phase 2: Dashboard path end to end
 
 ## Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Build `dashboardHtml(state, { view? })` in `packages/core/dashboard/page.ts`. It contains:
 - a tablist for the five views, with only Overview filled in for now and the others showing "coming";
@@ -106,14 +106,14 @@ created: 2026-10-10
 The no-JS page shows every view stacked. The Overview shows done/total, the ETA range, scope added, the current task and the decisions waiting. Add `--dashboard [out]` to the CLI, defaulting to `tasks/progress-dashboard.html`. It prints the path and size.
 
 **Acceptance criteria:**
-- [ ] `node scripts/agent-skills-progress.mjs --dashboard` writes the page; the Overview numbers equal those `--json` prints
-- [ ] A task titled `</script><script>alert(1)</script>` renders as text; the page has no `http(s)://` in `src`, `href` or `url(`, and carries the CSP meta tag
-- [ ] The same state and `today` give byte-identical HTML, and the inline script parses (`new Function`)
+- [x] `node scripts/agent-skills-progress.mjs --dashboard` writes the page; the Overview numbers equal those `--json` prints
+- [x] A task titled `</script><script>alert(1)</script>` renders as text; the page has no `http(s)://` in `src`, `href` or `url(`, and carries the CSP meta tag
+- [x] The same state and `today` give byte-identical HTML, and the inline script parses (`new Function`)
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (new `tests/dashboard.test.ts`)
-- [ ] Tests pass: `bash scripts/test.sh` (new `--dashboard` cases, including an empty project)
-- [ ] Manual check: open the file in Chrome; tabs and `#overview` work; no console errors or network requests
+- [x] Tests pass: `claude plugin test .` (new `tests/dashboard.test.ts`)
+- [x] Tests pass: `bash scripts/test.sh` (new `--dashboard` cases, including an empty project)
+- [x] Manual check: open the file in Chrome; tabs and `#overview` work; no console errors or network requests
 
 **Dependencies:** T3
 

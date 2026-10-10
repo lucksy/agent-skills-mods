@@ -45,6 +45,15 @@ check module-spec 'Spec · specs/auth.md' node "$script" "$tmp/build" --spec aut
 
 out=$(node "$script" "$tmp/build" --no-color 2>&1)
 if [[ $out == *Warning* ]]; then echo "FAIL no-warnings: Node printed a warning"; fail=1; else echo "ok   no-warnings"; fi
+# The dashboard page (K6): written where asked, its inline script valid JavaScript.
+check dashboard-default 'Wrote' node "$script" "$tmp/build" --dashboard --no-git
+if [[ -s "$tmp/build/tasks/progress-dashboard.html" ]]; then echo "ok   dashboard-file"; else echo "FAIL dashboard-file: tasks/progress-dashboard.html not written"; fail=1; fi
+check dashboard-out 'custom.html' node "$script" "$tmp/build" --dashboard "$tmp/custom.html" --no-git
+check dashboard-empty 'Wrote' node "$script" "$tmp/empty" --dashboard "$tmp/empty.html"
+if grep -q 'No task list yet' "$tmp/empty.html"; then echo "ok   dashboard-empty-says-why"; else echo "FAIL dashboard-empty-says-why"; fail=1; fi
+node -e 'const h=require("fs").readFileSync(process.argv[1],"utf8");const m=[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)];if(m.length!==1)process.exit(2);require("fs").writeFileSync(process.argv[2],m[0][1])' "$tmp/build/tasks/progress-dashboard.html" "$tmp/dash.js"
+if node --check "$tmp/dash.js" 2>/dev/null; then echo "ok   dashboard-script-parses"; else echo "FAIL dashboard-script-parses"; fail=1; fi
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

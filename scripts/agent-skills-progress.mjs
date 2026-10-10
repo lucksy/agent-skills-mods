@@ -9,8 +9,8 @@
 // Node's type stripping), or Bun.
 
 import { spawn } from 'node:child_process'
-import { readFile, readdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
 import * as nodeModule from 'node:module'
 
 // Node notes that it strips types and guesses the module format; neither is news here.
@@ -44,6 +44,8 @@ Usage: agent-skills-progress [dir] [options]
   --brief         one line: stages and the current task
   --timeline      the run timeline: phases as a tree, a build · test · commit bar per task
   --json          the parsed state as JSON, for other tools
+  --dashboard [out.html]
+                  write the dashboard page (default tasks/progress-dashboard.html)
   --spec <id>     show specs/<id>.md or SPEC-<id>.md instead of SPEC.md
   --no-git        skip git history (no ETA until 3 tasks are done today)
   --no-color      plain text (also NO_COLOR=1, or when not a terminal)
@@ -52,13 +54,17 @@ Usage: agent-skills-progress [dir] [options]
   -h, --help      this text`
 
 function parseArgs(argv) {
-  const o = { dir: '.', mode: 'full', git: true, color: undefined, width: undefined, spec: undefined }
+  const o = { dir: '.', mode: 'full', git: true, color: undefined, width: undefined, spec: undefined, out: undefined }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '-h' || a === '--help') o.mode = 'help'
     else if (a === '--brief') o.mode = 'brief'
     else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
+    else if (a === '--dashboard') {
+      o.mode = 'dashboard'
+      if (/\.html?$/i.test(argv[i + 1] ?? '')) o.out = argv[++i]
+    }
     else if (a === '--no-git') o.git = false
     else if (a === '--no-color') o.color = false
     else if (a === '--color') o.color = true
@@ -128,12 +134,21 @@ async function main() {
     specFile = specCandidates(o.spec).find(f => names.includes(f))
     if (!specFile) throw new Error(`no ${specCandidates(o.spec).join(' or ')} in ${cwd}`)
   }
-  const stop = o.mode === 'full' || o.mode === 'timeline' ? spinner('Reading the plan and its git history') : () => {}
+  const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
   const state = await gather(io, { specFile }).finally(stop)
 
   const env = process.env
   const color = o.color ?? (env.NO_COLOR ? false : env.FORCE_COLOR ? true : !!process.stdout.isTTY)
   if (o.mode === 'json') return console.log(renderJson(state))
+  if (o.mode === 'dashboard') {
+    const { dashboardHtml } = await import('../packages/core/dashboard/page.ts')
+    const html = dashboardHtml(state)
+    const out = resolve(cwd, o.out ?? 'tasks/progress-dashboard.html')
+    await mkdir(dirname(out), { recursive: true })
+    await writeFile(out, html)
+    const shown = relative(process.cwd(), out)
+    return console.log(`Wrote ${shown && !shown.startsWith('..') ? shown : out} (${Math.max(1, Math.round(Buffer.byteLength(html) / 1024))} KB). Open it in a browser; it works offline.`)
+  }
   if (o.mode === 'brief') return console.log(renderBrief(state, { color }))
   const width = o.width || Math.min(110, process.stdout.columns || 80)
   console.log(o.mode === 'timeline' ? renderTimelineCli(state, { color, width }) : renderCli(state, { color, width }))

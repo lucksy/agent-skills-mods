@@ -2,3 +2,5 @@
 tsconfig.json
 node_modules/
 .DS_Store
+tasks/progress-dashboard.html
+tasks/progress-report.html
