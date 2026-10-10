@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { parseStatusLine, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { parseStatusLine, setOwner, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
 import { parseTasks } from '../packages/core/parse'
+import { bandText, boardRows, taskDetail, timelineRows } from '../packages/core/view'
+import { plain, timeline } from '../packages/core/timeline'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 import { TODO_TEMPLATE } from './fixtures'
 
@@ -64,5 +66,34 @@ describe('Status line v2 (T1)', () => {
     expect(t2).toMatchObject({ owner: '@amila', reviewer: '@bob', pr: '#42', state: { status: 'in review' } })
     expect(Object.keys(t2)).toEqual(expect.arrayContaining(['id', 'title', 'phase', 'status', 'deps', 'open', 'date', 'state', 'blockedBy', 'checkpoint']))
     expect(json.tasks!.items.find(t => t.id === 'T1')).toMatchObject({ owner: null, reviewer: null, pr: null })
+  })
+})
+
+describe('owners (T3)', () => {
+  test('setOwner writes the owner on the Status line and keeps everything else', () => {
+    const v2 = withLine(V2)
+    const sara = setOwner(v2, 'T2', '@sara')
+    expect(taskStates(sara).T2).toEqual({ status: 'in review', owner: '@sara', started: '2026-10-07', pr: '#42', reviewer: '@bob' })
+    // Only that line changed.
+    const diff = sara.split('\n').filter((l, i) => l !== v2.split('\n')[i])
+    expect(diff).toEqual(['**Status:** in review · @sara · started 2026-10-07 · PR #42 · reviewer @bob'])
+    expect(taskStates(setOwner(sara, 'T2', null)).T2!.owner).toBeUndefined()
+    // A task without a Status line gets one.
+    expect(taskStates(setOwner(TODO_TEMPLATE, 'T3', '@ann')).T3).toEqual({ status: 'todo', owner: '@ann' })
+    expect(setOwner(TODO_TEMPLATE, 'T9', '@ann')).toBe(TODO_TEMPLATE)
+  })
+
+  test('owners show in the band, the board pane, /progress task, the CLI list and the run timeline', () => {
+    const list = parseTasks(setOwner(setOwner(TODO_TEMPLATE, 'T2', '@sara'), 'T4', '@bob'))
+    expect(bandText(list)).toMatch(/^● T2 Prisma schema for keys · @sara · /)
+    const rows = boardRows(list).filter(r => r.kind === 'task') as { id: string; title: string }[]
+    expect(rows.find(r => r.id === 'T2')!.title).toBe('Prisma schema for keys · @sara')
+    expect(rows.find(r => r.id === 'T3')!.title).toBe('Issue and revoke keys')
+    expect(taskDetail(list, 'T2', { today: '2026-10-09', dates: {}, commits: [] })!.split('\n')[1]).toMatch(/^current · @sara/)
+    const cli = timelineRows(list).filter(r => r.kind === 'task') as { id: string; detail: string }[]
+    expect(cli.find(r => r.id === 'T4')!.detail).toMatch(/^@bob/)
+    const tl = timeline({ spec: null, list, plan: null, forecast: null, dates: {}, today: '2026-10-09' }).rows.map(plain)
+    expect(tl.find(r => r.includes('T2 Prisma'))).toMatch(/@sara$/)
+    expect(tl.find(r => r.includes('T3 Issue'))).not.toMatch(/@/)
   })
 })

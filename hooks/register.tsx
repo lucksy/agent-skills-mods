@@ -32,7 +32,7 @@ import { archiveDir, archiveReadme } from '../packages/core/archive'
 import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
 import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
-import { addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
+import { setOwner, addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
 import {
   bandText,
   bar,
@@ -636,6 +636,46 @@ async function teamCommand($: $, arg: string): Promise<string> {
 }
 
 /**
+ * `/progress assign T4 @sara`, `assign T4 me`, `claim T4`, `unassign T4`
+ * (format-v2, F2 and F3): the owner on the task's Status line, every other
+ * byte kept. Anyone may assign: roles are shown, never enforced.
+ */
+async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: string[]): Promise<string> {
+  const p = await load($)
+  const path = `${p.cwd}/tasks/todo.md`
+  const text = await readText($, path)
+  if (text === null) return 'No tasks/todo.md here.'
+  const rawId = words[0] ?? ''
+  if (!rawId) return `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.`
+  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
+  const task = p.list?.tasks.find(t => t.id === id)
+  if (!task || !hasTaskSection(text, id)) return `No "## Task ${id.slice(1)}:" section in tasks/todo.md.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`
+  const team = await readTeam($, p.cwd)
+  let owner: string | null = null
+  let isYou = false
+  if (verb !== 'unassign') {
+    const who = verb === 'claim' ? 'me' : words[1]
+    if (!who) return `Say who: /progress assign ${id} @sara, or /progress claim ${id} for yourself.`
+    if (who === 'me') {
+      const email = await gitEmail($)
+      const me = whoIs(team, email)
+      if (!me) {
+        const why = !team ? 'no tasks/team.md here. /progress team init sets one up;' : !email ? 'git config user.email is not set. Set it,' : `${email} is not in tasks/team.md. Add a row with it,`
+        return `Can't tell who you are: ${why} or name someone: /progress assign ${id} @name.`
+      }
+      owner = me.handle
+      isYou = true
+    } else owner = who.startsWith('@') ? who : `@${who}`
+  }
+  const was = task.owner
+  await $.fs.write(path, setOwner(text, id, owner))
+  await load($)
+  if (!owner) return `${id} ${task.title} has no owner now${was ? ` (was ${was})` : ''}.`
+  const unknown = team && !team.members.some(m => m.handle.toLowerCase() === owner!.toLowerCase()) ? ` ${owner} is not in tasks/team.md (/progress team).` : ''
+  return `${id} ${task.title} → ${owner}${isYou ? ' (you)' : ''}${was && was !== owner ? `, was ${was}` : ''}.${unknown}`
+}
+
+/**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
  * board shows (the plugin's own history included), opened on `view`. Written even
  * without a task list, since the page then says how to start.
@@ -1087,11 +1127,15 @@ export const register: Register = (on, options) => {
     }
     if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
+    {
+      const [verb, ...words] = arg.split(/\s+/)
+      if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
+    }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1269,6 +1313,7 @@ export const register: Register = (on, options) => {
               {Client ? <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: true, color: 'claude' }} width={1} height={1} /> : <Text color="claude">▸</Text>}
               <Text wrap="truncate-end">
                 <Text color="claude">{t.id}</Text> <Text bold>{t.title}</Text>
+                {t.owner && <Text dimColor> · {t.owner}</Text>}
               </Text>
             </Box>
             <Text dimColor wrap="truncate-end">

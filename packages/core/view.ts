@@ -64,7 +64,7 @@ export function bandText(list: TaskList | null): string | undefined {
   const t = list?.current
   if (!list || !t) return undefined
   const left = remaining(t)
-  const bits = [`${GLYPH.next} ${t.id} ${t.title}`, `${left} criteri${left === 1 ? 'on' : 'a'} left`, `${list.done}/${list.total} done`]
+  const bits = [`${GLYPH.next} ${t.id} ${t.title}`, ...(t.owner ? [t.owner] : []), `${left} criteri${left === 1 ? 'on' : 'a'} left`, `${list.done}/${list.total} done`]
   if (t.checkpoint) bits.push(`checkpoint after this task`)
   return bits.join(' · ')
 }
@@ -165,7 +165,7 @@ export function timelineRows(list: TaskList, opts: { dates?: Record<string, Task
           : t.status === 'waiting'
             ? `waits on ${t.deps.join(', ')}`
             : progress
-    rows.push({ kind: 'task', glyph, id: t.id, title: t.title, detail, status: isFailed ? 'failed' : t.status, date })
+    rows.push({ kind: 'task', glyph, id: t.id, title: t.title, detail: [t.owner, detail].filter(Boolean).join(' · '), status: isFailed ? 'failed' : t.status, date })
     if (t.checkpoint) {
       const isDone = t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone)
       const isDue = t.status === 'done' && !isDone
@@ -467,7 +467,7 @@ export function boardRows(list: TaskList, opts: { failed?: string | null } = {})
         const m = /^(?:tasks\/)?([\w./-]+\.md): (.*)$/.exec(t.blockedBy)
         under.push({ text: m ? `open question in ${m[1]}: ${m[2]}` : t.blockedBy, tone: 'muted' })
       }
-      rows.push({ kind: 'task', id: t.id, title: t.title, glyph, tone, right, rightTone, isCurrent, under })
+      rows.push({ kind: 'task', id: t.id, title: t.owner ? `${t.title} · ${t.owner}` : t.title, glyph, tone, right, rightTone, isCurrent, under })
       if (t.checkpoint) {
         checkpointNo++
         const items = t.checkpoint.items
@@ -572,6 +572,7 @@ export function taskDetail(list: TaskList, id: string, opts: { today: string; da
   const word = { done: 'done', next: 'current', todo: 'to do', waiting: 'waiting', blocked: 'blocked' }[t.status]
   const lines = [`${glyph} ${t.id} ${t.title}${t.phase ? `  ·  ${phaseLabel(t.phase)}` : ''}`]
   const facts = [word]
+  if (t.owner) facts.push(t.owner)
   if (st?.step && t.status !== 'done') facts.push(`step ${st.step}`)
   if (st?.started) {
     const end = st.done ?? opts.today

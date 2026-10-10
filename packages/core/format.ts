@@ -149,6 +149,25 @@ export function taskStates(text: string): Record<string, TaskState> {
 }
 
 /**
+ * `/progress assign T4 @sara` (format-v2, F2): the owner written on task `id`'s
+ * Status line (added under its heading when it has none), or cleared with
+ * null. Every other byte is kept. The text unchanged when there is no such task.
+ */
+export function setOwner(text: string, id: string, owner: string | null): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const s = sections(lines).find(x => x.id === id)
+  if (!s) return text
+  const next: TaskState = { ...((s.status === null ? null : parseStatusLine(lines[s.status]!)) ?? { status: 'todo' }) }
+  if (owner) next.owner = owner
+  else delete next.owner
+  const line = statusLine(next)
+  if (s.status === null) lines.splice(s.heading + 1, 0, line)
+  else lines[s.status] = line
+  return lines.join(eol)
+}
+
+/**
  * The task list with Status lines brought up to date:
  * - every `## Task N:` section has one, right under its heading;
  * - a task with every box ticked is `done`, dated `today` unless it has a date;

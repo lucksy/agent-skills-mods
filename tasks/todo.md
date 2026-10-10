@@ -75,14 +75,14 @@ created: 2026-10-10
 **Estimated scope:** M
 
 ## Checkpoint: Foundation
-- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] v1 task lists and specs read exactly as before
-- [ ] Review with human before proceeding
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] v1 task lists and specs read exactly as before
+- [x] Review with human before proceeding
 
 ## Phase 2: Owners and review
 
 ## Task 3: Assign, claim and unassign, with owners in the panes
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** These commands set or clear the owner on the task's Status line, keeping the rest of the line:
 - `/progress assign T4 @sara`
@@ -93,13 +93,18 @@ created: 2026-10-10
 The owner then shows on the board pane's task rows, in the band (`▸ T4 Rate limit · @sara`), on the timeline rows, in `/progress task T4`, and in the CLI summary. An unknown handle is still written, with a note that it isn't in `team.md`.
 
 **Acceptance criteria:**
-- [ ] Each command writes exactly the Status line and replies with what changed; a task that doesn't exist, or `me` without a known identity, gets a clear refusal
-- [ ] Owners show in the board pane, the band, the timeline, `/progress task` and the CLI summary
-- [ ] A handle that isn't in `team.md` is written, and the reply says so
+- [x] Each command writes exactly the Status line and replies with what changed; a task that doesn't exist, or `me` without a known identity, gets a clear refusal
+- [x] Owners show in the board pane, the band, the timeline, `/progress task` and the CLI summary
+- [x] A handle that isn't in `team.md` is written, and the reply says so
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: a real session in a scratch project, `/progress assign T2 @sara`, then `/progress`
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: a real session in a scratch project, `/progress assign T2 @sara`, then `/progress`
+
+**Notes:**
+- `setOwner` in core changes only the task's Status line, adding one when there is none.
+- Owners show in the band above the prompt, the board pane row, `/progress task`, the CLI list and the run timeline.
+- Checked in a real session on a scratch project: `claim T5` and `assign T6 @sara`; the second warned that @sara isn't in `team.md`.
 
 **Dependencies:** T2
 

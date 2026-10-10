@@ -61,10 +61,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 2: tasks/team.md and who you are
 
 ### Checkpoint: Foundation
-- [ ] Tests pass; v1 files read as before
+- [x] Tests pass; v1 files read as before
 
 ### Phase 2: Owners and review
-- [ ] Task 3: Assign, claim and unassign, with owners in the panes
+- [x] Task 3: Assign, claim and unassign, with owners in the panes
 - [ ] Task 4: Auto-claim when a task starts
 - [ ] Task 5: /progress review and the in-review state
 - [ ] Task 6: Dashboard Board: owners, In review column, person filter

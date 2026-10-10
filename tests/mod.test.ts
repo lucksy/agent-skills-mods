@@ -1314,3 +1314,29 @@ test('/progress team init drafts tasks/team.md from the git authors, and never o
   await $.command.run(run('team init force'))
   expect(files[`${CWD}/tasks/team.md`]).toMatch(/@amila-perera/)
 })
+
+// format-v2 T3 (F2, F3): assign, claim, unassign.
+test('/progress assign, claim and unassign write the owner and say so', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('sara@example.com'))
+  const line = (id: string) => files[`${CWD}/tasks/todo.md`]!.split('\n').find((_, i, all) => all[i - 1]?.startsWith(`## Task ${id}:`))
+  expect((await $.command.run(run('assign T3 @amila'))).text).toBe('T3 Issue and revoke keys → @amila.')
+  expect(line('3')).toBe('**Status:** todo · @amila')
+  expect((await $.command.run(run('claim T4'))).text).toBe('T4 Rate limit per key → @sara (you).')
+  expect(line('4')).toBe('**Status:** todo · @sara')
+  expect((await $.command.run(run('assign 3 me'))).text).toBe('T3 Issue and revoke keys → @sara (you), was @amila.')
+  expect((await $.command.run(run('assign T3 zoe'))).text).toBe('T3 Issue and revoke keys → @zoe, was @sara. @zoe is not in tasks/team.md (/progress team).')
+  expect((await $.command.run(run('unassign T3'))).text).toBe('T3 Issue and revoke keys has no owner now (was @zoe).')
+  expect(line('3')).toBe('**Status:** todo')
+  expect((await $.command.run(run('assign T9 @sara'))).text).toMatch(/^No "## Task 9:" section in tasks\/todo\.md\. Tasks: T1, T2, T3, T4\./)
+  expect((await $.command.run(run('assign T3'))).text).toBe('Say who: /progress assign T3 @sara, or /progress claim T3 for yourself.')
+})
+
+test('claim needs to know who you are', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files, asPerson('sara@example.com'))
+  expect((await $.command.run(run('claim T3'))).text).toBe("Can't tell who you are: no tasks/team.md here. /progress team init sets one up; or name someone: /progress assign T3 @name.")
+  files[`${CWD}/tasks/team.md`] = TEAM_MD.replace('sara@example.com', 'sara@elsewhere.org')
+  expect((await $.command.run(run('claim T3'))).text).toBe("Can't tell who you are: sara@example.com is not in tasks/team.md. Add a row with it, or name someone: /progress assign T3 @name.")
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+})

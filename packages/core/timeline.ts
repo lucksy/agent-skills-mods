@@ -189,6 +189,7 @@ export function timeline(input: TimelineInput): { header: Line[]; rows: Line[]; 
         if (prev) row.push(s(` starts ≈${shortDay(prev.day)}`, 'muted'))
         else if (d?.isEstimate) row.push(s(` ≈${shortDay(d.day)}`, 'muted'))
       }
+      if (t.owner) row.push(s(`  ${t.owner}`, 'accent'))
       rows.push(row)
       if (t.checkpoint) {
         cpNo++
