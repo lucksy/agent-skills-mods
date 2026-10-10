@@ -12,6 +12,7 @@ import { decisions } from './report'
 import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './view'
 import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
 import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
+import { readBranches, type BranchBoard } from './branches'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -24,6 +25,8 @@ export type ProjectIo = {
   run?: Runner
   /** The folder names in a folder relative to the project (format-v2: tasks/archive); absent, none are read. */
   dirs?: (rel: string) => Promise<string[]>
+  /** When this clone last fetched (team-view: FETCH_HEAD's time), ms; absent or null, never. */
+  fetchedAt?: () => Promise<number | null>
   now: number
 }
 
@@ -53,6 +56,8 @@ export type StateParts = {
   me?: Member | null
   /** format-v2 (F7): every module of SPEC.md's capability map, with its spec and plans; null without a map. */
   modules?: ModuleRow[] | null
+  /** team-view (V1): tasks/todo.md across the other branches; null when not read. */
+  branches?: BranchBoard | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -76,6 +81,7 @@ export function toState(p: StateParts): State {
     team: p.team ?? null,
     me: p.me ?? null,
     modules: p.modules ?? null,
+    branches: p.branches ?? null,
     spec,
     specFiles: p.specs.map(x => x.file),
     alerts: alerts({ list: p.list, snapshots: p.snapshots, today: p.today }),
@@ -83,8 +89,11 @@ export function toState(p: StateParts): State {
   }
 }
 
-/** Reads the project through `io` the way the plugin does, with history from git when there is a runner. */
-export async function buildState(io: ProjectIo, opts: { specFile?: string } = {}): Promise<State> {
+/**
+ * Reads the project through `io` the way the plugin does, with history from git
+ * when there is a runner. `branches` also reads the board across branches (team-view).
+ */
+export async function buildState(io: ProjectIo, opts: { specFile?: string; branches?: boolean } = {}): Promise<State> {
   const files = specFiles(await io.list(''), await io.list('specs'))
   const texts = await Promise.all(files.map(f => io.read(f)))
   const specs = files.flatMap((file, i) => (texts[i] === null ? [] : [{ file, spec: parseSpec(texts[i]!) }]))
@@ -104,6 +113,10 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string } = {}
   const team = teamText === null ? null : parseTeam(teamText)
   const email = team && io.run ? await io.run(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null), () => null) : null
   const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email), modules: await readModules(io, specs, todoText) }
+  if (opts.branches && io.run) {
+    const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
+    parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
+  }
   if (!list || !listFile || list.total === 0) return toState(parts)
 
   const src = io.run ? await gitSources(io.run, listFile, list) : null
@@ -183,6 +196,8 @@ export type StateJson = {
   team: { members: { handle: string; roles: string[] }[]; approvals: string[] } | null
   me: string | null
   modules: ModuleRow[] | null
+  /** team-view (V1): each task's furthest state across branches; null unless asked for (`--json` asks). */
+  branches: BranchBoard | null
 }
 
 export function stateJson(s: State): StateJson {
@@ -231,5 +246,6 @@ export function stateJson(s: State): StateJson {
     team: s.team ? { members: s.team.members.map(m => ({ handle: m.handle, roles: m.roles })), approvals: s.team.approvals } : null,
     me: s.me?.handle ?? null,
     modules: s.modules,
+    branches: s.branches ?? null,
   }
 }

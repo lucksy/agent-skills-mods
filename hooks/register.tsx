@@ -25,6 +25,7 @@ import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
+import { branchesText, GIT_DIR_ARGV, readBranches } from '../packages/core/branches'
 import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -662,6 +663,29 @@ async function modulesCommand($: $, id?: string): Promise<string> {
     : 'No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).'
 }
 
+/** Each commit's copy of tasks/todo.md, read once a session: an unchanged ref is not read twice (team-view T3). */
+const branchCopies = new Map<string, string | null>()
+
+/** When this clone last fetched: FETCH_HEAD's time in the git folder; null when it never has. */
+async function fetchedAt($: $, cwd: string): Promise<number | null> {
+  const r = await $.process.run(GIT_DIR_ARGV, { timeoutMs: 10_000 }).catch(() => null)
+  if (!r || r.exitCode !== 0) return null
+  const dir = r.stdout.trim()
+  const entries = await $.fs.list(dir.startsWith('/') ? dir : `${cwd}/${dir}`).catch(() => [])
+  const ms = entries.find(e => e.name === 'FETCH_HEAD')?.mtimeMs
+  return ms ? ms : null
+}
+
+/** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
+async function branchesCommand($: $): Promise<string> {
+  const p = await load($)
+  const now = await $.clock.now()
+  const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
+  const here = p.listFile === 'tasks/todo.md' ? p.list : null
+  const board = await readBranches(run, { file: 'tasks/todo.md', now, here, fetchedAt: await fetchedAt($, p.cwd), cache: branchCopies })
+  return board ? branchesText(board, now) : 'Not a git repository: the board across branches reads the other branches from git.'
+}
+
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
 async function gitEmail($: $): Promise<string | null> {
   const r = await $.process.run(['git', 'config', 'user.email'], { timeoutMs: 10_000 }).catch(() => null)
@@ -1263,13 +1287,14 @@ export const register: Register = (on, options) => {
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
       if (verb === 'review') return reply(await reviewCommand($, words))
       if (verb === 'modules') return reply(await modulesCommand($, words[0]))
+      if (verb === 'branches') return reply(await branchesCommand($))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|modules|branches|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

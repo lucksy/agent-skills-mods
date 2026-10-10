@@ -1471,3 +1471,36 @@ test('/progress modules <id> prints that module\'s run timeline, from its archiv
   expect(out).toMatch(/✓ T1 Lib +▬▬▬ done 25 Sep/)
   expect((await $.command.run(run('modules ui'))).text).toBe('ui has no plan yet (not started; needs api).')
 })
+
+// team-view T3 (V1): the board across branches.
+test('/progress branches shows each task\'s furthest state across refs, with the fetch age', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/main\t${'a'.repeat(40)}\t${Date.parse('2026-10-09T09:00:00Z') / 1000}\nrefs/remotes/origin/feat/keys\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\nrefs/heads/docs\t${'c'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(l => (l.startsWith('b') ? `@@asm blob\n${theirs}\n` : `${l} missing\n`)).join('')
+    return ''
+  }
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  seen.git.length = 0
+  const out = (await $.command.run(run('branches'))).text
+  expect(out.split('\n')).toEqual([
+    'Board across branches · main + 1 ref · never fetched',
+    '✓ T1 Monorepo scaffold · done on main',
+    '◐ T2 Prisma schema for keys · in review on origin/feat/keys @bob (never fetched)',
+    '○ T3 Issue and revoke keys · todo',
+    '○ T4 Rate limit per key · todo',
+    'No tasks/todo.md on: docs.',
+  ])
+  // Git objects already here, nothing that fetches; asked again, the copies are not read twice.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+  expect(seen.git.filter(c => c === 'git cat-file')).toHaveLength(1)
+  await $.command.run(run('branches'))
+  expect(seen.git.filter(c => c === 'git cat-file')).toHaveLength(1)
+})
+
+test('/progress branches outside a git repository says why there is no board', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  expect((await $.command.run(run('branches'))).text).toBe('Not a git repository: the board across branches reads the other branches from git.')
+})

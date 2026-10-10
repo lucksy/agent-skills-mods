@@ -15,7 +15,7 @@ export type CliState = State
 export type CliIo = ProjectIo
 
 /** Reads the project the way the mod does, with history from git when there is a runner. */
-export const gather = (io: CliIo, opts: { specFile?: string } = {}): Promise<CliState> => buildState(io, opts)
+export const gather = (io: CliIo, opts: { specFile?: string; branches?: boolean } = {}): Promise<CliState> => buildState(io, opts)
 
 // ------------------------------------------------------------------ drawing
 

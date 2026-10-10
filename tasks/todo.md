@@ -63,18 +63,18 @@ created: 2026-10-11
 ## Phase 2: The team across branches
 
 ## Task 3: The board across branches
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/branches.ts` decides which refs to read: local branches plus `refs/remotes/*` with a commit in the last 30 days, up to 25 of them, skipping refs at the current commit (Q2). It reads `tasks/todo.md` from every ref through one `git cat-file --batch` and builds one row per task. Each row has the furthest state across refs, the ref it is on, its owner, and the fetch age from `FETCH_HEAD`. Results are cached by ref SHA. The rows show through `/progress branches`, `--branches` and `branches` in `--json`.
 
 **Acceptance criteria:**
-- [ ] Given a fake batch output, the rows show the furthest state and its ref, and a ref without the file is skipped
-- [ ] `/progress branches` and `--branches` print the board, with the fetch age, or "never fetched"
-- [ ] No git command touches the network. Only `for-each-ref`, `cat-file`, `rev-parse` and `log` are run.
+- [x] Given a fake batch output, the rows show the furthest state and its ref, and a ref without the file is skipped
+- [x] `/progress branches` and `--branches` print the board, with the fetch age, or "never fetched"
+- [x] No git command touches the network. Only `for-each-ref`, `cat-file`, `rev-parse` and `log` are run.
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh` (a temporary repo with two branches)
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh` (a temporary repo with two branches)
 
 **Dependencies:** None
 

@@ -70,6 +70,24 @@ check modules-cli '✓ core   done · 1/1' node "$script" "$tmp/mods" --modules 
 check modules-json '"state": "not started"' node "$script" "$tmp/mods" --json --no-git
 check modules-one '✓ T1 Lib' node "$script" "$tmp/mods" --modules core --no-color --no-git
 
+# The board across branches (team-view T3): a real repository with two branches, read without fetching.
+repo="$tmp/branches"; mkdir -p "$repo"
+g() { git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@" >/dev/null 2>&1; }
+g init -b main; echo x > "$repo/README.md"; g add .; g commit -m init; g branch docs
+mkdir -p "$repo/tasks"
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n- [ ] 429\n' > "$repo/tasks/todo.md"
+g add .; g commit -m plan; g checkout -b feat/rate-limit
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** in progress · @bob · started 2026-10-10\n- [ ] 429\n' > "$repo/tasks/todo.md"
+g commit -am 'T2 started'; g checkout main
+check branches-head 'Board across branches · main + 1 ref · never fetched' node "$script" "$repo" --branches --no-color
+check branches-furthest '● T2 Rate limit · in progress on feat/rate-limit @bob' node "$script" "$repo" --branches --no-color
+check branches-missing 'No tasks/todo.md on: docs.' node "$script" "$repo" --branches --no-color
+touch "$repo/.git/FETCH_HEAD"
+check branches-fetched 'fetched 0m ago' node "$script" "$repo" --branches --no-color
+check branches-json '"ref": "feat/rate-limit"' node "$script" "$repo" --json
+check branches-no-repo 'Not a git repository' node "$script" "$tmp/build" --branches
+if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   branches-untouched"; else echo "FAIL branches-untouched: the repository changed"; fail=1; fi
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 
