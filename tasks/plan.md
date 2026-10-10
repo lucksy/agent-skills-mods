@@ -57,7 +57,7 @@ T2 and T10 can run in parallel after T1. So can T8–T9 and T3–T7, and T11–T
 Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation
-- [ ] Task 1: Status line v2 round trip
+- [x] Task 1: Status line v2 round trip
 - [ ] Task 2: tasks/team.md and who you are
 
 ### Checkpoint: Foundation

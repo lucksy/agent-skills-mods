@@ -8,7 +8,7 @@ created: 2026-10-10
 ## Phase 1: Foundation
 
 ## Task 1: Status line v2 round trip
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `TaskState` gains `owner`, `reviewer` and `pr`. `parseStatusLine` reads three things:
 - an `@handle` that is not a reviewer, as the owner;
@@ -18,13 +18,18 @@ created: 2026-10-10
 `statusLine()` writes them back in a fixed order: status, owner, dates, step, PR, reviewer. The parser's `Task` exposes `owner`, `reviewer` and `pr`. State JSON adds the fields per task within schema 1.
 
 **Acceptance criteria:**
-- [ ] `in review · @amila · started 2026-10-07 · PR #42 · reviewer @bob` parses and writes back the same, and v1 lines parse as before
-- [ ] Every stamp path keeps the owner, PR and reviewer: `/progress start`, `done`, `block`, the plugin's own step updates, and a Write of the list
-- [ ] `--json` shows `owner`, `reviewer` and `pr` per task, and every field it printed before
+- [x] `in review · @amila · started 2026-10-07 · PR #42 · reviewer @bob` parses and writes back the same, and v1 lines parse as before
+- [x] Every stamp path keeps the owner, PR and reviewer: `/progress start`, `done`, `block`, the plugin's own step updates, and a Write of the list
+- [x] `--json` shows `owner`, `reviewer` and `pr` per task, and every field it printed before
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
+
+**Notes:**
+- Tokens are matched in lower case, but handles and PR links keep the case they were written in. The order on the line doesn't matter; the writer always uses status, owner, dates, step, PR, reviewer.
+- A plugin step update on a task in review leaves it in review, so work done after review starts doesn't pull it back. Only its last box (done) or a person moves it on.
+- The parser treats *in review* as under way, so the task stays current.
 
 **Dependencies:** None
 

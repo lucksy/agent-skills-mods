@@ -26,6 +26,10 @@ export type Task = {
   checkpoint: Checkpoint | null
   /** What its `**Status:**` line says (the progress format, E1), when it has one. */
   state?: TaskState
+  /** From its Status line (format-v2): who owns it, its pull request, its reviewer. */
+  owner?: string
+  pr?: string
+  reviewer?: string
   /** Which part of the section each box is in, parallel to `boxes`: acceptance criteria or verification. */
   kinds?: ('criteria' | 'verification')[]
   /**
@@ -149,6 +153,9 @@ export function parseTasks(text: string): TaskList {
       const st = section.task.state ? null : parseStatusLine(line)
       if (st) {
         section.task.state = st
+        if (st.owner) section.task.owner = st.owner
+        if (st.pr) section.task.pr = st.pr
+        if (st.reviewer) section.task.reviewer = st.reviewer
         continue
       }
     }
@@ -262,7 +269,7 @@ function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind'], 
     } else t.status = 'todo'
   }
   // A task its Status line says is in progress is the current one, wherever it is.
-  const active = tasks.find(t => (t.state?.status === 'in progress' || (!t.state && t.mark === 'doing')) && (t.status === 'todo' || t.status === 'next' || t.status === 'waiting'))
+  const active = tasks.find(t => (t.state?.status === 'in progress' || t.state?.status === 'in review' || (!t.state && t.mark === 'doing')) && (t.status === 'todo' || t.status === 'next' || t.status === 'waiting'))
   if (active && active !== current) {
     if (current) current.status = 'todo'
     active.status = 'next'

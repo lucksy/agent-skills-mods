@@ -1272,3 +1272,22 @@ test('/progress dashboard with no task list still writes a page that says how to
   expect(seen.launched).toEqual([])
   expect(files[`${CWD}/tasks/progress-dashboard.html`]).toContain('No task list yet')
 })
+
+// format-v2 T1: every way the plugin rewrites a Status line keeps the owner, PR and reviewer.
+test('owners, PRs and reviewers survive /progress start, done, block and a Write of the list', async ($, on) => {
+  const own = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n**Status:** ${line}\n`)
+  const todo = own(own(TODO_TEMPLATE, '3', 'Issue and revoke keys', 'todo · @sara'), '4', 'Rate limit per key', 'todo · @bob · PR #7 · reviewer @amila')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo }
+  world(on, files)
+  const line = (id: string) => files[`${CWD}/tasks/todo.md`]!.split('\n').find((_, i, all) => all[i - 1]?.startsWith(`## Task ${id}:`))
+  await $.command.run(run('start T3'))
+  expect(line('3')).toMatch(/^\*\*Status:\*\* in progress · @sara · started \d{4}-\d{2}-\d{2}$/)
+  await $.command.run(run('block T4 "which store?"'))
+  expect(line('4')).toBe('**Status:** blocked · @bob · PR #7 · reviewer @amila')
+  await $.command.run(run('done T3'))
+  expect(line('3')).toMatch(/^\*\*Status:\*\* done · @sara · started \S+ · done \S+$/)
+  // The agent writes the whole list again: the plugin completes it, and keeps what it carries.
+  await $.tool.call({ tool: 'Write', file_path: `${CWD}/tasks/todo.md`, content: files[`${CWD}/tasks/todo.md`]! } as never)
+  expect(line('3')).toMatch(/· @sara ·/)
+  expect(line('4')).toBe('**Status:** blocked · @bob · PR #7 · reviewer @amila')
+})

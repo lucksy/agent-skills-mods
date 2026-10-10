@@ -9,11 +9,14 @@
 // Everything stays plain markdown, so other agents and editors read it as text.
 // The full description is docs/progress-format.md. Pure: no Claude Code API.
 
-export type TaskStatusWord = 'todo' | 'in progress' | 'done' | 'blocked'
+export type TaskStatusWord = 'todo' | 'in progress' | 'in review' | 'done' | 'blocked'
 export type TaskStep = 'build' | 'test' | 'commit'
 
-/** What a task's `**Status:**` line says. */
-export type TaskState = { status: TaskStatusWord; started?: string; done?: string; step?: TaskStep }
+/**
+ * What a task's `**Status:**` line says. v2 (format-v2) adds who owns the task,
+ * its pull request and its reviewer: `in review · @amila · started … · PR #42 · reviewer @bob`.
+ */
+export type TaskState = { status: TaskStatusWord; owner?: string; started?: string; done?: string; step?: TaskStep; pr?: string; reviewer?: string }
 
 export const FORMAT_VERSION = 1
 
@@ -63,17 +66,26 @@ const STATUS_LINE = /^\s*\*\*Status:?\*\*:?\s*(.*)$/i
 export function parseStatusLine(line: string): TaskState | null {
   const m = STATUS_LINE.exec(line)
   if (!m) return null
-  const parts = (m[1] ?? '').split(/\s*[·|,;]\s*/).map(p => p.trim().toLowerCase())
-  const word = parts[0] ?? ''
+  // Matched in lower case; handles and links keep the case they were written in.
+  const raw = (m[1] ?? '').split(/\s*[·|,;]\s*/).map(p => p.trim())
+  const word = (raw[0] ?? '').toLowerCase()
   const status: TaskStatusWord = /^done|^complete/.test(word)
     ? 'done'
-    : /^in[ -]?progress|^doing|^started|^building|^testing/.test(word)
-      ? 'in progress'
-      : /^blocked/.test(word)
-        ? 'blocked'
-        : 'todo'
+    : /^in[ -]?review|^review/.test(word)
+      ? 'in review'
+      : /^in[ -]?progress|^doing|^started|^building|^testing/.test(word)
+        ? 'in progress'
+        : /^blocked/.test(word)
+          ? 'blocked'
+          : 'todo'
   const state: TaskState = { status }
-  for (const p of parts.slice(1)) {
+  for (const part of raw.slice(1)) {
+    const reviewer = /^reviewer\s*:?\s*(@[\w.-]+)$/i.exec(part)
+    const pr = /^pr\s*:?\s*(#\d+|https?:\/\/\S+)$/i.exec(part)
+    if (reviewer) state.reviewer = reviewer[1]!
+    else if (pr) state.pr = pr[1]!
+    else if (/^@[\w.-]+$/.test(part)) state.owner = part
+    const p = part.toLowerCase()
     const kv = /^(started|done|step)\s*:?\s*(.+)$/.exec(p)
     if (!kv) continue
     const value = kv[2]!.trim()
@@ -84,12 +96,15 @@ export function parseStatusLine(line: string): TaskState | null {
   return state
 }
 
-/** The line for a state, in the order every tool writes it. */
+/** The line for a state, in the order every tool writes it: status, owner, dates, step, PR, reviewer. */
 export function statusLine(s: TaskState): string {
   const bits: string[] = [s.status]
+  if (s.owner) bits.push(s.owner)
   if (s.started) bits.push(`started ${s.started}`)
   if (s.done) bits.push(`done ${s.done}`)
   if (s.step && s.status === 'in progress') bits.push(`step ${s.step}`)
+  if (s.pr) bits.push(`PR ${s.pr}`)
+  if (s.reviewer) bits.push(`reviewer ${s.reviewer}`)
   return `**Status:** ${bits.join(' · ')}`
 }
 
@@ -164,7 +179,8 @@ export function stampTodo(
     const someTicked = s.boxes.some(Boolean)
     let next: TaskState = had ? { ...had } : { status: 'todo' }
     const change = opts.changes?.[s.id]
-    if (change && next.status !== 'done') next = { ...next, ...change, started: next.started ?? change.started }
+    // Work going on under a task in review leaves it in review: only its last box (done) or a person moves it on.
+    if (change && next.status !== 'done') next = { ...next, ...change, started: next.started ?? change.started, status: next.status === 'in review' && change.status === 'in progress' ? 'in review' : (change.status ?? next.status) }
     if (allTicked) next = { ...next, status: 'done', done: next.done ?? opts.doneDays?.[s.id] ?? today }
     else if (next.status === 'done' && s.boxes.length > 0) next = { ...next, status: 'in progress', done: undefined }
     else if (someTicked && next.status === 'todo') next = { ...next, status: 'in progress', started: next.started ?? today }

@@ -127,6 +127,10 @@ export type TaskJson = {
   /** Its Status line, when the progress format is kept. */
   state: Task['state'] | null
   blockedBy: string | null
+  /** format-v2: who owns it, its reviewer and its pull request; null when its Status line doesn't say. */
+  owner: string | null
+  reviewer: string | null
+  pr: string | null
   /** The checkpoint after this task, with its items still open. */
   checkpoint: { title: string; open: string[] } | null
 }
@@ -178,6 +182,9 @@ export function stateJson(s: State): StateJson {
         date: s.dates[t.id] ?? null,
         state: t.state ?? null,
         blockedBy: t.blockedBy ?? null,
+        owner: t.owner ?? null,
+        reviewer: t.reviewer ?? null,
+        pr: t.pr ?? null,
         checkpoint: t.checkpoint && { title: t.checkpoint.title, open: t.checkpoint.items.filter(b => !b.isDone).map(b => b.text) },
       })),
     },
