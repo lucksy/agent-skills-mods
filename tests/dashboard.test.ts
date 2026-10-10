@@ -6,6 +6,9 @@ import { inline, plainInline } from '../packages/core/dashboard/html'
 import { headline } from '../packages/core/report'
 import { health } from '../packages/core/health'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
+import { branchRows } from '../packages/core/branches'
+import { collisions } from '../packages/core/collisions'
+import { parseTasks } from '../packages/core/parse'
 import { GOOD_SPEC, SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
 
 // The dashboard (K1–K6): one self-contained page built from State v1.
@@ -327,6 +330,81 @@ describe('Board with a team (format-v2 T6)', () => {
     expect(html).toMatch(/<select [^>]*id="board-owner"[\s\S]*?<option value="">Everyone<\/option><option value="amila">@amila<\/option><option value="sara">@sara<\/option><option value="-">No owner<\/option>/)
     expect(await board(TODO_TEMPLATE)).not.toContain('id="board-owner"')
     expect(DASHBOARD_SCRIPT).toContain('board-owner')
+    expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+  })
+})
+
+describe('Board across branches (team-view T5)', () => {
+  // Here (main): T2 in progress by @amila since 7 Oct. On origin/feat/rate-limit: T2 in progress by @bob
+  // since 8 Oct (a collision), T3 in progress by @bob, T4 in review by @sara. docs has no task list.
+  const own = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n**Status:** ${line}\n`)
+  const here = own(TODO_TEMPLATE, '2', 'Prisma schema for keys', 'in progress · @amila · started 2026-10-07')
+  const theirs = own(own(own(TODO_TEMPLATE, '2', 'Prisma schema for keys', 'in progress · @bob · started 2026-10-08'), '3', 'Issue and revoke keys', 'in progress · @bob · started 2026-10-08'), '4', 'Rate limit per key', 'in review · @sara · started 2026-10-05 · PR #7')
+  const DAY = 86_400_000
+  const ref = (name: string, sha: string, remote = false) => ({ ref: `refs/${remote ? 'remotes' : 'heads'}/${name}`, name, sha, ms: NOW - DAY, remote })
+  const state = async (fetchedAt: number | null = NOW - DAY) => {
+    const s = await buildState(io({ 'tasks/todo.md': here }))
+    const b = branchRows({ name: 'main', list: parseTasks(here) }, [{ ref: ref('origin/feat/rate-limit', 'a1', true), text: theirs }, { ref: ref('docs', 'b2'), text: null }], fetchedAt)
+    return { ...s, branches: b, collisions: collisions(b, NOW) }
+  }
+  const board = async (fetchedAt?: number | null) => section(dashboardHtml(await state(fetchedAt)), 'board')
+  /** The all-branches board, and the ids of the cards in one of its columns. */
+  const across = (html: string) => html.match(/<div class="across js-only"[\s\S]*?<!-- \/across -->/)?.[0] ?? ''
+  const column = (html: string, key: string) => {
+    const col = html.match(new RegExp(`<section class="col" data-col="${key}"[\\s\\S]*?</section>`))?.[0] ?? ''
+    return [...col.matchAll(/data-task="(T\d+)"/g)].map(m => m[1])
+  }
+  const card = (html: string, id: string) => html.match(new RegExp(`<li class="card[^"]*" data-task="${id}"[\\s\\S]*?</li>`))?.[0] ?? ''
+
+  test('a This branch | All branches switch, only when the branches were read', async () => {
+    expect(await board()).toMatch(/<label>Branches <select id="board-branches"><option value="">This branch<\/option><option value="all">All branches<\/option><\/select><\/label>/)
+    const plain = section(dashboardHtml(await buildState(io({ 'tasks/todo.md': here }))), 'board')
+    expect(plain).not.toContain('board-branches')
+    expect(plain).not.toContain('class="across')
+    expect(DASHBOARD_SCRIPT).toContain('board-branches')
+  })
+
+  test('?branches=all changes the columns to the furthest states, and each card names its ref', async () => {
+    const all = across(await board())
+    expect([...all.matchAll(/data-col="(\w+)"/g)].map(m => m[1])).toEqual(['todo', 'waiting', 'doing', 'review', 'blocked', 'done'])
+    expect([column(all, 'doing'), column(all, 'review'), column(all, 'done'), column(all, 'todo'), column(all, 'waiting')]).toEqual([['T2', 'T3'], ['T4'], ['T1'], [], []])
+    expect(text(card(all, 'T3'))).toMatch(/T3 Issue and revoke keys .*on origin\/feat\/rate-limit .*@bob/)
+    expect(text(card(all, 'T4'))).toMatch(/T4 Rate limit per key .*on origin\/feat\/rate-limit .*@sara/)
+    expect(text(card(all, 'T2'))).toMatch(/on main .*@amila/)
+    expect(card(all, 'T3')).toMatch(/data-owner="bob"/)
+    // This branch's columns stay as they were: T3 still waits on T2 here.
+    const flat = (await board()).split('<div class="swim')[0]!
+    expect(column(flat, 'waiting')).toEqual(['T3'])
+  })
+
+  test('the fetch age shows above the columns, or that this clone never fetched', async () => {
+    expect(text(across(await board()))).toMatch(/^ ?Each task at its furthest state on main and 1 other branch · last fetched 8 Oct \(1 d ago\)/)
+    expect(text(across(await board(null)))).toContain('never fetched: remote branches are as of the last fetch')
+  })
+
+  test('colliding cards are marked, the mark has a text equivalent, and the collision line shows', async () => {
+    const html = await board()
+    for (const c of [card(across(html), 'T2'), card(html, 'T2')]) {
+      expect(c).toMatch(/<li class="card c-doing clash"/)
+      expect(c).toContain('<span class="c-flag" role="img" aria-label="Collision">!</span>')
+      expect(text(c)).toContain('T2 is also in progress on origin/feat/rate-limit by @bob (1d)')
+    }
+    expect(card(across(html), 'T3')).not.toContain('c-flag')
+  })
+
+  test('without JS the page shows this branch only', async () => {
+    const html = await board()
+    expect(html).toContain('<div class="across js-only"')
+    const css = dashboardHtml(await state()).match(/<style>([\s\S]*?)<\/style>/)![1]!
+    expect(css).toContain('.js .across.js-only{display:none}')
+    expect(css).toContain('.js.allb .across.js-only{display:block}')
+  })
+
+  test('the person filter still works with the switch: one hash keeps both', async () => {
+    const html = await board()
+    expect(html).toMatch(/id="board-owner"[\s\S]*?<option value="bob">@bob<\/option>/)
+    expect(DASHBOARD_SCRIPT).toMatch(/q\.set\('branches'/)
+    expect(DASHBOARD_SCRIPT).toMatch(/q\.set\('owner'/)
     expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
   })
 })

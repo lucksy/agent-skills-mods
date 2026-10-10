@@ -112,17 +112,17 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 5: Dashboard Board across branches
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** The dashboard's Board gets a "This branch | All branches" switch, kept in the URL as `#board?branches=all`. With all branches, each card shows its furthest state and its ref. Colliding cards get a mark and the collision line, and the fetch age shows above the columns. With JS off, the page shows this branch only.
 
 **Acceptance criteria:**
-- [ ] `?branches=all` changes the columns to the furthest states, and each card names its ref
-- [ ] Colliding cards are marked, and the mark has a text equivalent
-- [ ] The person filter from format-v2 still works together with the branch switch
+- [x] `?branches=all` changes the columns to the furthest states, and each card names its ref
+- [x] Colliding cards are marked, and the mark has a text equivalent
+- [x] The person filter from format-v2 still works together with the branch switch
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4

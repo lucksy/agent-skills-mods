@@ -1531,6 +1531,29 @@ test('starting a task under way on another branch shows the collision in the rep
   expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
 })
 
+// team-view T5 (V1): the dashboard's Board across branches.
+test('/progress dashboard puts the other branches on the Board: furthest states, refs and collisions', async ($, on) => {
+  const here = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @amila · started 2026-10-08\n')
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(() => `@@asm blob\n${theirs}\n`).join('')
+    return ''
+  }
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: here }
+  const seen = world(on, files, { log: '', cat: '', answer })
+  await $.command.run(run('dashboard board'))
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toContain('<select id="board-branches">')
+  expect(html).toMatch(/<div class="across js-only">[\s\S]*?data-task="T2"[\s\S]*?on <code>main<\/code>/)
+  expect(html).toContain('T2 is also in progress on feat/rate-limit by @bob (2d)')
+  expect(embedded(html).collisions.map((c: { id: string }) => c.id)).toEqual(['T2'])
+  // Read from git objects already here: nothing that fetches.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+})
+
 test('done on another branch is no collision: the band stays quiet', async ($, on) => {
   const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · @bob · started 2026-10-01 · done 2026-10-03\n')
   const answer = (argv: string[], stdin = '') => {

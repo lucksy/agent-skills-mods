@@ -122,7 +122,7 @@ ${chartsScript(panels)}
 }
 
 /**
- * Tabs over the views: the hash names the view (`#overview`; later `#board?phase=2`),
+ * Tabs over the views: the hash names the view (`#overview`, `#board?phase=2&branches=all`),
  * so a link opens it and Back returns; arrow keys, Home and End move between tabs.
  */
 export const DASHBOARD_SCRIPT = `(() => {
@@ -132,14 +132,18 @@ export const DASHBOARD_SCRIPT = `(() => {
   const parse = h => { const [v, q = ''] = h.slice(1).split('?'); return [v, new URLSearchParams(q)] }
   b.classList.add('js')
   // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase.
-  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner')
+  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner'), br = $('board-branches')
   const board = q => {
     if (!ph) return
     ph.value = q.get('phase') || ''
     st.value = q.get('state') || ''
     if (ow) ow.value = q.get('owner') || ''
-    if (gr) gr.checked = q.get('group') === 'phase'
-    b.classList.toggle('grouped', !!gr && gr.checked)
+    if (br) br.value = q.get('branches') === 'all' ? 'all' : ''
+    // All branches has no lanes: its cards are the furthest states, not this branch's phases.
+    const all = !!br && br.value === 'all'
+    if (gr) { gr.checked = q.get('group') === 'phase'; gr.disabled = all }
+    b.classList.toggle('allb', all)
+    b.classList.toggle('grouped', !!gr && gr.checked && !all)
     for (const el of $('view-board').querySelectorAll('[data-state]'))
       el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value) || (!!ow && !!ow.value && el.dataset.owner !== (ow.value === '-' ? '' : ow.value))
     for (const c of $('view-board').querySelectorAll('.col'))
@@ -151,9 +155,10 @@ export const DASHBOARD_SCRIPT = `(() => {
     if (st.value) q.set('state', st.value)
     if (ow && ow.value) q.set('owner', ow.value)
     if (gr && gr.checked) q.set('group', 'phase')
+    if (br && br.value) q.set('branches', br.value)
     location.hash = 'board' + (String(q) ? '?' + q : '')
   }
-  for (const c of [ph, st, gr, ow]) if (c) c.addEventListener('change', write)
+  for (const c of [ph, st, gr, ow, br]) if (c) c.addEventListener('change', write)
   const show = h => {
     let [id, q] = parse(h)
     // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
@@ -307,6 +312,12 @@ function BOARD_STYLE(): string {
 .c-review{border-left-color:var(--focus)!important}.lane .c-phase{display:none}
 .cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
 .cp span{color:var(--needs)}
+/* All branches (team-view): its columns replace this branch's once the switch says so. */
+.js .across.js-only{display:none}.js.allb .across.js-only{display:block}.js.allb .flat,.js.allb .swim.js-only{display:none}
+.b-across{margin:0 0 var(--s3);font-size:13px;color:var(--ink2)}
+.c-ref{color:var(--ink2)}.c-ref code{font-size:12px}
+.clash{border-color:var(--blocked)}.c-flag{display:inline-block;color:var(--blocked);font-weight:700;margin-right:2px}
+.c-clash{margin:var(--s1) 0 0;font-size:12.5px;color:var(--blocked)}
 .lane+.lane{margin-top:var(--s5)}
 .lane-title{font-size:14px;margin:0 0 var(--s2)}
 @media (max-width:980px){.cols5{grid-template-columns:repeat(2,minmax(0,1fr))}}

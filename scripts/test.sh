@@ -92,6 +92,42 @@ check collisions-none '"collisions": []' node "$script" "$repo" --json
 printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** in progress · @amila · started 2026-10-10\n- [ ] 429\n' > "$repo/tasks/todo.md"
 check collisions-json '"under way"' node "$script" "$repo" --json
 check collisions-ref '"ref": "feat/rate-limit"' node "$script" "$repo" --json
+# The dashboard's Board across branches (team-view T5): the switch, the furthest states and the collision.
+check dashboard-branches 'Wrote' node "$script" "$repo" --dashboard "$tmp/across.html"
+if grep -q 'id="board-branches"' "$tmp/across.html" && grep -q 'T2 is also in progress on feat/rate-limit by @bob' "$tmp/across.html"; then echo "ok   dashboard-branches-board"; else echo "FAIL dashboard-branches-board"; fail=1; fi
+# The page's script against a stand-in DOM: #board?branches=all&owner=… keeps both, and each control writes both back.
+cat > "$tmp/board-script.js" <<'JS'
+const html = require('fs').readFileSync(process.argv[2], 'utf8')
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1]
+const board = html.match(/id="view-board"[\s\S]*?<!-- \/view-board -->/)[0]
+const attr = (tag, k) => (tag.match(new RegExp(` data-${k}="([^"]*)"`)) || [])[1]
+const cards = [...board.matchAll(/<li [^>]*data-state="[^"]*"[^>]*>/g)].map(m => ({ hidden: false, dataset: { task: attr(m[0], 'task'), phase: attr(m[0], 'phase'), state: attr(m[0], 'state'), owner: attr(m[0], 'owner') } }))
+const cls = new Set(), on = {}
+const control = () => ({ value: '', checked: false, disabled: false, ls: {}, addEventListener(t, f) { this.ls[t] = f } })
+const ctl = Object.fromEntries(['board-phase', 'board-state', 'board-owner', 'board-group', 'board-branches'].map(id => [id, html.includes(`id="${id}"`) ? control() : null]))
+const tabs = [...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => ({ getAttribute: () => '#' + m[1], setAttribute() {}, addEventListener() {} }))
+const views = Object.fromEntries(tabs.map(t => [t.getAttribute().slice(1), { hidden: false, querySelectorAll: q => (q === '.col' ? [] : cards) }]))
+const document = {
+  body: { dataset: { view: 'overview' }, classList: { add: c => cls.add(c), toggle: (c, v) => (v ? cls.add(c) : cls.delete(c)) } },
+  getElementById: id => (id in ctl ? ctl[id] : views[id.replace(/^view-/, '')]),
+  querySelectorAll: q => (q === '[role=tab]' ? tabs : []),
+}
+// As a browser does: the hash reads back with its #, however it was set.
+let h = '#board?branches=all&owner=amila'
+const location = { get hash() { return h }, set hash(v) { h = v.replace(/^#?/, '#') } }
+require('vm').runInNewContext(script, { document, location, URLSearchParams, addEventListener: (t, f) => (on[t] = f) })
+const fail = m => { console.log(m); process.exit(1) }
+if (!cls.has('allb') || ctl['board-branches'].value !== 'all' || ctl['board-owner'].value !== 'amila') fail('the hash did not set both')
+if (cards.some(c => c.hidden !== (c.dataset.owner !== 'amila'))) fail('the person filter did not apply with all branches')
+ctl['board-owner'].value = ''; ctl['board-owner'].ls.change()
+if (location.hash !== '#board?branches=all') fail('the person filter dropped the switch: ' + location.hash)
+ctl['board-owner'].value = 'amila'; ctl['board-branches'].value = ''; ctl['board-branches'].ls.change()
+if (location.hash !== '#board?owner=amila') fail('the switch dropped the person filter: ' + location.hash)
+on.hashchange()
+if (cls.has('allb') || ctl['board-owner'].value !== 'amila') fail('this branch did not come back with the person filter')
+console.log('both kept')
+JS
+if out=$(node "$tmp/board-script.js" "$tmp/across.html" 2>&1); then echo "ok   dashboard-branches-script ($out)"; else echo "FAIL dashboard-branches-script: $out"; fail=1; fi
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

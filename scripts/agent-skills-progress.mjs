@@ -155,7 +155,8 @@ async function main() {
     if (!specFile) throw new Error(`no ${specCandidates(o.spec).join(' or ')} in ${cwd}`)
   }
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
-  const branches = o.git && (o.mode === 'json' || o.mode === 'branches')
+  // The dashboard's Board has an All branches switch (team-view T5).
+  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard')
   const state = await gather(io, { specFile, branches }).finally(stop)
 
   const env = process.env

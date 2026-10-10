@@ -68,6 +68,23 @@ export type AsmProject = {
   team?: { members: { handle: string; roles: string[]; email: string | null }[]; approvals: string[]; problems: string[] } | null
 }
 
+/** team-view: tasks/todo.md across the branches git already has (packages/core/branches.ts, BranchBoard). */
+export type AsmTaskState = 'todo' | 'in progress' | 'in review' | 'blocked' | 'done'
+export type AsmBranchBoard = {
+  here: string | null
+  refs: { name: string; remote: boolean; sha: string; hasFile: boolean }[]
+  fetchedAt: number | null
+  rows: {
+    id: string
+    title: string
+    state: AsmTaskState
+    ref: string | null
+    remote: boolean
+    owner: string | null
+    on: { ref: string; remote: boolean; state: AsmTaskState; owner: string | null; started: string | null; at: number | null }[]
+  }[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-skills-mods': {
@@ -86,6 +103,8 @@ declare module 'claude-code' {
       chartReveal: number
       tab: 'timeline' | 'charts' | 'tasks' | 'graph'
       specDiff: { file: string; since: string; diff: string } | null
+      /** team-view: the board across branches last read, for the band, the board pane and the dashboard. */
+      branchBoard: AsmBranchBoard | null
     }
   }
 }

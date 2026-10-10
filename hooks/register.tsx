@@ -26,7 +26,7 @@ import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
 import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
-import { collisionLine, collisionOf } from '../packages/core/collisions'
+import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
 import { approvalStatus, clearApprovals, signSpec } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -856,15 +856,19 @@ async function reviewCommand($: $, words: string[]): Promise<string> {
 
 /**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
- * board shows (the plugin's own history included), opened on `view`. Written even
- * without a task list, since the page then says how to start.
+ * board shows (the plugin's own history included, and the other branches when git
+ * has them), opened on `view`. Written even without a task list, since the page
+ * then says how to start.
  */
 async function writeDashboard($: $, p: AsmProject, view: string): Promise<string> {
   if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
   const specs = await allSpecs($, p)
+  const now = await $.clock.now()
+  // The Board's All branches (team-view T5): read from git objects already here, never fetched.
+  const board = await readBoard($, p).catch(() => null)
   const state = toState({
     cwd: p.cwd,
-    today: dayOf(await $.clock.now()),
+    today: dayOf(now),
     specs,
     specFile: p.specFile,
     list: p.list,
@@ -879,6 +883,8 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
       return { team, me: team ? whoIs(team, await gitEmail($)) : null }
     })()),
     modules: await projectModules($, p, specs),
+    branches: board,
+    collisions: board ? collisions(board, now) : null,
   })
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`
