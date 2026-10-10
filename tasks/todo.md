@@ -166,17 +166,17 @@ created: 2026-10-11
 ## Phase 3: Merge driver
 
 ## Task 7: Task-aware merge in core
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/merge.ts` exports `mergeTodo(base, ours, theirs)` and `mergeFrontMatter(base, ours, theirs)`, which follow the spec's merge rules. A box is ticked if either side ticked it. The Status line with the later stamp wins, and ours wins a tie (Q3). Handoff lines are combined. A task added on both sides with the same number is renumbered, and its dependencies are rewritten. A delete on one side and an edit on the other gets markers around that task. Approvals are combined by role. Anything else is line-merged by a `merge-file` function that is handed in.
 
 **Acceptance criteria:**
-- [ ] Each row of the spec's merge-rules table has a test
-- [ ] A property test over generated base/ours/theirs: every task appears in the result or inside markers, and none is dropped
-- [ ] The result reports `conflicts` and `renumbered`
+- [x] Each row of the spec's merge-rules table has a test
+- [x] A property test over generated base/ours/theirs: every task appears in the result or inside markers, and none is dropped
+- [x] The result reports `conflicts` and `renumbered`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 
 **Dependencies:** None
 
