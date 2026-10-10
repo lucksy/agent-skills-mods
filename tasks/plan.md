@@ -28,6 +28,7 @@ The risky unknown goes first (Q1). After that, the dashboard is built as a thin 
   - Output is deterministic for a given state and `today`.
 - **New numbers come from history the plugin already keeps.** `forecastHistory(snapshots)` replays `forecast()` as of each past day for the ETA drift chart. Aging WIP uses `started` dates from Status lines. Cycle time uses `daysPerTask`.
 - **`/progress report` stays unchanged.** It remains the email-safe page with no JS. The dashboard is a separate file, `tasks/progress-dashboard.html`.
+- **Charts are Nivo** (decided 2026-10-10, mid-T4). React and Nivo are bundled once with esbuild from `packages/charts/`, which holds dev dependencies only. The bundle is committed as the generated module `packages/core/dashboard/charts-bundle.ts`. The page inlines it only when it has a chart, so it still makes no requests, and the plugin and CLI need no install. The views build each chart's series in TypeScript, where they can be tested; the bundle only draws them. T14 sets up the bundle and checks the engine can load it before T9 relies on it.
 - **Story ids in comments:** J1–J3 for core, K1–K6 for the dashboard, as in the specs.
 
 ## Design Contract (T4)
@@ -56,8 +57,9 @@ T1 spike: import from ../packages/core
              │   └─ T10 Flow: ETA drift chart
              ├─ T7 Board
              ├─ T8 Roadmap
-             ├─ T9 Flow: burn-up, flow, cycle time, aging WIP
-             │   └─ T10
+             ├─ T14 Nivo chart bundle + build (engine check first)
+             │   └─ T9 Flow: burn-up, cumulative flow, cycle time, aging WIP
+             │       └─ T10
              └─ T11 Spec view
 T12 hardening ← T7, T8, T10, T11
 T13 docs + release ← T5, T12
@@ -70,17 +72,18 @@ T7, T8, T9 and T11 are independent once T4 lands, so they can run in parallel.
 Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Core
-- [ ] Task 1: Spike: hooks module importing from ../packages/core
-- [ ] Task 2: Move hooks/lib to packages/core with a purity guard
-- [ ] Task 3: State v1: toState, buildState and --json
+- [x] Task 1: Spike: hooks module importing from ../packages/core
+- [x] Task 2: Move hooks/lib to packages/core with a purity guard
+- [x] Task 3: State v1: toState, buildState and --json
 
 ### Checkpoint: Core
-- [ ] All tests pass and the plugin loads as before
+- [x] All tests pass and the plugin loads as before
 
 ### Phase 2: Dashboard path end to end
-- [ ] Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
+- [x] Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
 - [ ] Task 5: /progress dashboard [view] in the plugin
 - [ ] Task 6: Overview health and ETA drift figure
+- [ ] Task 14: Nivo chart bundle and its build
 
 ### Checkpoint: Dashboard path
 - [ ] Both entry points produce a working page, checked in a browser
@@ -88,8 +91,8 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 ### Phase 3: Views
 - [ ] Task 7: Board view
 - [ ] Task 8: Roadmap view
-- [ ] Task 9: Flow view: burn-up, flow, cycle time, aging WIP
-- [ ] Task 10: Flow view: ETA drift chart
+- [ ] Task 9: Flow view: burn-up, cumulative flow, cycle time, aging WIP (Nivo)
+- [ ] Task 10: Flow view: ETA drift chart (Nivo)
 - [ ] Task 11: Spec view
 
 ### Checkpoint: Views
@@ -110,6 +113,8 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 | The move breaks imports in a place no test covers (CLI, statusline) | Medium | T2 runs all three test suites plus `claude --plugin-dir .` |
 | The plugin's numbers differ from the CLI's | Medium | One `toState`. A test feeds both paths the same parts and compares. |
 | Markdown text injects script into the page | High | `esc()` everywhere, JSON `<` escaping, CSP, an explicit test with a hostile title |
+| The engine refuses or chokes on a 300–450 KB generated module | Medium | T14 checks this first. Fallback: the CLI inlines the bundle from a plain `.js` file and the plugin reads it with `$.fs`. |
+| The Nivo bundle grows past budget | Medium | Import only the three chart packages; esbuild minify with tree-shaking; a size check in `scripts/test.sh` |
 | The page grows large on long plans | Low | A budget test in T12: 60 tasks and 90 days of history stay under 250 KB and 200 ms |
 | The inline script can't be tested without a browser | Medium | A test checks the script parses. A manual Chrome DevTools check at each checkpoint. Views work without JS. |
 

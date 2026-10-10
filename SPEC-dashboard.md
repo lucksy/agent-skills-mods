@@ -1,7 +1,6 @@
 ---
-status: approved
+status: draft
 created: 2026-10-10
-approved: 2026-10-10
 ---
 # Spec: dashboard (project management dashboard, read-only)
 
@@ -34,8 +33,11 @@ This is phase 1 of the roadmap and it is read-only. Writing back (claim, approve
 
 - Plain TypeScript in `packages/core/` that renders HTML strings with template literals, in the same style as `report.ts` and `svg.ts`.
 - Views are rendered in TypeScript at build time. A small inline script (under 4 KB, no framework) only adds tab switching, filters, keyboard navigation and URL hash state.
-- No dependencies, runtime or dev.
-- Charts are inline SVG from `svg.ts`, extended with three new charts.
+- **Charts are [Nivo](https://nivo.rocks)** (decided 2026-10-10): `@nivo/line` for burn-up, cumulative flow and ETA drift; `@nivo/bar` for aging WIP; `@nivo/scatterplot` for cycle time. Nivo charts are interactive, with hover tooltips.
+  - Nivo and React are bundled with esbuild into one IIFE, built from `packages/charts/`. That folder has its own `package.json` and holds the only dependencies, all of them dev dependencies.
+  - The build writes `packages/core/dashboard/charts-bundle.ts` (`export const CHARTS_JS = "…"`, marked `@generated`). The file is committed, so neither the plugin nor the CLI installs anything, and the mods engine loads it as an ordinary relative module.
+  - The page inlines the bundle only when it contains a chart. Each chart mounts into `<div data-chart="…">` from the embedded State JSON. With JS off, each chart shows its one-line text summary.
+- The Overview's tasks-by-state bar and the Roadmap's dependency tree stay HTML, since they are a meter and a tree rather than charts.
 
 ## Commands
 
@@ -63,7 +65,8 @@ packages/core/dashboard/board.ts     → Kanban columns and cards, phase swimlan
 packages/core/dashboard/roadmap.ts   → timeline rows as HTML, dependency graph, critical path
 packages/core/dashboard/flow.ts      → chart sections and their text alternatives
 packages/core/dashboard/spec.ts      → one section per spec file
-packages/core/svg.ts                 → + etaDriftSvg, agingWipSvg, cycleTimeSvg
+packages/core/dashboard/charts-bundle.ts → @generated: CHARTS_JS, the Nivo bundle as a string
+packages/charts/                     → the chart bundle's source: package.json (dev deps), src/charts.tsx, build.mjs
 packages/core/forecast.ts            → + forecastHistory(snapshots): the forecast replayed as of each past day
 hooks/register.tsx                   → `/progress dashboard [view]` subcommand
 scripts/agent-skills-progress.mjs    → `--dashboard [out]` flag
@@ -100,7 +103,7 @@ export function boardHtml(s: State): string {
 | Overview | **Health:** *on track* or *at risk*, with each reason listed: band alerts, blocked tasks, building while the spec is a draft, unsigned checkpoints. Done/total, ETA median with its fast–slow range, ETA drift over 7 days (±days), scope added, decisions waiting, current task. | list, forecast, forecastHistory, needsYou, alerts |
 | Board | Columns: to do · waiting (on a dependency) · in progress · blocked · done. Each card shows id, title, open boxes, age in days if in progress, and the blocking question if blocked. Checkpoints sit between their tasks. A toggle groups cards by phase. Filters for phase and state. | list.tasks, dates, plan.openQuestions |
 | Roadmap | The run timeline (the same rows `/progress timeline` prints, as styled HTML), the dependency tree with loops listed, and the critical path highlighted. | timeline(), graphLines(), criticalPath() |
-| Flow | Burn-up with the forecast cone, cumulative flow, aging WIP (days in progress against the usual days per task), cycle time per done task, and ETA drift (the median and range as of each past day). Each chart has a one-line text summary. With too little history it shows "needs N days" instead. | snapshots, forecast, dates, forecastHistory |
+| Flow | Burn-up with the forecast cone, cumulative flow, aging WIP (days in progress against the usual days per task), cycle time per done task, and ETA drift (the median and range as of each past day). Each chart is a Nivo chart with tooltips and a one-line text summary, which is what shows without JS. With too little history it shows "needs N days" instead. | snapshots, forecast, dates, forecastHistory |
 | Spec | One section per spec file (`SPEC.md`, `SPEC-*.md`, `specs/*.md`) with a picker. Each shows approval and its date, the six areas with state and hint, boundaries in three columns, and open questions. | specs |
 
 There is no "off track" state until a target date exists (see Q1).
@@ -115,10 +118,10 @@ There is no "off track" state until a target date exists (see Q1).
 - Escaping: a task titled `</script><script>alert(1)</script>` renders as text, and the embedded JSON contains no `</script`.
 - No external requests: the page has no `http://` or `https://` in any `src`, `href` or `url(`, and carries the CSP meta tag.
 - Determinism: the same state and `today` produce byte-identical HTML.
-- Budget: a generated 60-task fixture with 90 days of history renders in under 200 ms, and the page is under 250 KB.
-- `forecastHistory` and the three new SVG charts get their own unit tests.
+- Budget: a generated 60-task fixture with 90 days of history renders in under 200 ms. The page is under 250 KB without charts, and the chart bundle is under 450 KB.
+- `forecastHistory` and each chart's data (the series it is handed) get their own unit tests. The page includes the bundle only when it has charts.
 
-**Script check:** the inline script parses (`new Function(source)`) in a test.
+**Script check:** under Node in `scripts/test.sh` (the engine runs no code from strings), the inline script and the chart bundle both pass `node --check`.
 
 **CLI:** `scripts/test.sh` gets cases for `--dashboard` on the sample projects: the file is written, the path and size are printed, and an empty project still gives a page.
 
@@ -126,6 +129,7 @@ There is no "off track" state until a target date exists (see Q1).
 
 - Tabs, arrow-key navigation, hash links, the back button and the filters all work.
 - There are no console errors and no network requests.
+- Every chart draws, shows a tooltip on hover, and follows the light and dark theme.
 - Light and dark themes both work.
 - The page has no horizontal scroll at 360 px width.
 
@@ -139,14 +143,14 @@ There is no "off track" state until a target date exists (see Q1).
   - Update the README command table and "What you get".
   - Bump the plugin version per release.
 - **Ask first:**
-  - Adding any dependency.
+  - Adding any dependency beyond the chart bundle's (Nivo, React, esbuild; dev only, in `packages/charts/`).
   - Changing `/progress report` or its output.
   - Writing anywhere other than the requested output file.
   - Changing State v1.
   - Adding a view not listed here.
   - Changing CI.
 - **Never:**
-  - External requests, CDNs, web fonts or analytics in the page.
+  - External requests, CDNs, web fonts or analytics in the page: the chart bundle is inlined, never fetched.
   - Writing to `SPEC.md`, `tasks/*.md` or git from the dashboard: this module is read-only.
   - Per-person metrics or rankings.
   - Committing a generated dashboard to this repo.
@@ -162,7 +166,8 @@ There is no "off track" state until a target date exists (see Q1).
 - [ ] No network requests while the page loads and is used, and a CSP meta tag is present.
 - [ ] Empty and partial projects render with explanatory messages and no errors.
 - [ ] Light and dark themes both work. The page has no horizontal scroll at 360 px. Tabs use `role="tablist"`, and every chart has a text alternative.
-- [ ] The 60-task, 90-day fixture renders in under 200 ms, and the page is under 250 KB.
+- [ ] The 60-task, 90-day fixture renders in under 200 ms. The page is under 250 KB without charts, and the chart bundle is under 450 KB.
+- [ ] The Flow charts are Nivo charts with hover tooltips, drawn from the embedded state, and readable in light and dark.
 - [ ] All tests pass, including the new dashboard, CLI and escaping tests. The README documents the command and the CLI flag.
 
 ## Open Questions

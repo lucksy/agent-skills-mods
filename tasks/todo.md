@@ -173,6 +173,37 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 
 **Estimated scope:** S
 
+## Task 14: Nivo chart bundle and its build
+**Status:** todo
+
+**Description:** Set up `packages/charts/`:
+- `package.json` with dev dependencies only: `react`, `react-dom`, `@nivo/core`, `@nivo/line`, `@nivo/bar`, `@nivo/scatterplot`, `esbuild`;
+- `src/charts.tsx`, which mounts a chart into each `[data-chart]` element from the embedded State JSON, themed from the page's CSS tokens for light and dark;
+- `build.mjs`, which bundles a minified IIFE and writes `packages/core/dashboard/charts-bundle.ts` (`@generated`, `export const CHARTS_JS`).
+
+Start with one placeholder chart, the tasks-done line, to prove the whole path. First check that the mods engine loads the large generated module.
+
+**Acceptance criteria:**
+- [ ] `npm --prefix packages/charts ci && npm --prefix packages/charts run build` writes `charts-bundle.ts`; the bundle is under 450 KB and passes `node --check`
+- [ ] The plugin loads with the generated module imported (`claude plugin validate .`, the tests, and a `claude -p --plugin-dir .` session); `scripts/purity.mjs` still passes
+- [ ] A page with a `data-chart` mount draws the placeholder chart in Chrome under the page's CSP, with no console errors and no requests
+
+**Verification:**
+- [ ] Tests pass: `claude plugin test .` and `bash scripts/test.sh`
+- [ ] Build succeeds: `claude plugin validate .`
+- [ ] Manual check: the placeholder chart draws in light and dark
+
+**Dependencies:** T4
+
+**Files likely touched:**
+- `packages/charts/package.json`, `packages/charts/package-lock.json`
+- `packages/charts/src/charts.tsx`
+- `packages/charts/build.mjs`
+- `packages/core/dashboard/charts-bundle.ts` (generated)
+- `scripts/test.sh`
+
+**Estimated scope:** M
+
 ## Checkpoint: Dashboard path
 - [ ] All tests pass
 - [ ] The CLI and `/progress dashboard` produce a working page on this repo, checked in Chrome: tabs, hash, back button, light and dark, no network requests
@@ -234,50 +265,56 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 
 **Estimated scope:** S
 
-## Task 9: Flow view: burn-up, flow, cycle time, aging WIP
+## Task 9: Flow view: burn-up, cumulative flow, cycle time, aging WIP (Nivo)
 **Status:** todo
 
-**Description:** `flow.ts` places the existing `burnupSvg` and `flowSvg` charts and adds two new ones to `svg.ts`:
-- `cycleTimeSvg`: days per done task, from `daysPerTask`;
-- `agingWipSvg`: days in progress for each open task, against the usual days per task.
+**Description:** `flow.ts` gives each chart a `<div data-chart="…">` mount point, a one-line text summary, and the series the chart is handed, built from State in TypeScript and so testable. The chart bundle from T14 draws:
+- burn-up: `@nivo/line`, with scope, done, and the forecast band to the ETA;
+- cumulative flow: `@nivo/line`, stacked areas for done, in progress, blocked and to do;
+- cycle time: `@nivo/scatterplot`, days per done task, from `daysPerTask`;
+- aging WIP: `@nivo/bar`, days in progress for each open task, against the usual days per task.
 
-Each chart has a one-line text summary. With too little history, a chart shows "needs N days" instead.
+With too little history, a chart shows "needs N days" instead. Without JS, the summaries show.
 
 **Acceptance criteria:**
-- [ ] The four charts render for the fixture with history; each has a text summary that names its latest numbers
+- [ ] For the fixture with history, each chart's series match the state (the same numbers as `/progress charts`), and each summary names its latest numbers
 - [ ] Aging WIP marks tasks running over twice the usual days, the same threshold as the band alert
-- [ ] Without enough history, each chart shows its "needs" message instead
+- [ ] Without enough history, each chart shows its "needs" message and the bundle is left out of the page
 
 **Verification:**
 - [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: charts readable in light and dark in Chrome
+- [ ] Manual check in Chrome: all four charts draw, tooltips on hover, light and dark, no console errors or requests
 
-**Dependencies:** T4
+**Dependencies:** T4, T14
 
 **Files likely touched:**
-- `packages/core/svg.ts`
+- `packages/charts/src/charts.tsx`
+- `packages/core/dashboard/charts-bundle.ts` (regenerated)
 - `packages/core/dashboard/flow.ts`
+- `packages/core/dashboard/page.ts`
 - `tests/dashboard.test.ts`
 
 **Estimated scope:** M
 
-## Task 10: Flow view: ETA drift chart
+## Task 10: Flow view: ETA drift chart (Nivo)
 **Status:** todo
 
-**Description:** `etaDriftSvg` plots, for each past day from `forecastHistory`, the median ETA with its fast–slow range as a whisker. It goes in the Flow view under the other charts.
+**Description:** An ETA drift chart: for each past day from `forecastHistory`, the median ETA with its fast–slow range. It is drawn with `@nivo/line` plus a custom layer for the range band, and goes in the Flow view under the other charts.
 
 **Acceptance criteria:**
-- [ ] One point and whisker for each day with a range forecast, with days without one left out
+- [ ] One point and range for each day with a range forecast, with days without one left out
 - [ ] The text summary says how far the median moved since the first range forecast
 - [ ] Below 2 range forecasts it shows its "needs" message
 
 **Verification:**
 - [ ] Tests pass: `claude plugin test .`
+- [ ] Manual check in Chrome: the chart draws, with a tooltip on hover
 
 **Dependencies:** T6, T9
 
 **Files likely touched:**
-- `packages/core/svg.ts`
+- `packages/charts/src/charts.tsx`
+- `packages/core/dashboard/charts-bundle.ts` (regenerated)
 - `packages/core/dashboard/flow.ts`
 - `tests/dashboard.test.ts`
 
