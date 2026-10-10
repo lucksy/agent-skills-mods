@@ -81,7 +81,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 2: Dashboard path end to end
 - [x] Task 4: Dashboard page shell with Overview figures and the CLI --dashboard flag
-- [ ] Task 5: /progress dashboard [view] in the plugin
+- [x] Task 5: /progress dashboard [view] in the plugin
 - [ ] Task 6: Overview health and ETA drift figure
 - [ ] Task 14: Nivo chart bundle and its build
 

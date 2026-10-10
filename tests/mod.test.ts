@@ -1226,3 +1226,49 @@ test('the current task row is shaded with a theme colour', async ($, on) => {
   const drawn = JSON.stringify(await board.drawn())
   expect(drawn.match(/"backgroundColor":"diffAddedDimmed"/g)).toHaveLength(1)
 })
+
+/** The State v1 embedded in a dashboard page. */
+const embedded = (html: string) => JSON.parse(html.match(/<script type="application\/json" id="asm-state">([\s\S]*?)<\/script>/)![1]!)
+
+test('/progress dashboard writes the page from the plugin’s own history and opens it', async ($, on) => {
+  const many = Array.from({ length: 8 }, (_, i) => `## Task ${i + 1}: Step ${i + 1}\n- [${i < 5 ? 'x' : ' '}] work\n`).join('\n')
+  const at = (n: number) => many.replace(/- \[x\]/g, (m, off) => (many.slice(0, off).split('- [x]').length - 1 < n ? m : '- [ ]'))
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: many, [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/SPEC-auth.md`]: GOOD_SPEC }
+  const seen = world(on, files, gitOutput([['2026-10-08', at(5)], ['2026-10-05', at(3)], ['2026-10-01', at(1)], ['2026-09-28', at(0)]]))
+  const reply = JSON.stringify(await $.command.run(run('dashboard')))
+  expect(reply).toMatch(/Wrote tasks\/progress-dashboard\.html \(\d+ KB\) and opened it in your browser/)
+  expect(seen.launched).toEqual([`${CWD}/tasks/progress-dashboard.html`])
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toMatch(/^<!doctype html>/)
+  expect(html).toContain('data-view="overview"')
+  expect(html).toContain(`content="default-src 'none';`)
+  const state = embedded(html)
+  expect(state).toMatchObject({ schema: 1, tasks: { done: 5, total: 8 } })
+  // Every spec file, not only the one in focus.
+  expect(state.specs.map((s: { file: string }) => s.file)).toEqual(['SPEC.md', 'SPEC-auth.md'])
+  // The same history as the board: the report written now shows the same ETA.
+  expect(state.forecast.kind).toBe('range')
+  await $.command.run(run('report'))
+  const day = Number(state.forecast.median.slice(8))
+  expect(files[`${CWD}/tasks/progress-report.html`]).toMatch(new RegExp(`<span class="k">ETA</span><span class="v">${day} \\w{3}</span>`))
+})
+
+test('/progress dashboard <view> opens on that view; an unknown one lists the views and writes nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  await $.command.run(run('dashboard overview'))
+  expect(files[`${CWD}/tasks/progress-dashboard.html`]).toContain('data-view="overview"')
+  delete files[`${CWD}/tasks/progress-dashboard.html`]
+  const out = await $.command.run(run('dashboard nope'))
+  expect(out.text).toMatch(/No view "nope"\. Views: overview/)
+  expect(files[`${CWD}/tasks/progress-dashboard.html`]).toBeUndefined()
+})
+
+test('/progress dashboard with no task list still writes a page that says how to start', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC }
+  // Nobody at this machine: the page is written, not opened.
+  const seen = world(on, files, 'no-repo', {}, [])
+  expect((await $.command.run(run('dashboard'))).text).toMatch(/Open \/p\/tasks\/progress-dashboard\.html in a browser/)
+  expect(seen.launched).toEqual([])
+  expect(files[`${CWD}/tasks/progress-dashboard.html`]).toContain('No task list yet')
+})

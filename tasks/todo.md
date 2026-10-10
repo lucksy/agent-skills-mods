@@ -127,18 +127,18 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 **Estimated scope:** M
 
 ## Task 5: /progress dashboard [view] in the plugin
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Add the `dashboard` subcommand to `/progress`, with an optional view argument. It builds State with `toState` from what `load($)` gives, writes `tasks/progress-dashboard.html`, and opens it at `#<view>` the way `writeReport` opens the report. Where no browser can be opened, it prints the path. Update the command's description, argument hint and unknown-argument message.
 
 **Acceptance criteria:**
-- [ ] `/progress dashboard` writes the page and opens it; `/progress dashboard board` opens on `#board`; an unknown view gets a message listing the five
-- [ ] With no task list, it still writes a page with an explanatory Overview instead of failing
-- [ ] The page uses the plugin's own history, so its ETA matches the board pane
+- [x] `/progress dashboard` writes the page and opens it; `/progress dashboard board` opens on `#board`; an unknown view gets a message listing the five
+- [x] With no task list, it still writes a page with an explanatory Overview instead of failing
+- [x] The page uses the plugin's own history, so its ETA matches the board pane
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (`tests/mod.test.ts` cases for the subcommand)
-- [ ] Manual check: `claude --plugin-dir .` on this repo, then `/progress dashboard`, and the browser opens the page
+- [x] Tests pass: `claude plugin test .` (`tests/mod.test.ts` cases for the subcommand)
+- [x] Manual check: `claude --plugin-dir .` on this repo, then `/progress dashboard`, and the browser opens the page
 
 **Dependencies:** T4
 
@@ -149,7 +149,7 @@ The no-JS page shows every view stacked. The Overview shows done/total, the ETA 
 **Estimated scope:** S
 
 ## Task 6: Overview health and ETA drift figure
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** Add `forecastHistory(snapshots)` to `forecast.ts`, which replays `forecast()` as of each past day. The Overview gets two additions:
 - **Health:** *on track* or *at risk*, listing every reason: band alerts, blocked tasks, building while the spec is a draft, and checkpoints reached but not signed off.

@@ -71,6 +71,14 @@ describe('the dashboard page (K6)', () => {
     expect(html).not.toMatch(/<section [^>]*\bhidden\b/)
   })
 
+  test('the footer says where the history came from in one clean sentence, whichever surface wrote it', async () => {
+    const s = await project()
+    for (const history of ['history since 29 Sep: 3 days from git', 'History tracked from 10 Oct.']) {
+      const foot = text(dashboardHtml({ ...s, history }).match(/<footer[\s\S]*?<\/footer>/)![0])
+      expect(foot).toMatch(/markdown\. History (since 29 Sep: 3 days from git|tracked from 10 Oct)\. The data/)
+    }
+  })
+
   test('it opens on the view asked for, else the Overview', async () => {
     const s = await project()
     expect(dashboardHtml(s, { view: 'overview' })).toContain('data-view="overview"')

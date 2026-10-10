@@ -14,6 +14,9 @@ export type ViewId = 'overview'
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [{ id: 'overview', label: 'Overview', render: overviewHtml }]
 
+/** The views a page can open on, in tab order. */
+export const VIEW_IDS: readonly ViewId[] = VIEWS.map(v => v.id)
+
 const CSP = `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:`
 
 /** The project's name: the spec's title, else the plan's, else a plain word. */
@@ -34,6 +37,9 @@ export function stages(s: State): { label: string; glyph: string; tone: 'done' |
     { label: 'ship', glyph: '○', tone: 'todo' },
   ]
 }
+
+/** A note as one sentence: a capital first, one full stop last (the CLI's notes have neither, the plugin's both). */
+const sentence = (note: string) => `${note.charAt(0).toUpperCase()}${note.slice(1).replace(/\.+$/, '')}.`
 
 /** JSON safe inside a script block: no `<`, so it cannot close the block or open a comment. */
 const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c')
@@ -80,7 +86,7 @@ ${v.render(s)}
 <main id="main" class="wrap">
 ${panels}
 </main>
-<footer class="wrap foot">Built by agent-skills-mods from the project's markdown${s.history ? `, ${esc(s.history)}` : ''}. The data behind this page is embedded as JSON (State v1).</footer>
+<footer class="wrap foot">Built by agent-skills-mods from the project's markdown.${s.history ? ` ${esc(sentence(s.history))}` : ''} The data behind this page is embedded as JSON (State v1).</footer>
 <script type="application/json" id="asm-state">${scriptJson(stateJson(s))}</script>
 <script>${DASHBOARD_SCRIPT}</script>
 </body>

@@ -22,6 +22,8 @@ import { criticalPath, graphLines } from '../packages/core/graph'
 import { TABS, type Tab } from './ui/tabs'
 import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
+import { toState } from '../packages/core/state'
+import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from '../packages/core/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from '../packages/core/steps'
 import { checkOverwrite, denyMessage, GUARDED } from '../packages/core/guard'
@@ -98,6 +100,7 @@ const BOARD_PANE = 'asm-board'
 const CHARTS_PANE = 'asm-charts'
 /** Where /progress report writes its page (G1), next to the task list it reports on. */
 const REPORT_FILE = 'tasks/progress-report.html'
+const DASHBOARD_FILE = 'tasks/progress-dashboard.html'
 const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/](plan|todo)\.md)$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
@@ -592,6 +595,45 @@ async function writeReport($: $, p: AsmProject): Promise<string> {
     : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`
 }
 
+/**
+ * `/progress dashboard [view]` (K6): the dashboard page from the same project the
+ * board shows (the plugin's own history included), opened on `view`. Written even
+ * without a task list, since the page then says how to start.
+ */
+async function writeDashboard($: $, p: AsmProject, view: string): Promise<string> {
+  if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
+  // Every spec file, for the Spec view: the one in focus is parsed already.
+  const specs = (
+    await Promise.all(
+      p.specFiles.map(async file => {
+        if (file === p.specFile && p.spec) return { file, spec: p.spec }
+        const text = await readText($, `${p.cwd}/${file}`)
+        return text === null ? null : { file, spec: parseSpec(text) }
+      }),
+    )
+  ).filter(x => x !== null)
+  const state = toState({
+    cwd: p.cwd,
+    today: dayOf(await $.clock.now()),
+    specs,
+    specFile: p.specFile,
+    list: p.list,
+    listFile: p.listFile,
+    plan: p.plan,
+    forecast: p.forecast,
+    snapshots: p.snapshots,
+    dates: p.dates,
+    history: p.history ? historyNote(p.history, p.listFile) : null,
+  })
+  const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
+  const path = `${p.cwd}/${DASHBOARD_FILE}`
+  await $.fs.write(path, html)
+  const size = `${Math.max(1, Math.round(html.length / 1024))} KB`
+  return (await openFile($, path))
+    ? `Wrote ${DASHBOARD_FILE} (${size}) and opened it in your browser${view ? ` on ${view}` : ''}. One self-contained page: it works offline and can be attached to an email.`
+    : `Wrote ${DASHBOARD_FILE} (${size}): one self-contained page that works offline. Open ${path} in a browser.`
+}
+
 /** The board's and charts' Report and Copy digest buttons: the command's work, its outcome as a toast. */
 async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
   const p = await load($)
@@ -902,8 +944,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|graph|next|digest|report|history|format|allow-overwrite|refresh]',
+      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | dashboard | history | format | allow-overwrite | refresh',
+      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view]|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -1000,10 +1042,11 @@ export const register: Register = (on, options) => {
       return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
     }
     if (arg === 'report') return reply(await writeReport($, p))
+    if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|dashboard [view]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
