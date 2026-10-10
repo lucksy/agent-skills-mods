@@ -187,7 +187,9 @@ async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean
     if (keepFormat && task && p?.listFile === 'tasks/todo.md') {
       const today = dayOf(await $.clock.now())
       const pending = await readPending($, p.cwd)
-      await $.store.set(pendingKey(p.cwd), { ...pending, [task]: { ...pending[task], status: 'in progress', started: pending[task]?.started ?? today, step: s } })
+      // format-v2 (T4): an unowned task is claimed for whoever runs the session, when tasks/team.md knows them.
+      const owner = p.list?.tasks.find(t => t.id === task)?.owner ? undefined : (pending[task]?.owner ?? (await sessionHandle($, p.cwd)) ?? undefined)
+      await $.store.set(pendingKey(p.cwd), { ...pending, [task]: { ...pending[task], status: 'in progress', started: pending[task]?.started ?? today, step: s, ...(owner ? { owner } : {}) } })
     }
   } catch {}
 }
@@ -602,6 +604,17 @@ async function gitEmail($: $): Promise<string | null> {
   return r && r.exitCode === 0 ? r.stdout.trim() || null : null
 }
 
+/** Each project's git email, read once a session: auto-claim asks on every step. */
+const emails = new Map<string, Promise<string | null>>()
+
+/** Who runs this session, as tasks/team.md names them; null without the file or a matching email. */
+async function sessionHandle($: $, cwd: string): Promise<string | null> {
+  const team = await readTeam($, cwd)
+  if (!team) return null
+  if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
+  return whoIs(team, await emails.get(cwd)!)?.handle ?? null
+}
+
 /** tasks/team.md, parsed; null when there is none. */
 async function readTeam($: $, cwd: string): Promise<Team | null> {
   const text = await readText($, `${cwd}/${TEAM_FILE}`)
@@ -831,7 +844,8 @@ async function setTask($: $, verb: string, rawId: string, why: string): Promise<
   let next = text
   let said = ''
   if (verb === 'start') {
-    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'in progress', started: today } } })
+    const owner = task.owner ? undefined : ((await sessionHandle($, cwd)) ?? undefined)
+    next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'in progress', started: today, ...(owner ? { owner } : {}) } } })
     said = `${id} ${task.title} is in progress (started ${shortDay(task.state?.started ?? today)}).`
   } else if (verb === 'done') {
     next = stampTodo(tickTask(text, id), today, { changes })

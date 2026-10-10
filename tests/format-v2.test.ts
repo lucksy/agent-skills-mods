@@ -97,3 +97,12 @@ describe('owners (T3)', () => {
     expect(tl.find(r => r.includes('T3 Issue'))).not.toMatch(/@/)
   })
 })
+
+describe('auto-claim (T4)', () => {
+  test('a queued owner fills an empty owner and never replaces one', () => {
+    const change = { T2: { status: 'in progress' as const, step: 'build' as const, owner: '@sara' } }
+    expect(taskStates(stampTodo(TODO_TEMPLATE, '2026-10-09', { changes: change })).T2!.owner).toBe('@sara')
+    const owned = setOwner(TODO_TEMPLATE, 'T2', '@amila')
+    expect(taskStates(stampTodo(owned, '2026-10-09', { changes: change })).T2!.owner).toBe('@amila')
+  })
+})

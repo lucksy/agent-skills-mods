@@ -199,7 +199,9 @@ export function stampTodo(
     let next: TaskState = had ? { ...had } : { status: 'todo' }
     const change = opts.changes?.[s.id]
     // Work going on under a task in review leaves it in review: only its last box (done) or a person moves it on.
-    if (change && next.status !== 'done') next = { ...next, ...change, started: next.started ?? change.started, status: next.status === 'in review' && change.status === 'in progress' ? 'in review' : (change.status ?? next.status) }
+    // A queued owner (auto-claim) fills an empty owner and never replaces one: a person's assignment wins.
+    if (change && next.status !== 'done') next = { ...next, ...change, owner: next.owner ?? change.owner, started: next.started ?? change.started, status: next.status === 'in review' && change.status === 'in progress' ? 'in review' : (change.status ?? next.status) }
+    if (!next.owner) delete next.owner
     if (allTicked) next = { ...next, status: 'done', done: next.done ?? opts.doneDays?.[s.id] ?? today }
     else if (next.status === 'done' && s.boxes.length > 0) next = { ...next, status: 'in progress', done: undefined }
     else if (someTicked && next.status === 'todo') next = { ...next, status: 'in progress', started: next.started ?? today }

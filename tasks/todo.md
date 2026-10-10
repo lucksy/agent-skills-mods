@@ -118,16 +118,21 @@ The owner then shows on the board pane's task rows, in the band (`▸ T4 Rate li
 **Estimated scope:** M
 
 ## Task 4: Auto-claim when a task starts
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** When the plugin moves an unowned task to in progress, from a source edit, a test run, a commit or `/progress start`, it adds the session person as owner, provided `team.md` knows them. Otherwise nothing changes.
 
 **Acceptance criteria:**
-- [ ] With you in `team.md`: the first step on an unowned task writes `@you`, and an owned task keeps its owner
-- [ ] Without `team.md`, or with your email not in it, Status lines are written as before
+- [x] With you in `team.md`: the first step on an unowned task writes `@you`, and an owned task keeps its owner
+- [x] Without `team.md`, or with your email not in it, Status lines are written as before
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The owner rides on the queued step change. `stampTodo` uses it only to fill an empty owner, so an assignment made in the meantime wins.
+- The git email is read once per project per session, since steps fire on every tool call; `team.md` is read each time.
+- Checked in a real session: an agent's Write in a scratch project gave its unowned current task `@macbook`, keeping its start date.
 
 **Dependencies:** T3
 

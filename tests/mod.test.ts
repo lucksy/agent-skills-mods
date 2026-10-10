@@ -1340,3 +1340,38 @@ test('claim needs to know who you are', async ($, on) => {
   expect((await $.command.run(run('claim T3'))).text).toBe("Can't tell who you are: sara@example.com is not in tasks/team.md. Add a row with it, or name someone: /progress assign T3 @name.")
   expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
 })
+
+// format-v2 T4: work on an unowned task claims it for whoever runs the session.
+test('auto-claim: the first step on an unowned task writes you as its owner; an owned task keeps its owner', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('sara@example.com'))
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await $.turn.complete({ answer: 'done' } as never)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* in progress · @sara · started 2026-10-09 · step build\n/)
+  // Someone else's task stays theirs.
+  files[`${CWD}/tasks/todo.md`] = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** todo · @amila\n')
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
+  await $.turn.complete({ answer: 'done' } as never)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/\*\*Status:\*\* in progress · @amila · started 2026-10-09 · step test\n/)
+})
+
+test('/progress start claims an unowned task too', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('amila@example.com'))
+  await $.command.run(run('start T3'))
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 3: Issue and revoke keys\n\*\*Status:\*\* in progress · @amila · started 2026-10-09\n/)
+})
+
+test('auto-claim does nothing without tasks/team.md, or when it does not know you', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files, asPerson('sara@example.com'))
+  await $.command.run(run('refresh'))
+  await $.tool.call({ tool: 'Edit', file_path: `${CWD}/src/keys.ts`, old_string: 'a', new_string: 'b' } as never)
+  await $.turn.complete({ answer: 'done' } as never)
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/\*\*Status:\*\* in progress · started 2026-10-09 · step build\n/)
+  files[`${CWD}/tasks/team.md`] = TEAM_MD.replace('sara@example.com', 'sara@elsewhere.org')
+  await $.command.run(run('start T3'))
+  expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 3: Issue and revoke keys\n\*\*Status:\*\* in progress · started 2026-10-09\n/)
+})
