@@ -3,7 +3,8 @@
 // the six core areas as the spec pane shows them, boundaries in three columns,
 // open questions and success criteria. With more than one file, a picker of
 // in-page links switches between them: CSS (:target) shows the chosen one alone,
-// so it needs no script; without a choice every spec shows, stacked. Pure.
+// so it needs no script; without a choice every spec shows, stacked. On the live
+// page (T11) a spec still awaiting approval gets a Sign button. Pure.
 
 import { shortDay } from '../forecast'
 import type { Spec } from '../parse'
@@ -12,11 +13,12 @@ import { approvalStatus } from '../approvals'
 import type { Team } from '../team'
 import { areaSummary, specApproval } from '../view'
 import { esc, inline, plural } from './html'
+import { actButton, actRow } from './live'
 
 /** The most specs the picker marks as chosen; past this they still switch, unmarked. */
 const MARKED = 12
 
-export function specHtml(s: State): string {
+export function specHtml(s: State, live = false): string {
   if (!s.specs.length) return emptyHtml()
   const hasPlan = !!s.list
   const ids = anchors(s.specs.map(x => x.file))
@@ -31,7 +33,7 @@ export function specHtml(s: State): string {
       : ''
   return `<div class="specs">
 ${picker}
-${s.specs.map(({ file, spec }, i) => articleHtml(file, spec, ids[i]!, hasPlan, s.team)).join('\n')}
+${s.specs.map(({ file, spec }, i) => articleHtml(file, spec, ids[i]!, hasPlan, s.team, live)).join('\n')}
 </div>`
 }
 
@@ -65,7 +67,7 @@ function approvalOf(spec: Spec, hasPlan: boolean, team: Team | null = null): { k
 
 const AREA_GLYPH = { ok: '✓', weak: '!', empty: '○', missing: '×' } as const
 
-function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean, team: Team | null = null): string {
+function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean, team: Team | null = null, live = false): string {
   const a = approvalOf(spec, hasPlan, team)
   const meta = [
     `<span class="appr a-${a.key}"><span aria-hidden="true">${a.glyph}</span> ${esc(a.long)}</span>`,
@@ -99,7 +101,7 @@ function articleHtml(file: string, spec: Spec, id: string, hasPlan: boolean, tea
   return `<article class="spec" id="${id}" data-file="${esc(file)}" aria-labelledby="${id}-h">
 <header class="spec-head">
 <h3 id="${id}-h"><code>${esc(file)}</code>${spec.title ? ` <span class="spec-t">${inline(spec.title)}</span>` : ''}</h3>
-<p class="spec-meta">${meta.join('<span aria-hidden="true"> · </span>')}</p>
+<p class="spec-meta">${meta.join('<span aria-hidden="true"> · </span>')}</p>${live && a.key === 'awaiting' ? actRow([actButton('sign', { spec: file }, 'Sign', `Sign ${file}`, file)]) : ''}
 </header>
 ${approvalsCard(spec, team)}<div class="card spec-areas"><h4>Core areas <span class="n">${weak ? plural(weak, 'gap') : 'all six written'}</span></h4><ol class="areas">${areas}</ol></div>
 <div class="bnds">${column('always', 'Always', '✓')}${column('ask', 'Ask first', '?')}${column('never', 'Never', '×')}</div>

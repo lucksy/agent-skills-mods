@@ -179,9 +179,10 @@ async function action(body: string, io: ServeIo): Promise<ServeResponse> {
     today: io.today(),
     team,
     email: team ? await io.email() : null,
-    // The server keeps no session: nothing is pending, and a ticked box stamps the Status line.
+    // The server keeps no session: nothing is pending, and a ticked box stamps its task's Status line, no other.
     pending: {},
     keepFormat: true,
+    scoped: true,
   }
   const r = runAction(typeof name === 'string' ? name : '', a, input)
   if (!r.ok) return reply(400, r.reply)

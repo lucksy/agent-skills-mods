@@ -15,13 +15,14 @@ import { MODULES_STYLE, modulesHtml } from './modules'
 import { TEAM_STYLE, teamHtml } from './team'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
+import { LIVE_CSP, LIVE_SCRIPT, LIVE_STATUS, LIVE_STYLE } from './live'
 
 export { chartMount, type ChartSpec }
 
 export type ViewId = 'overview' | 'board' | 'team' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
-const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
+const VIEWS: { id: ViewId; label: string; render: (s: State, live: boolean) => string }[] = [
   { id: 'overview', label: 'Overview', render: overviewHtml },
   { id: 'board', label: 'Board', render: boardHtml },
   // team-view (V6): who is on what, and what waits on whom.
@@ -72,8 +73,14 @@ export function chartsScript(body: string): string {
 /** JSON safe inside a script block: no `<`, so it cannot close the block or open a comment. */
 const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c')
 
-/** The page for `state`, opening on `view` unless the address names another. */
-export function dashboardHtml(s: State, opts: { view?: ViewId } = {}): string {
+/**
+ * The page for `state`, opening on `view` unless the address names another.
+ * `live` (team-view, T11) is the page --serve sends: write buttons, the rev they
+ * post with, a live region for replies, and their script. Without it the page is
+ * the static one, byte for byte.
+ */
+export function dashboardHtml(s: State, opts: { view?: ViewId; live?: { rev: string } } = {}): string {
+  const live = opts.live ?? null
   const views = viewsFor(s)
   const view = views.some(v => v.id === opts.view) ? opts.view! : 'overview'
   const name = projectName(s)
@@ -86,7 +93,7 @@ export function dashboardHtml(s: State, opts: { view?: ViewId } = {}): string {
   const panels = views.map(
     v => `<section id="view-${v.id}" role="tabpanel" aria-labelledby="tab-${v.id}" tabindex="-1">
 <h2 class="view-title">${v.label}</h2>
-${v.render(s)}
+${v.render(s, !!live)}
 </section>
 <!-- /view-${v.id} -->`,
   ).join('\n')
@@ -96,11 +103,11 @@ ${v.render(s)}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<meta http-equiv="Content-Security-Policy" content="${CSP}${live ? LIVE_CSP : ''}">
 <title>${esc(name)} · dashboard</title>
-<style>${STYLE}</style>
+<style>${STYLE}${live ? LIVE_STYLE : ''}</style>
 </head>
-<body data-view="${view}">
+<body data-view="${view}"${live ? ` data-rev="${esc(live.rev)}"` : ''}>
 <a class="skip" href="#main">Skip to the dashboard</a>
 <header class="top">
 <div class="wrap head">
@@ -118,7 +125,7 @@ ${panels}
 <footer class="wrap foot">Built by agent-skills-mods from the project's markdown.${s.history ? ` ${esc(sentence(s.history))}` : ''} The data behind this page is embedded as JSON (State v1).</footer>
 <script type="application/json" id="asm-state">${scriptJson(stateJson(s))}</script>
 <script>${DASHBOARD_SCRIPT}</script>
-${chartsScript(panels)}
+${live ? `${LIVE_STATUS}\n<script>${LIVE_SCRIPT}</script>\n` : ''}${chartsScript(panels)}
 </body>
 </html>
 `

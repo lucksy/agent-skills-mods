@@ -286,8 +286,8 @@ async function serve(io, { specFile, port, open }) {
     list: io.list,
     write: (rel, text) => writeFile(resolve(cwd, rel), text),
     email: () => git(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null)),
-    // T11 gives the page its buttons and the rev; for now it is the dashboard as --dashboard writes it.
-    page: async () => dashboardHtml(await gather({ ...io, now: Date.now() }, { specFile })),
+    // The dashboard with its write buttons, posting with the rev it was built from (T11).
+    page: async rev => dashboardHtml(await gather({ ...io, now: Date.now() }, { specFile }), { live: { rev } }),
   }
 
   const streams = new Set()

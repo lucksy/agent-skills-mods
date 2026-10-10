@@ -331,11 +331,13 @@ export function stampTodo(
     /** For a project already under way: the file's first commit day, and the day git first shows each task done. */
     created?: string
     doneDays?: Record<string, string>
+    /** Only this task's Status line, and no front matter: what one live write owns (team-view, T11). */
+    only?: string
   } = {},
 ): string {
   const eol = text.includes('\r\n') ? '\r\n' : '\n'
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
-  const secs = sections(lines)
+  const secs = sections(lines).filter(s => opts.only === undefined || s.id === opts.only)
   if (secs.length === 0) return text
   // Edit from the bottom so earlier line numbers stay put.
   for (const s of [...secs].reverse()) {
@@ -359,6 +361,7 @@ export function stampTodo(
     else if (lines[s.status] !== line) lines[s.status] = line
   }
   let out = lines.join(eol)
+  if (opts.only !== undefined) return out
   const fm = readFrontMatter(out)
   const want: Record<string, string> = {}
   if (!fm.fields.plan && opts.plan) want.plan = opts.plan

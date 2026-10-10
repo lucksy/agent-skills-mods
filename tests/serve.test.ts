@@ -273,3 +273,28 @@ describe('each action, through POST /action', () => {
     expect(p.writes).toEqual(['tasks/todo.md'])
   })
 })
+
+describe('the live page\'s writes (T11)', () => {
+  test('on a list not yet in the format, a write changes only its task: no Status line on another, no created: field', async () => {
+    const p = project()
+    const before = p.disk['tasks/todo.md']!
+    for (const [action, args] of [['start', { id: 'T3' }], ['tick', { id: 'T2', index: 1 }], ['claim', { id: 'T4' }]] as const) {
+      expect((await run(p, action, args)).status).toBe(200)
+    }
+    const after = p.disk['tasks/todo.md']!
+    expect(after.startsWith('# Tasks: API keys\n')).toBe(true)
+    expect(after).not.toContain('created:')
+    const states = parseTasks(after).tasks.map(t => [t.id, t.state?.status ?? null])
+    expect(states).toEqual([['T1', null], ['T2', 'in progress'], ['T3', 'in progress'], ['T4', 'todo']])
+    // Three Status lines added, one box ticked, nothing else.
+    expect(after.split('\n').length).toBe(before.split('\n').length + 3)
+  })
+
+  test('a bad handle from a text field gets 400 saying what is wrong with it', async () => {
+    const p = project()
+    const r = await run(p, 'handoff', { id: 'T2', to: 'bob smith', note: 'x' })
+    expect([r.status, r.json.reply]).toEqual([400, '"bob smith" is not a handle. Handles are one word, like @sara.'])
+    expect(p.writes).toEqual([])
+  })
+})
+

@@ -268,7 +268,7 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 11: Write buttons on the live dashboard
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** In live mode only, the page gets buttons that POST actions with the file's `rev`:
 - Board cards: start, done, block, claim, review;
@@ -280,12 +280,12 @@ created: 2026-10-11
 A small script, under 4 KB, sends each action, shows the reply, reloads the page on `changed`, and shows "changed since you loaded it, reload" on a 409. The static page has no buttons and no script for them.
 
 **Acceptance criteria:**
-- [ ] The static `--dashboard` output has no live buttons or live script, and its byte size is unchanged apart from T5 and T6
-- [ ] Each button sends its action with the right args and `rev`, and the page reloads within 2 s of the write
-- [ ] The buttons can be reached and pressed by keyboard, and each has a label
+- [x] The static `--dashboard` output has no live buttons or live script, and its byte size is unchanged apart from T5 and T6
+- [x] Each button sends its action with the right args and `rev`, and the page reloads within 2 s of the write
+- [x] The buttons can be reached and pressed by keyboard, and each has a label
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: Chrome, pressing Sign, Answer and Claim; a second tab to see the 409; light and dark, 360 px
 
 **Dependencies:** T10, T5, T6

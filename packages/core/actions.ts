@@ -29,6 +29,12 @@ export type ActionInput = {
   pending: Record<string, Partial<TaskState>>
   /** The `progressFormat` option: whether a ticked box stamps Status lines. */
   keepFormat: boolean
+  /**
+   * Stamp only what the action owns (the live server, T11): the task's own Status
+   * line, never another task's, a spec's or the list's front matter. The commands
+   * leave it unset and keep bringing the whole file into the format.
+   */
+  scoped?: boolean
 }
 
 /** What an action did: the reply, and the files to write (repo-relative), in order. A refusal writes nothing. */
@@ -51,6 +57,8 @@ const isStr = (v: unknown): v is string => typeof v === 'string'
 const strings = (args: Args, keys: string[]) => keys.every(k => args[k] === undefined || isStr(args[k]))
 /** A handle arg (`who`, `to`): one word, so it can't end the Status line or start a line of its own. */
 const isHandle = (v: unknown) => v === undefined || (isStr(v) && /^@?[^\s·]+$/.test(v))
+/** Why a handle arg is refused, naming it: the live page's text field can send anything. */
+const badHandle = (v: unknown) => `"${String(v).replace(/\s+/g, ' ').trim()}" is not a handle. Handles are one word, like @sara.`
 /** Free text (a reason, a note) on one line: the live server's JSON can carry newlines the command line never sends. */
 const oneLine = (v: unknown) => ((v as string | undefined) ?? '').replace(/\s*[\r\n]+\s*/g, ' ')
 
@@ -66,6 +74,10 @@ function findTask(raw: string, input: ActionInput): { id: string; task: Task } |
   }
   return { id, task }
 }
+
+/** tasks/todo.md stamped for task `id`: the whole file for a command, only the task's own Status line when scoped. */
+const stampFor = (input: ActionInput, text: string, id: string, changes: Record<string, Partial<TaskState>>) =>
+  stampTodo(text, input.today, { changes, ...(input.scoped ? { only: id } : {}) })
 
 /** Who runs the action, as tasks/team.md names them; null without the file or a matching email. */
 const sessionHandle = (input: ActionInput) => (input.team ? (whoIs(input.team, input.email)?.handle ?? null) : null)
@@ -86,20 +98,20 @@ function setTask(verb: 'start' | 'done' | 'block' | 'unblock'): Action {
       let said: string
       if (verb === 'start') {
         const owner = task.owner ? undefined : (sessionHandle(input) ?? undefined)
-        next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'in progress', started: today, ...(owner ? { owner } : {}) } } })
+        next = stampFor(input, text, id, { ...changes, [id]: { status: 'in progress', started: today, ...(owner ? { owner } : {}) } })
         said = `${id} ${task.title} is in progress (started ${shortDay(task.state?.started ?? today)}).`
       } else if (verb === 'done') {
-        next = stampTodo(tickTask(text, id), today, { changes })
+        next = stampFor(input, tickTask(text, id), id, changes)
         said = `${id} ${task.title} is done: ${task.boxes.filter(b => !b.isDone).length} box(es) ticked.`
       } else if (verb === 'block') {
         const why = oneLine(args.why)
         if (!why) return refuse('Say why: /progress block T6 "Upstash or self-hosted?"')
-        next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'blocked' } } })
+        next = stampFor(input, text, id, { ...changes, [id]: { status: 'blocked' } })
         const added = addQuestion(input.plan, id, why)
         writes.push({ file: 'tasks/plan.md', text: added.text })
         said = `${id} ${task.title} is blocked. Added ${added.q} to tasks/plan.md: "${why}".`
       } else {
-        next = stampTodo(text, today, { changes: { ...changes, [id]: { status: 'todo' } } })
+        next = stampFor(input, text, id, { ...changes, [id]: { status: 'todo' } })
         said = `${id} ${task.title} is unblocked. Remove or answer its question in tasks/plan.md so it stays that way.`
       }
       if (next !== text) writes.push({ file: TODO, text: next })
@@ -117,7 +129,7 @@ const tick: Action = {
     const index = args.index as number
     const toggled = toggleBox(input.todo!, id, index)
     if (toggled === input.todo) return refuse(`No box ${index + 1} in ${id}.`)
-    const next = input.keepFormat ? stampTodo(toggled, input.today, { changes: input.pending }) : toggled
+    const next = input.keepFormat ? stampFor(input, toggled, id, input.pending) : toggled
     const after = parseTasks(next).tasks.find(t => t.id === id)
     const box = after?.boxes[index]
     return { ok: true, reply: `${id} ${box?.isDone ? 'ticked' : 'unticked'}: ${box?.text ?? `box ${index + 1}`}.`, writes: [{ file: TODO, text: next }] }
@@ -131,7 +143,8 @@ const tick: Action = {
 function owner(verb: 'claim' | 'assign' | 'unassign'): Action {
   return {
     todo: true,
-    check: args => (isStr(args.id) && args.id && strings(args, ['who']) && isHandle(args.who) ? args : `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.`),
+    check: args =>
+      !(isStr(args.id) && args.id && strings(args, ['who'])) ? `Say which task: /progress ${verb} T4${verb === 'assign' ? ' @sara' : ''}.` : isHandle(args.who) ? args : badHandle(args.who),
     edit: (args, input) => {
       const found = findTask(args.id as string, input)
       if (typeof found === 'string') return refuse(found)
@@ -201,7 +214,8 @@ const review: Action = {
  */
 const handoff: Action = {
   todo: true,
-  check: args => (isStr(args.id) && args.id && strings(args, ['to', 'note']) && isHandle(args.to) ? args : 'Say which task: /progress handoff T4 @bob "migration done, tests left".'),
+  check: args =>
+    !(isStr(args.id) && args.id && strings(args, ['to', 'note'])) ? 'Say which task: /progress handoff T4 @bob "migration done, tests left".' : isHandle(args.to) ? args : badHandle(args.to),
   edit: (args, input) => {
     const found = findTask(args.id as string, input)
     if (typeof found === 'string') return refuse(found)
@@ -230,12 +244,14 @@ const sign: Action = {
     if (!input.spec) return refuse('No spec here to sign.')
     const { file, text } = input.spec
     const { team, today } = input
+    // A live write keeps the rest of the front matter as it is (T11); a command brings it into the format.
+    const doc = (t: string) => (input.scoped ? t : stampDoc(t, today))
     if (!team?.approvals.length) {
-      return { ok: true, reply: `✓ ${file} approved · planning can start`, writes: [{ file, text: stampDoc(setFrontMatter(text, { status: 'approved', approved: today }), today) }] }
+      return { ok: true, reply: `✓ ${file} approved · planning can start`, writes: [{ file, text: doc(setFrontMatter(text, { status: 'approved', approved: today })) }] }
     }
     const me = whoIs(team, input.email)
     if (!me) return refuse(`Can't sign: ${input.email ? `${input.email} is not in ${TEAM_FILE}` : 'git config user.email is not set'}.`)
-    const r = signSpec(stampDoc(text, today), me, team.approvals, today)
+    const r = signSpec(doc(text), me, team.approvals, today)
     if (!r.signed.length) {
       const sigs = parseSpec(text).approvals
       const open = team.approvals.filter(role => !sigs.some(s => s.role === role))
@@ -256,6 +272,11 @@ const sign: Action = {
 const unnamed = (input: ActionInput, what: string) =>
   ` ${input.team ? (input.email ? `${input.email} is not in ${TEAM_FILE}` : 'git config user.email is not set') : `${TEAM_FILE} doesn't name you`}, so the ${what} is unsigned.`
 
+const openCheckpoint = (t: Task) => !!t.checkpoint && !t.checkpoint.signedOff && !(t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone))
+
+/** The task whose checkpoint is due: the first done task with its checkpoint still open; null when none is. */
+export const dueCheckpoint = (list: TaskList): Task | null => list.tasks.find(t => t.status === 'done' && openCheckpoint(t)) ?? null
+
 /**
  * signoff (team-view): the checkpoint that is due (the first after a done task
  * with a box still open, not yet signed off) gets `**Signed off:** @you <date>`
@@ -268,10 +289,9 @@ const signoff: Action = {
     const text = input.todo!
     const list = parseTasks(text)
     if (!list.checkpoints.length) return refuse('No checkpoint is due: tasks/todo.md has no "## Checkpoint" headings.')
-    const open = (t: Task) => t.checkpoint && !t.checkpoint.signedOff && !(t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone))
-    const due = list.tasks.find(t => t.status === 'done' && open(t))
+    const due = dueCheckpoint(list)
     if (!due) {
-      const next = list.tasks.find(t => t.status !== 'done' && open(t))
+      const next = list.tasks.find(t => t.status !== 'done' && openCheckpoint(t))
       return refuse(`No checkpoint is due: ${next ? `"${next.checkpoint!.title}" comes after ${next.id}, which is not done yet.` : 'every checkpoint reached is signed off.'}`)
     }
     const cp = due.checkpoint!

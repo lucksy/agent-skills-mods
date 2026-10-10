@@ -181,3 +181,79 @@ describe('answer and signoff (T2)', () => {
     expect(runAction('signoff', {}, input({ todo: '# Tasks\n\n## Task 1: x\n- [x] y\n' })).reply).toBe('No checkpoint is due: tasks/todo.md has no "## Checkpoint" headings.')
   })
 })
+
+describe('a live write changes only what its action owns (T11)', () => {
+  /** The lines of `after` that differ from `before`, as a diff of inserted and replaced lines. */
+  function changed(before: string, after: string): string[] {
+    const a = before.split('\n')
+    const b = after.split('\n')
+    const out: string[] = []
+    let i = 0
+    let j = 0
+    while (j < b.length) {
+      if (a[i] === b[j]) {
+        i++
+        j++
+      } else if (a[i + 1] === b[j + 1]) {
+        out.push(`${a[i]} → ${b[j]}`)
+        i++
+        j++
+      } else {
+        out.push(`+ ${b[j]}`)
+        j++
+      }
+    }
+    return out
+  }
+  // TODO_TEMPLATE has no front matter and no Status lines: the commands would stamp every task.
+  const scoped = (over: Partial<ActionInput> = {}) => input({ scoped: true, plan: '# Plan\n\n## Open Questions\n', ...over })
+  const todoOf = (r: { writes: { file: string; text: string }[] }) => r.writes.find(w => w.file === 'tasks/todo.md')!.text
+
+  test('start, block, unblock: the task\'s own Status line and nothing else; no created: field', () => {
+    expect(changed(TODO_TEMPLATE, todoOf(runAction('start', { id: 'T3' }, scoped())))).toEqual(['+ **Status:** in progress · started 2026-10-11'])
+    expect(changed(TODO_TEMPLATE, todoOf(runAction('block', { id: 'T3', why: 'Which hash?' }, scoped())))).toEqual(['+ **Status:** blocked'])
+    expect(changed(TODO_TEMPLATE, todoOf(runAction('unblock', { id: 'T3' }, scoped())))).toEqual(['+ **Status:** todo'])
+  })
+
+  test('tick and done: the boxes and the task\'s own Status line', () => {
+    expect(changed(TODO_TEMPLATE, todoOf(runAction('tick', { id: 'T2', index: 1 }, scoped())))).toEqual([
+      '+ **Status:** in progress · started 2026-10-11',
+      '- [ ] Migration runs on a clean database → - [x] Migration runs on a clean database',
+    ])
+    expect(changed(TODO_TEMPLATE, todoOf(runAction('done', { id: 'T2' }, scoped())))).toEqual([
+      '+ **Status:** done · done 2026-10-11',
+      '- [ ] Migration runs on a clean database → - [x] Migration runs on a clean database',
+      '- [ ] Tests pass: `pnpm test keys` → - [x] Tests pass: `pnpm test keys`',
+    ])
+  })
+
+  test('sign without approvals: status and approved only, no created: field', () => {
+    const spec = SPEC.replace(/^---[\s\S]*?---\n/, '---\nstatus: draft\n---\n')
+    const r = runAction('sign', {}, scoped({ spec: { file: 'SPEC.md', text: spec } }))
+    expect(r.ok).toBe(true)
+    expect(r.writes[0]!.text).toBe(spec.replace('status: draft\n', 'status: approved\napproved: 2026-10-11\n'))
+  })
+
+  test('the commands keep stamping the whole file, as before', () => {
+    const text = todoOf(runAction('start', { id: 'T3' }, input()))
+    expect(text.startsWith('---\ncreated: 2026-10-11\n---\n')).toBe(true)
+    expect(parseTasks(text).tasks.filter(t => t.state).length).toBe(4)
+  })
+})
+
+describe('a bad handle says what is wrong with it (T11)', () => {
+  test('assign and handoff name the handle and how one looks', () => {
+    for (const [name, args] of [
+      ['assign', { id: 'T2', who: '@sara lee' }],
+      ['handoff', { id: 'T2', to: 'sara lee', note: 'x' }],
+      ['assign', { id: 'T2', who: '@x · done 2026-01-01' }],
+    ] as const) {
+      const r = runAction(name, args, input())
+      expect(r.ok).toBe(false)
+      expect(r.reply).toMatch(/^".+" is not a handle\. Handles are one word, like @sara\.$/)
+    }
+    expect(runAction('assign', { id: 'T2', who: '@sara lee' }, input()).reply).toBe('"@sara lee" is not a handle. Handles are one word, like @sara.')
+    // A missing task still says which task.
+    expect(runAction('assign', { who: '@sara' }, input()).reply).toBe('Say which task: /progress assign T4 @sara.')
+  })
+})

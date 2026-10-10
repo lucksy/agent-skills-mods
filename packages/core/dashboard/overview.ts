@@ -1,14 +1,17 @@
 // The Overview (K1): is it on track, when will it land, what needs me. Four
 // figures (the same ones the charts tab shows), tasks by state as a bar named in
-// words, then what is waiting on a person beside what is under way now. Pure.
+// words, then what is waiting on a person beside what is under way now. On the
+// live page (T11) a decision gets its button (answer, sign, sign off) and the
+// current task's boxes toggle. Pure.
 
 import { etaDrift, forecastHistory, shortDay } from '../forecast'
 import { health } from '../health'
 import { headline, nowCounts } from '../report'
 import type { State } from '../state'
 import { esc, inline, plainInline, plural } from './html'
+import { actButton, actForm, actRow, tickButton } from './live'
 
-export function overviewHtml(s: State): string {
+export function overviewHtml(s: State, live = false): string {
   const list = s.list
   if (!list || list.total === 0) return emptyHtml(s)
 
@@ -37,8 +40,8 @@ export function overviewHtml(s: State): string {
 ${basis ? `<p class="basis">${esc(basis)}</p>` : ''}
 ${statesHtml(s)}
 <div class="cols">
-<div class="card"><h3>Needs you</h3>${needsHtml(s)}${answeredHtml(s)}</div>
-<div class="card"><h3>Now</h3>${nowHtml(s)}</div>
+<div class="card"><h3>Needs you</h3>${needsHtml(s, live)}${answeredHtml(s)}</div>
+<div class="card"><h3>Now</h3>${nowHtml(s, live)}</div>
 </div>`
 }
 
@@ -84,9 +87,26 @@ function statesHtml(s: State): string {
 </div>`
 }
 
-function needsHtml(s: State): string {
+function needsHtml(s: State, live = false): string {
   if (!s.needsYou.length) return '<p class="good">✓ Nothing is waiting on you.</p>'
-  return `<ul class="needs">${s.needsYou.map(n => `<li><span class="g" aria-hidden="true">♦</span><span>${inline(n)}</span></li>`).join('')}</ul>`
+  return `<ul class="needs">${s.needsYou.map((n, i) => `<li><span class="g" aria-hidden="true">♦</span><span>${inline(n)}${live ? decisionActions(s, n, i) : ''}</span></li>`).join('')}</ul>`
+}
+
+/**
+ * The button a decision gets on the live page: Answer for a question of the plan,
+ * Sign for the spec to approve, Sign off for the checkpoint that is due (the first
+ * listed: the order the signoff action picks). Anything else is read, not acted on.
+ */
+function decisionActions(s: State, item: string, index: number): string {
+  const q = /^Q(\d+)\b/.exec(item)?.[0]
+  if (q && s.plan?.openQuestions.includes(item)) {
+    return actRow([actForm('answer', { q }, { label: 'Answer', name: `Answer ${q}`, submit: `Answer ${q}`, fields: [{ name: 'text', label: `Your answer to ${q}` }], subject: q, at: 'o' })])
+  }
+  if (s.specFile && item === `approve ${s.specFile}`) return actRow([actButton('sign', { spec: s.specFile }, 'Sign', `Sign ${s.specFile}`, s.specFile)])
+  if (item.startsWith('checkpoint ') && s.needsYou.findIndex(n => n.startsWith('checkpoint ')) === index) {
+    return actRow([actButton('signoff', {}, 'Sign off', `Sign off ${item.split(':')[0]}`, 'checkpoint')])
+  }
+  return ''
 }
 
 /** The plan's questions already answered (team-view), with who answered and when: decided, so no longer waiting on anyone. */
@@ -100,7 +120,7 @@ function answeredHtml(s: State): string {
   return `<h4>Answered <span class="n">${done.length}</span></h4><ul class="needs answered">${items.join('')}</ul>`
 }
 
-function nowHtml(s: State): string {
+function nowHtml(s: State, live = false): string {
   const list = s.list!
   const t = list.current
   if (!t) {
@@ -115,7 +135,11 @@ function nowHtml(s: State): string {
     `${plural(t.boxes.filter(b => !b.isDone).length, 'box', 'boxes')} open`,
   ].filter(Boolean)
   const boxes = t.boxes
-    .map(b => `<li class="${b.isDone ? 'done' : ''}"><span class="g" aria-hidden="true">${b.isDone ? '✓' : '☐'}</span><span>${b.isDone ? '<span class="vh">Done: </span>' : ''}${inline(b.text)}</span></li>`)
+    .map((b, i) =>
+      live
+        ? `<li>${tickButton(t.id, i, b.isDone, inline(b.text))}</li>`
+        : `<li class="${b.isDone ? 'done' : ''}"><span class="g" aria-hidden="true">${b.isDone ? '✓' : '☐'}</span><span>${b.isDone ? '<span class="vh">Done: </span>' : ''}${inline(b.text)}</span></li>`,
+    )
     .join('')
   const after = t.checkpoint ? `<p class="after">◆ Checkpoint after this task: ${esc(t.checkpoint.title)}</p>` : ''
   return `<p class="now-title"><span class="id">${esc(t.id)}</span>${inline(t.title)}</p>

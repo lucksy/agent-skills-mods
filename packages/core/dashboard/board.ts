@@ -5,7 +5,8 @@
 // phase, all kept in the #board?… hash; without it the plain columns show.
 // When the other branches were read (team-view), a switch shows each task at its
 // furthest state on any branch instead (#board?branches=all), and a task that
-// collides is marked on both. Pure.
+// collides is marked on both. On the live page (T11) this branch's cards get
+// buttons for what can happen to them next; the all-branches cards never do. Pure.
 
 import { dayOf, shortDay } from '../forecast'
 import type { BranchRow } from '../branches'
@@ -14,6 +15,8 @@ import type { TaskStatusWord } from '../format'
 import type { Task } from '../parse'
 import type { State } from '../state'
 import { esc, inline, plural } from './html'
+import { actButton, actForm, actRow, tickButton, type LiveAt } from './live'
+import { dueCheckpoint } from '../actions'
 
 type Col = 'todo' | 'waiting' | 'doing' | 'review' | 'blocked' | 'done'
 const COLUMNS: { key: Col; label: string }[] = [
@@ -37,7 +40,7 @@ function columnOf(s: State, t: Task): Col {
   return t.status === 'waiting' ? 'waiting' : 'todo'
 }
 
-export function boardHtml(s: State): string {
+export function boardHtml(s: State, live = false): string {
   const list = s.list
   if (!list || list.total === 0) return '<div class="card empty" role="status"><h3>No task list yet</h3><p>The board fills in once <code>tasks/todo.md</code> exists.</p></div>'
 
@@ -50,10 +53,11 @@ export function boardHtml(s: State): string {
   const local = new Map(list.tasks.map(t => [t.id, t]))
   const acrossCols = rows && COLUMNS.filter(c => c.key !== 'review' || rows.some(r => r.state === 'in review'))
   const owners = [...new Set([...list.tasks.map(t => t.owner), ...(rows ?? []).map(r => r.owner)].filter((o): o is string => !!o))].sort((a, b) => a.localeCompare(b))
+  const due = live ? dueCheckpoint(list) : null
   const cards = (col: Col, only?: string) =>
     list.tasks
       .filter(t => columnOf(s, t) === col && (only === undefined || phaseNo(t) === only))
-      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0, only === undefined))
+      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0, only === undefined, live ? { at: only === undefined ? 'b' : `l${only}`, due: t === due } : null))
       .join('')
   const column = (c: { key: Col; label: string }, body: string, inLane: boolean, idPrefix = 'col') => {
     const n = (body.match(/ data-task="/g) ?? []).length
@@ -139,8 +143,42 @@ function noteHtml(t: Task): string {
 /** An owner as the filter and the hash name them: `@Sara-K` → `sara-k`; '' when there is none. */
 const ownerKey = (owner: string | undefined) => (owner ?? '').replace(/^@/, '').toLowerCase()
 
+/**
+ * A card's buttons on the live page (T11): what can happen to it next from where
+ * it is. Claim only when nobody owns it; a done task has none (its boxes still toggle).
+ */
+function cardActions(t: Task, col: Col, at: LiveAt): string {
+  const id = t.id
+  const btn = (act: string, label: string) => actButton(act, { id }, label, `${label} ${id}`, id)
+  const block = actForm('block', { id }, { label: 'Block', name: `Block ${id}`, submit: `Block ${id}`, fields: [{ name: 'why', label: `Why is ${id} blocked?`, hint: 'Upstash or self-hosted?' }], subject: id, at })
+  const handoff = actForm('handoff', { id }, {
+    label: 'Hand off',
+    name: `Hand off ${id}`,
+    submit: `Hand off ${id}`,
+    fields: [{ name: 'to', label: 'To', hint: '@bob' }, { name: 'note', label: 'What the next person needs to know', hint: 'migration done, tests left' }],
+    subject: id,
+    at,
+  })
+  const assign = actForm('assign', { id }, { label: 'Assign', name: `Assign ${id}`, submit: `Assign ${id}`, fields: [{ name: 'who', label: `Who takes ${id}?`, hint: '@sara' }], subject: id, at })
+  const claim = t.owner ? [] : [btn('claim', 'Claim')]
+  if (col === 'done') return ''
+  if (col === 'blocked') return actRow([btn('unblock', 'Unblock'), ...claim])
+  if (col === 'review') return actRow([btn('done', 'Done'), ...claim, handoff, block])
+  if (col === 'doing') return actRow([btn('done', 'Done'), btn('review', 'Review'), ...claim, handoff, block])
+  return actRow([btn('start', 'Start'), ...claim, assign, block])
+}
+
+/** A card's boxes on the live page, folded: each a toggle that ticks or unticks it. */
+function boxesHtml(t: Task): string {
+  if (!t.boxes.length) return ''
+  const open = t.boxes.filter(b => !b.isDone).length
+  return `\n<details class="c-boxes"><summary>Boxes of ${esc(t.id)} · ${open} of ${t.boxes.length} open</summary><ul>${t.boxes
+    .map((b, i) => `<li>${tickButton(t.id, i, b.isDone, inline(b.text))}</li>`)
+    .join('')}</ul></details>`
+}
+
 /** A card; `anchor` gives it the id other tabs link to (`#card-T4`), on this branch's plain columns only. */
-function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean, anchor: boolean): string {
+function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean, anchor: boolean, live: { at: LiveAt; due: boolean } | null = null): string {
   const open = t.boxes.filter(b => !b.isDone).length
   const n = t.boxes.length
   const boxes = n === 0 ? 'no boxes' : open === 0 ? (n === 1 ? '1 box done' : `all ${n} done`) : `${open} of ${n} open`
@@ -160,11 +198,12 @@ function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean
   const k = clashHtml(s, t.id)
   const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${anchor ? ` id="card-${esc(t.id)}"` : ''}>
 <p class="c-title">${k.flag}<span class="id">${esc(t.id)}</span> ${inline(t.title)}</p>
-<p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}
+<p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}${live ? `${boxesHtml(t)}${cardActions(t, col, live.at)}` : ''}
 </li>`
   const cp = t.checkpoint
   if (!cp) return card
   const cpOpen = cp.items.filter(b => !b.isDone).length
+  const signoff = live?.due ? actRow([actButton('signoff', {}, 'Sign off', `Sign off checkpoint ${cp.title}`, 'checkpoint')]) : ''
   return `${card}
-<li class="cp" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"><span aria-hidden="true">◆</span> Checkpoint: ${esc(cp.title)} · ${cpOpen ? `${cpOpen} of ${cp.items.length} open` : '✓ signed off'}</li>`
+<li class="cp" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"><span aria-hidden="true">◆</span> Checkpoint: ${esc(cp.title)} · ${cpOpen ? `${cpOpen} of ${cp.items.length} open` : '✓ signed off'}${signoff}</li>`
 }

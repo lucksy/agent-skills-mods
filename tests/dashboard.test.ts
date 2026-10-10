@@ -10,6 +10,7 @@ import { branchRows } from '../packages/core/branches'
 import { collisions } from '../packages/core/collisions'
 import { parseTasks } from '../packages/core/parse'
 import { teamView } from '../packages/core/dashboard/team'
+import { LIVE_SCRIPT, LIVE_STALE } from '../packages/core/dashboard/live'
 import { GOOD_SPEC, SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
 
 // The dashboard (K1–K6): one self-contained page built from State v1.
@@ -542,3 +543,125 @@ describe('Team (team-view T6)', () => {
     expect(t).toMatch(/Unowned/)
   })
 })
+
+describe('write buttons on the live dashboard (team-view T11)', () => {
+  // T1 done; T2 in progress (a box ticked); T3 waits on T2; T4 to do. Q1 open in the plan; the spec a draft.
+  const plan = '# Plan\n\n## Open Questions\n\n- Q1 (T4): Redis or in memory?\n'
+  const files = { 'SPEC.md': SPEC, 'tasks/todo.md': TODO_TEMPLATE, 'tasks/plan.md': plan }
+  const REV = '0123456789abcdef'
+  const live = async (over: Record<string, string> = {}) => dashboardHtml(await buildState(io({ ...files, ...over })), { live: { rev: REV } })
+  /** A card on this branch's plain columns, up to the line that closes it (its boxes are a list of their own). */
+  const card = (html: string, id: string) => html.match(new RegExp(`<li class="card[^"]*" data-task="${id}"[^>]*id="card-${id}"[\\s\\S]*?\\n</li>`))?.[0] ?? ''
+  /** What a screen reader reads of some markup: aria-hidden glyphs dropped. */
+  const spoken = (html: string) => text(html.replace(/<span[^>]*aria-hidden="true"[^>]*>[^<]*<\/span>/g, '')).trim()
+  /** Each button: its action, its args, what it shows and what it is called. */
+  const buttons = (html: string) =>
+    [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map(m => ({
+      attrs: m[1]!,
+      act: /data-act="(\w+)"/.exec(m[1]!)?.[1] ?? null,
+      args: /data-args="([^"]*)"/.exec(m[1]!) ? JSON.parse(/data-args="([^"]*)"/.exec(m[1]!)![1]!.replace(/&quot;/g, '"')) : null,
+      label: spoken(m[2]!),
+      name: /aria-label="([^"]*)"/.exec(m[1]!)?.[1] ?? spoken(m[2]!),
+    }))
+
+  test('the static page has no buttons, no live script and no rev: byte for byte the page without `live`', async () => {
+    const s = await buildState(io(files))
+    const html = dashboardHtml(s)
+    expect(dashboardHtml(s, { live: undefined })).toBe(html)
+    for (const mark of ['<button', 'data-act=', 'data-rev=', 'live-msg', 'EventSource', 'connect-src', '.act{']) expect(html).not.toContain(mark)
+    expect([...html.matchAll(/<script>/g)].length).toBe(1)
+  })
+
+  test('the live page: a CSP that lets it call its own server only, the rev on the body, one small script of its own', async () => {
+    const html = await live()
+    expect(html).toContain(`content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'self'"`)
+    expect(html).toContain(`<body data-view="overview" data-rev="${REV}">`)
+    expect(html).toContain(`<script>${LIVE_SCRIPT}</script>`)
+    // Under 4 KB; scripts/test.sh checks that it parses (node --check).
+    expect(new TextEncoder().encode(LIVE_SCRIPT).length).toBeLessThan(4096)
+    // It never blocks on the browser's own dialogs; it sends the token and the rev, and reloads on `changed`.
+    expect(LIVE_SCRIPT).not.toMatch(/\b(?:prompt|alert|confirm)\(/)
+    for (const bit of ["'x-agent-skills-token': tok", 'rev: b.dataset.rev', "addEventListener('changed'", 'r.status === 409', JSON.stringify(LIVE_STALE)]) expect(LIVE_SCRIPT).toContain(bit)
+  })
+
+  test('replies are said in one polite live region', async () => {
+    const html = await live()
+    expect(html.match(/<div id="live-msg" class="live-msg" role="status" aria-live="polite"><\/div>/g)?.length).toBe(1)
+  })
+
+  test('Board cards: what can happen next, each button naming its task and carrying its args', async () => {
+    const html = section(await live(), 'board')
+    const of = (id: string) => buttons(card(html, id)).filter(b => b.act && b.act !== 'tick' || b.attrs.includes('data-open'))
+    const say = (id: string) => of(id).map(b => b.name)
+    expect(say('T1')).toEqual([])
+    expect(say('T2')).toEqual(['Done T2', 'Review T2', 'Claim T2', 'Hand off T2', 'Block T2'])
+    expect(say('T3')).toEqual(['Start T3', 'Claim T3', 'Assign T3', 'Block T3'])
+    expect(of('T2').filter(b => b.act).map(b => [b.act, b.args])).toEqual([['done', { id: 'T2' }], ['review', { id: 'T2' }], ['claim', { id: 'T2' }]])
+    // Each accessible name starts with what the button shows.
+    for (const b of buttons(html)) expect(b.name.startsWith(b.label.replace(/…$/, '').split(' ')[0]!) || b.attrs.includes('aria-pressed')).toBe(true)
+  })
+
+  test('a text an action needs is asked in an inline form, labelled, closed until its button opens it', async () => {
+    const t2 = card(section(await live(), 'board'), 'T2')
+    const form = t2.match(/<form class="act-form" id="([^"]+)" hidden data-act="handoff"[\s\S]*?<\/form>/)!
+    expect(t2).toContain(`aria-expanded="false" aria-controls="${form[1]}"`)
+    expect(form[0]).toContain('data-args="{&quot;id&quot;:&quot;T2&quot;}"')
+    expect(text(form[0])).toContain('To')
+    expect(form[0]).toMatch(/<label>To <input name="to" required/)
+    expect(form[0]).toMatch(/<label>What the next person needs to know <input name="note" required/)
+    expect(buttons(form[0]).map(b => b.label)).toEqual(['Hand off T2', 'Cancel'])
+    expect(t2).toMatch(/<label>Why is T2 blocked\? <input name="why" required/)
+  })
+
+  test('form ids are unique, though a card shows in the columns and in its lane', async () => {
+    const html = section(await live({ 'tasks/todo.md': TODO_TEMPLATE }), 'board')
+    const ids = [...html.matchAll(/ id="(f-[^"]+)"/g)].map(m => m[1])
+    expect(ids.length).toBeGreaterThan(0)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids) expect(html).toContain(`aria-controls="${id}"`)
+  })
+
+  test('criteria boxes toggle: pressed when ticked, named by the task; on the Board and in the Overview\'s Now', async () => {
+    const html = await live()
+    const ticks = buttons(card(section(html, 'board'), 'T2')).filter(b => b.act === 'tick')
+    expect(ticks.map(b => [b.args, b.attrs.includes('aria-pressed="true"'), b.label])).toEqual([
+      [{ id: 'T2', index: 0 }, true, 'T2: Key table with hashed secret'],
+      [{ id: 'T2', index: 1 }, false, 'T2: Migration runs on a clean database'],
+      [{ id: 'T2', index: 2 }, false, 'T2: Tests pass: pnpm test keys'],
+    ])
+    expect(buttons(section(html, 'overview')).filter(b => b.act === 'tick').map(b => b.args)).toEqual([0, 1, 2].map(index => ({ id: 'T2', index })))
+  })
+
+  test('Overview decisions: Answer for a question, Sign for the spec, Sign off for the checkpoint that is due', async () => {
+    const html = section(await live({ 'tasks/todo.md': TODO_T2_DONE }), 'overview')
+    const acts = buttons(html).filter(b => b.act && b.act !== 'tick' || b.attrs.includes('data-open'))
+    expect(acts.map(b => b.name)).toEqual(['Sign off checkpoint 1, after T2', 'Answer Q1', 'Sign SPEC.md'])
+    expect(acts.filter(b => b.act).map(b => [b.act, b.args])).toEqual([['signoff', {}], ['sign', { spec: 'SPEC.md' }]])
+    expect(html).toMatch(/<form class="act-form" id="[^"]+" hidden data-act="answer" data-args="\{&quot;q&quot;:&quot;Q1&quot;\}"[^>]*><label>Your answer to Q1 <input name="text" required/)
+  })
+
+  test('the Board\'s due checkpoint has Sign off; the Spec tab signs a spec awaiting approval, not an approved one', async () => {
+    const html = await live({ 'tasks/todo.md': TODO_T2_DONE })
+    expect(section(html, 'board')).toContain('aria-label="Sign off checkpoint After Tasks 1-2"')
+    expect(buttons(section(html, 'spec')).map(b => [b.name, b.args])).toEqual([['Sign SPEC.md', { spec: 'SPEC.md' }]])
+    const approved = await live({ 'SPEC.md': GOOD_SPEC })
+    expect(buttons(section(approved, 'spec'))).toEqual([])
+  })
+
+  test('the all-branches cards and the Team tab have no buttons: they show, the board\'s own cards act', async () => {
+    const html = await live()
+    expect(section(html, 'team')).not.toContain('<button')
+    expect((html.match(/<div class="across js-only"[\s\S]*?<!-- \/across -->/)?.[0] ?? '')).not.toContain('<button')
+  })
+
+  test('every button is a real button with a type, and its name names what it acts on', async () => {
+    const html = await live({ 'tasks/todo.md': TODO_T2_DONE })
+    const all = buttons(html)
+    expect(all.length).toBeGreaterThan(10)
+    for (const b of all) {
+      expect(b.attrs).toMatch(/type="(?:button|submit)"/)
+      if (b.label !== 'Cancel') expect(b.name).toMatch(/T\d|Q\d|SPEC|checkpoint/)
+    }
+  })
+})
+

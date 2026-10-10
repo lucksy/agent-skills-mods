@@ -85,6 +85,10 @@ if [[ -n $url ]]; then
   rev=$(printf '%s' "$head" | tr -d '\r' | sed -n 's/^x-agent-skills-rev: //Ip')
   if [[ -n $rev ]] && grep -q '<html' "$tmp/live.html"; then echo "ok   serve-get-page"; else echo "FAIL serve-get-page"; fail=1; fi
   if printf '%s' "$head" | grep -qi '^access-control-'; then echo "FAIL serve-no-cors"; fail=1; else echo "ok   serve-no-cors"; fi
+  # The live page (T11): its write buttons, the rev they post with, and a script of its own that parses.
+  if grep -q 'data-act="start" data-args="{&quot;id&quot;:&quot;T3&quot;}"' "$tmp/live.html" && grep -q "data-rev=\"$rev\"" "$tmp/live.html"; then echo "ok   serve-page-buttons"; else echo "FAIL serve-page-buttons"; fail=1; fi
+  node -e 'const h=require("fs").readFileSync(process.argv[1],"utf8");const m=[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)];if(m.length!==2)process.exit(2);require("fs").writeFileSync(process.argv[2],m[1][1])' "$tmp/live.html" "$tmp/live.js"
+  if node --check "$tmp/live.js" 2>/dev/null && [[ $(wc -c < "$tmp/live.js") -lt 4096 ]]; then echo "ok   serve-live-script"; else echo "FAIL serve-live-script"; fail=1; fi
   curl -s -N --max-time 8 "$base/events?token=$token" > "$tmp/events.out" &
   events_pid=$!
   sleep 0.5
@@ -92,6 +96,8 @@ if [[ -n $url ]]; then
     --data "{\"action\":\"tick\",\"args\":{\"id\":\"T3\",\"index\":0},\"rev\":\"$rev\"}" "$base/action")
   if [[ $out == *'T3 ticked: 429 after 60 req/min'* ]]; then echo "ok   serve-post-action"; else echo "FAIL serve-post-action: $out"; fail=1; fi
   if grep -q -- '- \[x\] 429 after 60 req/min' "$tmp/live/tasks/todo.md"; then echo "ok   serve-wrote-file"; else echo "FAIL serve-wrote-file"; fail=1; fi
+  # A live write changes only what its action owns: no created: field, no Status line on another task.
+  if ! grep -q '^created:' "$tmp/live/tasks/todo.md" && [[ $(grep -c '^\*\*Status:\*\*' "$tmp/live/tasks/todo.md") == 1 ]]; then echo "ok   serve-owned-lines-only"; else echo "FAIL serve-owned-lines-only:"; sed 's/^/       /' "$tmp/live/tasks/todo.md"; fail=1; fi
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" \
     --data "{\"action\":\"tick\",\"args\":{\"id\":\"T3\",\"index\":0},\"rev\":\"$rev\"}" "$base/action")
   if [[ $code == 409 ]]; then echo "ok   serve-stale-409"; else echo "FAIL serve-stale-409: got $code"; fail=1; fi
