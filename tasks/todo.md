@@ -212,14 +212,14 @@ Start with one placeholder chart, the tasks-done line, to prove the whole path. 
 **Estimated scope:** M
 
 ## Checkpoint: Dashboard path
-- [ ] All tests pass
-- [ ] The CLI and `/progress dashboard` produce a working page on this repo, checked in Chrome: tabs, hash, back button, light and dark, no network requests
-- [ ] Review with human before proceeding
+- [x] All tests pass
+- [x] The CLI and `/progress dashboard` produce a working page on this repo, checked in Chrome: tabs, hash, back button, light and dark, no network requests
+- [x] Review with human before proceeding
 
 ## Phase 3: Views
 
 ## Task 7: Board view
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `board.ts` draws five columns: to do, waiting, in progress, blocked and done. Each card shows:
 - id and title;
@@ -230,13 +230,13 @@ Start with one placeholder chart, the tasks-done line, to prove the whole path. 
 Checkpoint rows sit between their tasks. A toggle groups the board by phase. Phase and state filters are kept in the hash (`#board?phase=2&state=blocked`).
 
 **Acceptance criteria:**
-- [ ] Each fixture task appears once, in the column matching its parsed status, with the right open-box count and age
-- [ ] A blocked card names its question; checkpoints appear after the task they follow
-- [ ] Filters and the phase toggle change what is shown and survive a reload and the back button
+- [x] Each fixture task appears once, in the column matching its parsed status, with the right open-box count and age
+- [x] A blocked card names its question; checkpoints appear after the task they follow
+- [x] Filters and the phase toggle change what is shown and survive a reload and the back button
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: filters and the toggle work in Chrome; with JS off the full board is shown
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: filters and the toggle work in Chrome; with JS off the full board is shown
 
 **Dependencies:** T4
 
@@ -248,7 +248,7 @@ Checkpoint rows sit between their tasks. A toggle groups the board by phase. Pha
 **Estimated scope:** S
 
 ## Task 8: Roadmap view
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** `roadmap.ts` draws three things:
 - the run timeline as styled HTML, using the same rows as `/progress timeline` with each segment tone mapped to a CSS class;

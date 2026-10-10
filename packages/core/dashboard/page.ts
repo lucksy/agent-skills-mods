@@ -6,14 +6,18 @@
 import { shortDay } from '../forecast'
 import { stateJson, type State } from '../state'
 import { specApproval } from '../view'
+import { boardHtml } from './board'
 import { overviewHtml } from './overview'
 import { CHARTS_JS } from './charts-bundle'
 import { esc } from './html'
 
-export type ViewId = 'overview'
+export type ViewId = 'overview' | 'board'
 
 /** The views in tab order. A view joins this list when it is built. */
-const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [{ id: 'overview', label: 'Overview', render: overviewHtml }]
+const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
+  { id: 'overview', label: 'Overview', render: overviewHtml },
+  { id: 'board', label: 'Board', render: boardHtml },
+]
 
 /** The views a page can open on, in tab order. */
 export const VIEW_IDS: readonly ViewId[] = VIEWS.map(v => v.id)
@@ -121,22 +125,45 @@ ${chartsScript(panels)}
  * so a link opens it and Back returns; arrow keys, Home and End move between tabs.
  */
 export const DASHBOARD_SCRIPT = `(() => {
-  const d = document, b = d.body
+  const d = document, b = d.body, $ = id => d.getElementById(id)
   const tabs = [...d.querySelectorAll('[role=tab]')]
   const ids = tabs.map(t => t.getAttribute('href').slice(1))
-  const viewOf = h => h.slice(1).split('?')[0]
+  const parse = h => { const [v, q = ''] = h.slice(1).split('?'); return [v, new URLSearchParams(q)] }
   b.classList.add('js')
-  const show = id => {
+  // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase.
+  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group')
+  const board = q => {
+    if (!ph) return
+    ph.value = q.get('phase') || ''
+    st.value = q.get('state') || ''
+    if (gr) gr.checked = q.get('group') === 'phase'
+    b.classList.toggle('grouped', !!gr && gr.checked)
+    for (const el of $('view-board').querySelectorAll('[data-state]'))
+      el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value)
+    for (const c of $('view-board').querySelectorAll('.col'))
+      c.querySelector('.n').textContent = c.querySelectorAll('[data-task]:not([hidden])').length
+  }
+  const write = () => {
+    const q = new URLSearchParams()
+    if (ph.value) q.set('phase', ph.value)
+    if (st.value) q.set('state', st.value)
+    if (gr && gr.checked) q.set('group', 'phase')
+    location.hash = 'board' + (String(q) ? '?' + q : '')
+  }
+  for (const c of [ph, st, gr]) if (c) c.addEventListener('change', write)
+  const show = h => {
+    let [id, q] = parse(h)
     if (!ids.includes(id)) id = ids.includes(b.dataset.view) ? b.dataset.view : ids[0]
     for (const t of tabs) {
       const on = t.getAttribute('href') === '#' + id
       t.setAttribute('aria-selected', String(on))
       t.tabIndex = on ? 0 : -1
     }
-    for (const v of ids) d.getElementById('view-' + v).hidden = v !== id
+    for (const v of ids) $('view-' + v).hidden = v !== id
     b.dataset.view = id
+    board(id === 'board' ? q : new URLSearchParams())
   }
-  addEventListener('hashchange', () => show(viewOf(location.hash)))
+  addEventListener('hashchange', () => show(location.hash))
   tabs.forEach((t, i) => t.addEventListener('keydown', e => {
     const n = tabs.length
     const j = { ArrowRight: i + 1, ArrowLeft: i - 1 + n, Home: 0, End: n - 1 }[e.key]
@@ -145,7 +172,7 @@ export const DASHBOARD_SCRIPT = `(() => {
     location.hash = ids[j % n]
     tabs[j % n].focus()
   }))
-  show(viewOf(location.hash))
+  show(location.hash)
 })()`
 
 /**
@@ -192,6 +219,7 @@ section:focus{outline:none}
 .card h3{font-size:13px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--s3)}
 .foot{color:var(--ink3);font-size:12px;padding-top:var(--s2);padding-bottom:var(--s6)}
 ${OVERVIEW_STYLE()}
+${BOARD_STYLE()}
 `
 
 function OVERVIEW_STYLE(): string {
@@ -237,5 +265,36 @@ ul.h-why{padding-left:var(--s5)}ul.h-why li{padding:1px 0}
 .empty p{margin:var(--s2) 0 0;color:var(--ink2)}
 @media (max-width:860px){.cols{grid-template-columns:1fr}}
 @media (max-width:640px){.figs{grid-template-columns:repeat(2,minmax(0,1fr))}.fig .v{font-size:22px}h1{font-size:19px}}
+`
+}
+
+function BOARD_STYLE(): string {
+  return `
+.js-only{display:none}.js .js-only{display:block}
+.board-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);margin-bottom:var(--s4);font-size:13px;color:var(--ink2)}
+.js .board-tools{display:flex}
+.board-tools select{margin-left:var(--s1);font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r);padding:2px var(--s2)}
+.board-tools .check{display:flex;align-items:center;gap:var(--s1);cursor:pointer}
+.cols5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s3);align-items:start}
+/* The lanes show only when grouped; the plain columns otherwise. */
+.js .swim.js-only{display:none}.js.grouped .swim.js-only{display:block}.js.grouped .flat{display:none}
+.col{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:var(--s2);min-width:0}
+.col h3,.col h4{font-size:12px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin:var(--s1) var(--s1) var(--s2)}
+.col .n{color:var(--ink3);font-weight:500;margin-left:2px}
+.col ul{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}
+.none{margin:var(--s1);color:var(--ink3);font-size:13px}
+.card.c-todo,.card.c-waiting,.card.c-doing,.card.c-blocked,.card.c-done{padding:var(--s2) var(--s3);border-left:3px solid var(--line2)}
+.c-doing{border-left-color:var(--doing)!important}.c-blocked{border-left-color:var(--blocked)!important}.c-done{border-left-color:var(--done)!important}.c-waiting{border-left-style:dashed!important}
+.c-title{margin:0;font-weight:550;line-height:1.35}.c-title .id{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
+.c-done .c-title{color:var(--ink2)}
+.c-meta{margin:var(--s1) 0 0;font-size:12.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:2px var(--s2);justify-content:space-between}
+.c-meta .why{color:var(--blocked)}
+.c-phase{color:var(--ink3);white-space:nowrap}.lane .c-phase{display:none}
+.cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
+.cp span{color:var(--needs)}
+.lane+.lane{margin-top:var(--s5)}
+.lane-title{font-size:14px;margin:0 0 var(--s2)}
+@media (max-width:980px){.cols5{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.cols5{grid-template-columns:1fr}}
 `
 }

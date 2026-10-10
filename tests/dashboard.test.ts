@@ -219,3 +219,66 @@ describe('the chart bundle (K4)', () => {
     expect(html).toContain('<p class="chart-text">Tasks done: 3 of 4 &lt;ok&gt;.</p>')
   })
 })
+
+describe('Board (K2)', () => {
+  // T1 done; T2 under way since 7 Oct with a checkpoint after it; T3 waits on T2; T4 blocked by a question.
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · started 2026-10-07 · step test\n')
+  const plan = '# Plan\n\n## Open Questions\n- Q1 (T4): Redis or in memory?\n'
+  const board = async () => section(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo, 'tasks/plan.md': plan }))), 'board')
+  /** The ids of the cards in a column of the flat board. */
+  const column = (html: string, key: string) => {
+    const col = html.match(new RegExp(`<section class="col" data-col="${key}"[\\s\\S]*?</section>`))![0]
+    return [...col.matchAll(/data-task="(T\d+)"/g)].map(m => m[1])
+  }
+
+  test('a tab of its own, after the Overview', async () => {
+    const html = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })))
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board'])
+    expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })), { view: 'board' })).toContain('data-view="board"')
+  })
+
+  test('five columns; each task once, in the column its state puts it', async () => {
+    const html = (await board()).split('<div class="swim')[0]!
+    expect([...html.matchAll(/data-col="(\w+)"/g)].map(m => m[1])).toEqual(['todo', 'waiting', 'doing', 'blocked', 'done'])
+    expect([column(html, 'todo'), column(html, 'waiting'), column(html, 'doing'), column(html, 'blocked'), column(html, 'done')]).toEqual([[], ['T3'], ['T2'], ['T4'], ['T1']])
+    expect(text(html)).toMatch(/To do 0 .*Waiting 1 .*In progress 1 .*Blocked 1 .*Done 1/)
+  })
+
+  test('each card says what a person needs to know about it', async () => {
+    const t = text(await board())
+    expect(t).toMatch(/T2 Prisma schema for keys .*2 of 3 open · started 7 Oct · 2 d · step test/)
+    expect(t).toMatch(/T3 Issue and revoke keys .*waits on T2/)
+    expect(t).toMatch(/T4 Rate limit per key .*Q1 \(T4\): Redis or in memory\?/)
+    expect(t).toMatch(/T1 Monorepo scaffold .*all 3 done/)
+  })
+
+  test('the checkpoint shows right after the task it follows, with what is open', async () => {
+    const html = await board()
+    expect(html).toMatch(/data-task="T2"[\s\S]*?<\/li>\s*<li class="cp"[^>]*>[\s\S]*?After Tasks 1-2[\s\S]*?2 of 2 open/)
+  })
+
+  test('grouped by phase: a lane per phase, its tasks only', async () => {
+    const swim = (await board()).split('<div class="swim')[1]!
+    const lanes = [...swim.matchAll(/<section class="lane" data-phase="(\d+)"[\s\S]*?<h3[^>]*>([^<]+)<\/h3>([\s\S]*?)<\/section>\s*<!-- \/lane -->/g)]
+    expect(lanes.map(l => [l[1], l[2], [...l[3]!.matchAll(/data-task="(T\d+)"/g)].map(m => m[1])])).toEqual([
+      ['1', 'Phase 1: Foundation', ['T2', 'T1']],
+      ['2', 'Phase 2: Core', ['T3', 'T4']],
+    ])
+  })
+
+  test('filters for phase and state, and the grouping switch; without JS the plain board shows', async () => {
+    const html = await board()
+    expect(html).toMatch(/<select [^>]*id="board-phase"[\s\S]*?<option value="">All phases<\/option><option value="1">Phase 1: Foundation<\/option><option value="2">Phase 2: Core<\/option>/)
+    expect(html).toMatch(/<select [^>]*id="board-state"[\s\S]*?<option value="blocked">Blocked<\/option>/)
+    expect(html).toMatch(/<input type="checkbox" id="board-group"/)
+    // The controls and the lanes need the script; the columns do not.
+    expect(html).toMatch(/<div class="board-tools js-only"/)
+    expect(html).toMatch(/<div class="swim js-only"/)
+    expect(DASHBOARD_SCRIPT).toContain('board-phase')
+  })
+
+  test('an empty column says so, and a project without tasks gets one message', async () => {
+    expect(text(await board())).toMatch(/To do 0 Nothing here/)
+    expect(text(section(dashboardHtml(await buildState(io({}))), 'board'))).toContain('No task list yet')
+  })
+})
