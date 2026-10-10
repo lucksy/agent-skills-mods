@@ -1,111 +1,114 @@
 ---
-status: draft
-created: 2026-10-10
+status: approved
+created: 2026-10-11
+approved: 2026-10-11
 ---
-# Implementation Plan: format-v2
+# Implementation Plan: team-view
 
 ## Overview
 
-This plan builds [SPEC-format-v2.md](../SPEC-format-v2.md), module `format-v2` of the capability map in [SPEC.md](../SPEC.md). It covers:
-- a team in `tasks/team.md`, with identity from the git email;
-- owners, with assign, claim and auto-claim;
-- *in review* with a PR and a reviewer;
-- handoff notes;
-- named spec approvals by role;
-- a Modules view across the capability map, archived plans included.
+This plan builds [SPEC-team-view.md](../SPEC-team-view.md), module `team-view` of the capability map in [SPEC.md](../SPEC.md). It covers:
+- one actions table behind every write, plus answers to questions and checkpoint sign-offs;
+- a board across branches, read from git objects already on the machine;
+- collision alerts;
+- the Team tab;
+- a task-aware merge driver, opt-in;
+- "since you last looked";
+- a live local dashboard (`--serve`) whose buttons run the same actions.
 
-The previous plan (core + dashboard, 14 of 14) is archived in `tasks/archive/2026-10-10-core-dashboard/`.
+The previous plan (format-v2, 13 of 13) is archived in `tasks/archive/2026-10-10-format-v2/`, with its open checkpoint boxes listed in its README.
 
 ## Architecture Decisions
 
-- **The Status line keeps every token it carries.** Today `statusLine()` rewrites the whole line from status, dates and step. As soon as the plugin stamps a task in progress, it would erase an owner, a PR or a reviewer. So T1 extends `TaskState` with `owner`, `reviewer` and `pr`, and makes every stamp a round trip.
-- **Identity lives in one place.** `packages/core/team.ts` parses `tasks/team.md` and answers who an email is. The plugin reads `git config user.email` with `$.process.run`; the CLI reads it with Node. Nothing else knows about people.
-- **Approval stays one word.** `status: approved` is still what every tool reads. The new `approvals:` front-matter line only records who signed for which role, and decides when the plugin may flip `status:`. Without an `approvals:` line in `team.md`, the spec pane's `a` does exactly what it does today.
-- **Modules come from files only.** Each row is built from:
-  - the capability map table in `SPEC.md`;
-  - each module's `SPEC-<id>.md`;
-  - the active `tasks/todo.md`;
-  - `tasks/archive/*/` (`todo.md` and `history.json`).
-
-  A plan names its module with `module:` in its front matter; a list is allowed (`module: core, dashboard`). Without it, the plan's name is matched against the module ids, so the archived `core-dashboard` counts for both.
-- **Commands are thin.** Each `/progress` verb reads, calls a pure function in core, writes one file and replies, like `start`/`done`/`block` today. Every write changes only its own line and keeps every other byte.
-- **State v1 grows, it doesn't change.** New fields (`owner`, `reviewer`, `pr`, `handoffs` per task; `team`, `me`, `approvals`, `modules`) are added within schema 1. No existing field changes.
-- **Story ids:** F1–F7, as in the spec.
+- **One actions table.** `packages/core/actions.ts` maps each action name to an argument check and a pure edit (`text in → text out, reply`). The plugin's `/progress` verbs and the server's `POST /action` both call it, so the dashboard and the commands can't drift apart. T1 moves today's write verbs onto it with no change in behaviour, before anything new uses it.
+- **Other branches come from git objects only.** `git for-each-ref` lists the refs. `git cat-file --batch` reads `<ref>:tasks/todo.md` for every ref in one process, the same pattern `history.ts` uses. The plugin never checks out, stashes or fetches. Fetch age comes from the mtime of `FETCH_HEAD`.
+- **The furthest state.** Each task's states are ranked done > in review > in progress > blocked > todo. The board shows the furthest one and the branch it is on. A collision is a separate check: the task is under way (in progress or in review) on two refs, or it has two different owners.
+- **The merge driver is pure core plus a thin CLI.** `mergeTodo(base, ours, theirs)` and `mergeFrontMatter` take text and return text, never dropping content. The CLI's `--merge %O %A %B %P` reads the files, calls core, writes `%A` and exits 0 or 1. Prose and anything the driver doesn't own falls back to `git merge-file`.
+- **"Last looked" is per clone.** `<git dir>/agent-skills/seen.json` (found with `git rev-parse --git-dir`) holds a compact snapshot: task states and owners, spec statuses, answered questions, collisions. The plugin and the CLI share it. It is never committed.
+- **The server is a handler plus wiring.** `packages/core/serve.ts` exports `handle(request, io)`, which checks the token, `Origin` and `rev`, and returns `{ status, headers, body }` with no sockets. The CLI wires it to `node:http`, `fs.watch` and SSE. The static dashboard stays exactly as it is; only live mode adds the buttons and its own script, under 4 KB.
+- **State v1 grows, it doesn't change.** `branches`, `collisions` and `since` are added within schema 1.
+- **Story ids:** V1–V6, as in the spec.
 
 ## Dependency Graph
 
 ```
-T1 Status line v2 round trip (owner, in review, PR, reviewer)
- ├─ T2 team.md + who you are (/progress team, team init)
- │   ├─ T3 assign / claim / unassign, owners in the panes
- │   │   ├─ T4 auto-claim on start
- │   │   ├─ T5 /progress review + in review in the panes
- │   │   │   └─ T6 dashboard Board: owners, In review, person filter
- │   │   └─ T7 /progress handoff + handoff notes
- │   └─ T8 approvals by role in the spec pane
- │       └─ T9 approvals in the Spec tab and the CLI
- └─ T10 modules rows + /progress modules + --modules
-     ├─ T11 /progress modules <id>: an archived module's timeline
-     └─ T12 dashboard Modules tab
-T13 format docs, rules, README, 0.38.0, final checks ← all
+T1 actions table (existing verbs) + Q1 check
+ ├─ T2 answer + signoff (format lines, actions, commands)
+ │   ├─ T10 serve handler + --serve (token, origin, rev, SSE)
+ │   │   └─ T11 live page: buttons, SSE client, 409 notice   ← also T5, T6
+ │   │       └─ T12 /progress dashboard live
+ │   └─ T9 since (seen.json, once per session, /progress since, --since)   ← also T4
+T3 branches.ts + /progress branches + --branches
+ ├─ T4 collisions: band, board pane, --json
+ │   ├─ T5 dashboard Board: ?branches=all, collision marks
+ │   └─ T6 Team tab
+ └─ (T9 reads collisions)
+T7 mergeTodo + front-matter merge (pure)
+ └─ T8 --merge + /progress merge-driver + real git merge test
+T13 docs, rules, README, 0.39.0, final checks ← all
 ```
 
-T2 and T10 can run in parallel after T1. So can T8–T9 and T3–T7, and T11–T12.
+T3 and T7 can start in parallel with T1. T5 and T6 can run in parallel, and so can the merge track (T7–T8) and the branches track (T3–T6).
 
 ## Task List
 
 Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation
-- [x] Task 1: Status line v2 round trip
-- [x] Task 2: tasks/team.md and who you are
+- [ ] Task 1: One actions table for the existing write commands
+- [ ] Task 2: Answer questions and sign off checkpoints
 
 ### Checkpoint: Foundation
-- [x] Tests pass; v1 files read as before
+- [ ] Tests pass; every existing command replies and writes exactly as before
 
-### Phase 2: Owners and review
-- [x] Task 3: Assign, claim and unassign, with owners in the panes
-- [x] Task 4: Auto-claim when a task starts
-- [x] Task 5: /progress review and the in-review state
-- [x] Task 6: Dashboard Board: owners, In review column, person filter
-- [x] Task 7: /progress handoff and handoff notes
+### Phase 2: The team across branches
+- [ ] Task 3: The board across branches
+- [ ] Task 4: Collision alerts
+- [ ] Task 5: Dashboard Board across branches
+- [ ] Task 6: The Team tab
 
-### Checkpoint: Owners and review
-- [x] A team can assign, review and hand off in a real session
+### Checkpoint: Branches
+- [ ] Two real branches show on the board and collide in the band
 
-### Phase 3: Approvals
-- [x] Task 8: Approvals by role in the spec pane
-- [x] Task 9: Approvals in the dashboard's Spec tab and the CLI
+### Phase 3: Merge driver
+- [ ] Task 7: Task-aware merge in core
+- [ ] Task 8: The merge driver, installed and run by git
 
-### Checkpoint: Approvals
-- [ ] A spec signed by two roles flips to approved only on the last signature
+### Checkpoint: Merge
+- [ ] A real `git merge` of two edited task lists comes out clean
 
-### Phase 4: Modules
-- [x] Task 10: Module rows, /progress modules and --modules
-- [x] Task 11: /progress modules <id>: an archived module's timeline
-- [x] Task 12: Dashboard Modules tab
+### Phase 4: Since you last looked
+- [ ] Task 9: Since you last looked
 
-### Checkpoint: Modules
-- [x] This repo's own modules show: core and dashboard done, format-v2 under way
+### Phase 5: Live dashboard
+- [ ] Task 10: The live server
+- [ ] Task 11: Write buttons on the live dashboard
+- [ ] Task 12: /progress dashboard live
 
-### Phase 5: Finish
-- [x] Task 13: Format docs and rules, README, version 0.38.0, final checks
+### Checkpoint: Live
+- [ ] In Chrome, Sign, Answer and Claim change the markdown and the page reloads
+
+### Phase 6: Close
+- [ ] Task 13: Docs, rules, README, 0.39.0 and final checks
 
 ### Checkpoint: Complete
-- [x] Every success criterion in SPEC-format-v2.md met; released
+- [ ] Every success criterion in the spec is met; review with human
 
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
-|------|--------|------------|
-| Stamping a Status line drops the new tokens | High | T1 first, with round-trip tests for every stamp path (start, done, block, auto-step, Write completion) |
-| This session's installed plugin (0.36) rewrites this repo's `tasks/todo.md` and drops v2 tokens | Medium | Don't put v2 tokens in this repo's own task list until 0.38 is installed. Check them in fixtures and a scratch project. |
-| `git config user.email` is missing, or differs per repo | Medium | Without a match you're "unknown": commands that need you say so and name the fix (an Email row in `team.md`). Auto-claim does nothing. |
-| The capability map table is written freely by people | Medium | Parse the first table under a heading containing "Capability Map", by its header names. Anything else gives no rows and an explanatory message, never an error. |
-| Two people sign a spec at once, in different branches | Low | `approvals:` is one line, so git shows the conflict plainly. The merge driver is `team-view`'s work. |
-| Older plugin versions read *in review* as *todo* | Low | Documented in the format doc. The checkboxes stay the source of truth for done. |
+|---|---|---|
+| The T1 refactor changes a reply or a write | High | T1 changes no behaviour. The existing mod tests for every verb must pass unchanged before T2 starts. |
+| `cat-file` over many refs is slow on big repos | Medium | One batch process. Refs are capped at 25 and limited to 30 days (Q2). Results are cached by ref SHA, so an unchanged ref isn't read twice. |
+| The merge driver loses or garbles a task | High | A "never drops content" property test over generated base/ours/theirs. A real `git merge` in `scripts/test.sh`. Anything unsure falls back to markers. |
+| Git runs the driver where Node or the script isn't found | Medium | `install` writes an absolute path to the plugin's script and checks that `node --version` is 22.6 or newer. `status` reports a broken path. |
+| A web page on another site posts to the local server | High | 127.0.0.1 only, a random per-run token, an `Origin` check on writes, and no CORS headers. Handler tests cover each refusal. |
+| Two tabs or a tab and an agent edit the same file | Medium | The `rev` hash check: a stale write gets a 409 and writes nothing. |
+| A mod can't start a long-running process (Q1) | Low | `/progress dashboard live` prints the exact command instead. Only T12 depends on it. |
+| "Since you last looked" turns into noise | Low | One line, at most 6 items, then "and N more · /progress since". Nothing when nothing changed. |
 
 ## Open Questions
 
-- Q1: Should a handoff note also be drafted from the session (files touched, open boxes), or take only the typed note? This plan takes the typed note.
-- Q2: Should the Overview get a short "by person" line, or leave that to `team-view`'s Team tab? This plan leaves it out.
+- Q1 (T12): Can a mod start a long-running process? If it can, `/progress dashboard live` starts `--serve` itself. If it can't, it prints the command. T1 checks the mods API and records the answer here.
+- Q2 (T3): Which refs count as "the team"? The default is local branches plus `refs/remotes/*` with a commit in the last 30 days, up to 25 refs, skipping refs that point at the current branch's commit. Should the limit or the window be a setting?
+- Q3 (T7): In a merge, should *blocked* beat a later *in progress*? The default is the later stamp only.

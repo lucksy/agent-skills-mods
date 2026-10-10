@@ -1,0 +1,461 @@
+---
+plan: format-v2
+module: format-v2
+created: 2026-10-10
+---
+# Tasks: format-v2
+
+## Phase 1: Foundation
+
+## Task 1: Status line v2 round trip
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `TaskState` gains `owner`, `reviewer` and `pr`. `parseStatusLine` reads three things:
+- an `@handle` that is not a reviewer, as the owner;
+- `in review`;
+- `PR #n` or a PR URL, and `reviewer @x`.
+
+`statusLine()` writes them back in a fixed order: status, owner, dates, step, PR, reviewer. The parser's `Task` exposes `owner`, `reviewer` and `pr`. State JSON adds the fields per task within schema 1.
+
+**Acceptance criteria:**
+- [x] `in review · @amila · started 2026-10-07 · PR #42 · reviewer @bob` parses and writes back the same, and v1 lines parse as before
+- [x] Every stamp path keeps the owner, PR and reviewer: `/progress start`, `done`, `block`, the plugin's own step updates, and a Write of the list
+- [x] `--json` shows `owner`, `reviewer` and `pr` per task, and every field it printed before
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
+
+**Notes:**
+- Tokens are matched in lower case, but handles and PR links keep the case they were written in. The order on the line doesn't matter; the writer always uses status, owner, dates, step, PR, reviewer.
+- A plugin step update on a task in review leaves it in review, so work done after review starts doesn't pull it back. Only its last box (done) or a person moves it on.
+- The parser treats *in review* as under way, so the task stays current.
+
+**Dependencies:** None
+
+**Files likely touched:**
+- `packages/core/format.ts`
+- `packages/core/parse.ts`
+- `packages/core/state.ts`
+- `tests/parse.test.ts`, `tests/state.test.ts`
+
+**Estimated scope:** M
+
+## Task 2: tasks/team.md and who you are
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `packages/core/team.ts` parses `tasks/team.md`: its front matter `approvals:` and the Handle | Role | Email table. Roles are a comma list. It also answers who an email is.
+- The plugin and the CLI read `git config user.email`.
+- State gains `team` and `me`.
+- `/progress team` lists the team, the required approvals and who you are, or how to set it up.
+- `/progress team init` drafts the file from the git authors (`git log --format=%an <%ae>`), with roles left to fill in. If the file exists, it refuses unless given `force`.
+
+**Acceptance criteria:**
+- [x] `team.md` parses, including bad rows (skipped and named), a duplicate email (the first wins, named), no table, and no file
+- [x] `/progress team` names you when your git email is in the file, and otherwise says how to add yourself
+- [x] `/progress team init` writes a draft from the git authors and never overwrites an existing file without `force`
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .` (new `tests/team.test.ts` and mod cases)
+- [x] Manual check: `claude -p --plugin-dir . "/progress team init"` in a scratch git project
+
+**Notes:**
+- Emails stay in `tasks/team.md`: the State JSON, and so the shareable dashboard, carry only handles and roles.
+- `team init` skips bots and the agent's own `noreply@anthropic.com` co-author, keeps one row per email (case-insensitive), and numbers handles that clash (`@sara-k`, `@sara-k-2`).
+- Checked in a real session on a scratch git project: `team init` wrote the draft, `team` marked "← you", and a second `init` refused to overwrite.
+
+**Dependencies:** T1
+
+**Files likely touched:**
+- `packages/core/team.ts`
+- `packages/core/state.ts`
+- `hooks/register.tsx`
+- `tests/team.test.ts`, `tests/mod.test.ts`
+
+**Estimated scope:** M
+
+## Checkpoint: Foundation
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] v1 task lists and specs read exactly as before
+- [x] Review with human before proceeding
+
+## Phase 2: Owners and review
+
+## Task 3: Assign, claim and unassign, with owners in the panes
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** These commands set or clear the owner on the task's Status line, keeping the rest of the line:
+- `/progress assign T4 @sara`
+- `assign T4 me`
+- `claim T4`
+- `unassign T4`
+
+The owner then shows on the board pane's task rows, in the band (`▸ T4 Rate limit · @sara`), on the timeline rows, in `/progress task T4`, and in the CLI summary. An unknown handle is still written, with a note that it isn't in `team.md`.
+
+**Acceptance criteria:**
+- [x] Each command writes exactly the Status line and replies with what changed; a task that doesn't exist, or `me` without a known identity, gets a clear refusal
+- [x] Owners show in the board pane, the band, the timeline, `/progress task` and the CLI summary
+- [x] A handle that isn't in `team.md` is written, and the reply says so
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: a real session in a scratch project, `/progress assign T2 @sara`, then `/progress`
+
+**Notes:**
+- `setOwner` in core changes only the task's Status line, adding one when there is none.
+- Owners show in the band above the prompt, the board pane row, `/progress task`, the CLI list and the run timeline.
+- Checked in a real session on a scratch project: `claim T5` and `assign T6 @sara`; the second warned that @sara isn't in `team.md`.
+
+**Dependencies:** T2
+
+**Files likely touched:**
+- `hooks/register.tsx`
+- `packages/core/format.ts`
+- `packages/core/view.ts`
+- `packages/core/timeline.ts`
+- `tests/mod.test.ts`
+
+**Estimated scope:** M
+
+## Task 4: Auto-claim when a task starts
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** When the plugin moves an unowned task to in progress, from a source edit, a test run, a commit or `/progress start`, it adds the session person as owner, provided `team.md` knows them. Otherwise nothing changes.
+
+**Acceptance criteria:**
+- [x] With you in `team.md`: the first step on an unowned task writes `@you`, and an owned task keeps its owner
+- [x] Without `team.md`, or with your email not in it, Status lines are written as before
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The owner rides on the queued step change. `stampTodo` uses it only to fill an empty owner, so an assignment made in the meantime wins.
+- The git email is read once per project per session, since steps fire on every tool call; `team.md` is read each time.
+- Checked in a real session: an agent's Write in a scratch project gave its unowned current task `@macbook`, keeping its start date.
+
+**Dependencies:** T3
+
+**Files likely touched:**
+- `hooks/register.tsx`
+- `tests/mod.test.ts`
+
+**Estimated scope:** S
+
+## Task 5: /progress review and the in-review state
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `/progress review T4 [#42 | PR URL] [@bob]` sets *in review*, with the PR and the reviewer. A done task, or a task with no boxes ticked, gets a refusal that explains why.
+
+The panes show it:
+- the board pane's state column reads `review #42 @bob`;
+- the timeline's step bar has a review state;
+- `/progress task` and the CLI show the PR and the reviewer.
+
+Ticking the last box still makes the task done.
+
+**Acceptance criteria:**
+- [x] The command writes *in review*, the PR and the reviewer, and keeps the owner and dates
+- [x] *In review* shows in the board pane, the timeline, `/progress task` and the CLI; the counts treat it as under way
+- [x] Ticking the last box of a task in review makes it done
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- Found and fixed: `/progress` lowercased its whole argument, which would have mangled `@Sara-K` and PR URLs. assign, claim, unassign and review now take the words as typed, with a test.
+- A task with no box ticked may still go to review if its Status line says it's under way. An untouched task is refused.
+- Checked in a real session on a scratch project: `review T4 #12 @Sara` kept the owner and start date, and the timeline and CLI showed it.
+
+**Dependencies:** T3
+
+**Files likely touched:**
+- `hooks/register.tsx`
+- `packages/core/view.ts`
+- `packages/core/timeline.ts`
+- `tests/mod.test.ts`, `tests/parse.test.ts`
+
+**Estimated scope:** M
+
+## Task 6: Dashboard Board: owners, In review column, person filter
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** The dashboard's Board shows each card's owner and, for a task in review, its PR and reviewer. It gets an *In review* column between In progress and Blocked, and a person filter (`#board?owner=sara`) next to phase and state. The person filter appears only when some task has an owner.
+
+**Acceptance criteria:**
+- [x] Six columns when a task is in review; each card names its owner, and in review its PR and reviewer
+- [x] The person filter lists the owners, filters the cards and counts, and is kept in the hash
+- [x] Checked in Chrome: filters, light and dark, 360 px, no console messages
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The column count comes from a CSS variable, so the grid holds six columns on one row; phones still stack them.
+- The person filter has "No owner" (`owner=-`) as well as each person.
+- The render budget test now takes the fastest of five renders, because the machine's load average (30–45) made a single timing fail. Node timed the render at 15–30 ms both before and after T6. The 200 ms limit is unchanged.
+- Checked in Chrome on a scratch project: six columns, the review card's owner, PR and reviewer, the person filter (with "No owner", the hash and Back), 360 px in light mode, no console messages.
+
+**Dependencies:** T5
+
+**Files likely touched:**
+- `packages/core/dashboard/board.ts`
+- `packages/core/dashboard/page.ts`
+- `tests/dashboard.test.ts`
+
+**Estimated scope:** M
+
+## Task 7: /progress handoff and handoff notes
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `/progress handoff T4 @bob "migration done, tests left"` sets the new owner and adds the line `**Handoff:** 2026-10-10 @sara → @bob: …` under the Status line; earlier notes are kept.
+- The parser reads the handoff lines.
+- `/progress task` and the dashboard card show the latest note.
+- When the task is current, its notes join the section of the system prompt that already carries the parsed state, so the next person's agent reads them.
+
+**Acceptance criteria:**
+- [x] The command writes the new owner and a dated note line, keeping earlier notes and every other byte
+- [x] Handoff notes show in `/progress task`, on the dashboard card, and in the agent's state section when the task is current
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The note comes from the old owner, or from you when the task had none. A line break in the note is folded into one line.
+- Handoff lines are their own kind of line, not a box, a dependency or a heading, so the task is otherwise unchanged.
+- Checked in a real session: after `handoff T4 @sara "…"`, a fresh agent with no file access named the new owner and quoted the note, from the state section of its system prompt.
+
+**Dependencies:** T3
+
+**Files likely touched:**
+- `packages/core/format.ts`
+- `packages/core/parse.ts`
+- `hooks/register.tsx`
+- `packages/core/dashboard/board.ts`
+- `tests/mod.test.ts`
+
+**Estimated scope:** M
+
+## Checkpoint: Owners and review
+- [x] All tests pass
+- [x] In a real session on a scratch project, with a `team.md` of three people: assign, claim, auto-claim, review, handoff (checked with one person in team.md, plus @sara assigned while not listed)
+- [x] Review with human before proceeding
+
+## Phase 3: Approvals
+
+## Task 8: Approvals by role in the spec pane
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `packages/core/approvals.ts` covers the signing rules:
+- it reads and writes the spec's `approvals:` front matter (`role @handle date` items);
+- it signs every role that the person holds and the spec still lacks;
+- it says which roles are still waiting, and on whom;
+- it decides when `status:` flips to `approved`, with the date.
+
+The spec pane's `a` uses it when `team.md` has `approvals:`:
+- the header shows `2/3 approved · waiting on @sara (design)`;
+- `d` (back to draft) clears the signatures;
+- without `approvals:`, `a` works as today.
+
+Spec drift (an approved spec edited by the agent) also clears the signatures.
+
+**Acceptance criteria:**
+- [x] Signing records the person's roles with their name and the date; the spec flips to approved only when the last required role signs
+- [x] The pane shows who signed and who it waits on; `d` and spec drift clear the signatures
+- [x] Without `approvals:` in `team.md`, approval behaves exactly as before
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .` (new `tests/approvals.test.ts`, mod cases)
+
+**Notes:**
+- `load()` now carries the team, so the pane shows "1/2 approved · waiting on @amila (eng)" in place of "awaiting approval". Signing re-reads `team.md`, so a role added mid-session counts.
+- A person with no role the spec still waits on, or an email not in `team.md`, gets a toast, and nothing is written.
+- Signing is a pane button, which a headless session can't press. The plugin tests press it through the engine; the Approvals checkpoint asks for a real two-person signing in an interactive session.
+
+**Dependencies:** T2
+
+**Files likely touched:**
+- `packages/core/approvals.ts`
+- `packages/core/specedit.ts`
+- `hooks/register.tsx`
+- `tests/approvals.test.ts`, `tests/mod.test.ts`
+
+**Estimated scope:** M
+
+## Task 9: Approvals in the dashboard's Spec tab and the CLI
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:**
+- The Spec tab shows each required role with its signer and date, or *waiting*, and the picker shows `2/3`.
+- The CLI's spec section shows the same.
+- State JSON adds each spec's approvals.
+
+**Acceptance criteria:**
+- [x] The Spec tab and the picker show approvals by role, with names and dates
+- [x] `agent-skills-progress` shows them in its spec section, and `--json` carries them
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+
+**Notes:** Checked in Chrome and the CLI on a scratch spec with design signed and eng waiting.
+
+**Dependencies:** T8
+
+**Files likely touched:**
+- `packages/core/dashboard/spec.ts`
+- `packages/core/cli.ts`
+- `packages/core/state.ts`
+- `tests/spec.test.ts`
+
+**Estimated scope:** S
+
+## Checkpoint: Approvals
+- [ ] All tests pass
+- [ ] In a real session, two people (two emails) sign a spec that needs two roles: it flips on the second signature
+- [ ] Review with human before proceeding
+
+## Phase 4: Modules
+
+## Task 10: Module rows, /progress modules and --modules
+**Status:** done · started 2026-10-10 · done 2026-10-10
+
+**Description:** `packages/core/modules.ts` builds one row per module of the capability map, from the first table under a "Capability Map" heading in `SPEC.md`: its id, responsibility and dependencies. Each row then gets:
+- **spec:** its `SPEC-<id>.md` status and approval date;
+- **plan:** the active plan or archived plans whose `module:` names it, or whose plan name contains the id; their done/total, started and finished dates;
+- **state:** not started, speccing, planned, building or done.
+
+`/progress modules` replies with a table, and `agent-skills-progress --modules` prints it. State gains `modules`.
+
+**Acceptance criteria:**
+- [x] On this repo: core ✓ and dashboard ✓ (both from the archived core-dashboard plan, 14/14), format-v2 building, the others not started
+- [x] A missing or free-form capability map gives an explanatory message, never an error
+- [x] `--modules` and `--json` show the rows
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .` (new `tests/modules.test.ts`), `bash scripts/test.sh`
+- [x] Manual check: `/progress modules` on this repo
+
+**Notes:**
+- A plan starts on its `created` date, else with its first task. A plan without `module:` counts for each id its name contains, bounded by dashes, so the archived `core-dashboard` counts for core and for dashboard.
+- States: not started, speccing, ready to plan, planned, building, done. The plan's list was one state short: a module with an approved spec and no plan is "ready to plan".
+- The reading interface (`ProjectIo`) gains an optional `dirs`, which the CLI and the plugin both provide. The test world now lists folders too.
+- Checked on this repo in a real session and the CLI: core and dashboard done (14/14, archived), format-v2 building 9/13, the rest not started.
+
+**Dependencies:** T1
+
+**Files likely touched:**
+- `packages/core/modules.ts`
+- `packages/core/state.ts`
+- `hooks/register.tsx`
+- `scripts/agent-skills-progress.mjs`
+- `tests/modules.test.ts`
+
+**Estimated scope:** M
+
+## Task 11: /progress modules <id>: an archived module's timeline
+**Status:** done · started 2026-10-10 · done 2026-10-11
+
+**Description:** `/progress modules dashboard` prints that module's run timeline, the same rows as `/progress timeline`. It reads them from its plan: the active plan, or the archived `todo.md` with that archive's `history.json` for dates. `--modules <id>` does the same in the CLI.
+
+**Acceptance criteria:**
+- [x] On this repo, `/progress modules dashboard` prints the archived plan's timeline with its done dates
+- [x] An unknown id lists the modules; a module with no plan says so
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`
+
+**Notes:**
+- `module-timeline.ts` is its own module because it builds a State, and `state.ts` already imports `modules.ts`. A cycle between them would risk the engine's initialisation errors.
+- It rebuilds a State v1 for the plan from its archive: done dates from the Status lines, days from `history.json`. The CLI's own `renderTimelineCli` then draws it, so it matches `/progress timeline`.
+- Checked on this repo in a real session and the CLI: `/progress modules dashboard` shows the archived plan's four phases, done dates and checkpoints.
+
+**Dependencies:** T10
+
+**Files likely touched:**
+- `packages/core/modules.ts`
+- `hooks/register.tsx`
+- `scripts/agent-skills-progress.mjs`
+- `tests/modules.test.ts`
+
+**Estimated scope:** S
+
+## Task 12: Dashboard Modules tab
+**Status:** done · started 2026-10-11 · done 2026-10-11
+
+**Description:** A Modules tab appears when a capability map exists. Each module is a row showing:
+- its state glyph, id and responsibility;
+- what it depends on;
+- its spec's approval;
+- a progress bar (done/total) and its dates.
+
+The active module's row links to the Overview. `/progress dashboard modules` opens on it.
+
+**Acceptance criteria:**
+- [x] The tab shows a row per module, with glyphs and words; it is absent when there is no capability map
+- [x] Checked in Chrome on this repo: light and dark, 360 px, no console messages
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`
+
+**Notes:**
+- The page builds its tab list per project, so Modules appears only with a capability map. `VIEW_IDS` still lists it, so `/progress dashboard modules` is a valid view; without a map the page falls back to the Overview.
+- The empty-projects test now loops over the tabs each page actually has.
+- Checked in Chrome on this repo: seven rows (core and dashboard done 14/14, format-v2 building, four not started); "its Overview" opens the Overview; 360 px light with no sideways scroll; no console messages.
+
+**Dependencies:** T10
+
+**Files likely touched:**
+- `packages/core/dashboard/modules.ts`
+- `packages/core/dashboard/page.ts`
+- `tests/modules.test.ts`
+
+**Estimated scope:** S
+
+## Checkpoint: Modules
+- [x] All tests pass
+- [x] This repo's modules show: core and dashboard done, format-v2 building
+- [ ] Review with human before proceeding
+
+## Phase 5: Finish
+
+## Task 13: Format docs and rules, README, version 0.38.0, final checks
+**Status:** done · started 2026-10-11 · done 2026-10-11
+
+**Description:**
+- `docs/progress-format.md` gains a v2 section.
+- `FORMAT_RULES`, which Claude is told every session, includes owners, *in review*, handoffs and approvals.
+- `/progress format` writes those rules into AGENTS.md.
+- The README documents the commands.
+- The version is 0.38.0.
+- Final checks run in a real session and in Chrome, and the release follows the same steps as 0.37.0.
+
+**Acceptance criteria:**
+- [x] The format doc and the rules cover v2; `/progress format` writes them into AGENTS.md
+- [x] The README documents team, assign, claim, review, handoff and modules, and the version is 0.38.0
+- [x] Every success criterion in SPEC-format-v2.md is checked
+
+**Verification:**
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] Build succeeds: `claude plugin validate .`
+- [x] Manual check: a real session in a scratch team project; the dashboard in Chrome
+
+**Notes:**
+- `FORMAT_RULES` gains four v2 lines: tokens kept, handoff lines, approvals by role (never sign for anyone), and `module:`. They reach the system prompt, the skills and the block `/progress format` writes.
+- In a real session `/progress format` wrote them into CLAUDE.md (that project has no AGENTS.md) and kept a task's in-review tokens while re-stamping.
+- The Approvals checkpoint (two people signing interactively) is still open for the user.
+
+**Dependencies:** T4, T6, T7, T9, T11, T12
+
+**Files likely touched:**
+- `docs/progress-format.md`
+- `packages/core/format.ts`
+- `README.md`
+- `.claude-plugin/plugin.json`
+- `SPEC-format-v2.md`
+
+**Estimated scope:** M
+
+## Checkpoint: Complete
+- [x] All tests pass and `claude plugin validate .` is clean
+- [x] Every success criterion in SPEC-format-v2.md is met (approvals signed through the engine; the interactive two-person check is the open Approvals checkpoint)
+- [x] Review with human before release (the user asked for T13 with its release)
