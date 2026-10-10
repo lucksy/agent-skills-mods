@@ -63,18 +63,18 @@ created: 2026-10-11
 ## Phase 2: The team across branches
 
 ## Task 3: The board across branches
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/branches.ts` decides which refs to read: local branches plus `refs/remotes/*` with a commit in the last 30 days, up to 25 of them, skipping refs at the current commit (Q2). It reads `tasks/todo.md` from every ref through one `git cat-file --batch` and builds one row per task. Each row has the furthest state across refs, the ref it is on, its owner, and the fetch age from `FETCH_HEAD`. Results are cached by ref SHA. The rows show through `/progress branches`, `--branches` and `branches` in `--json`.
 
 **Acceptance criteria:**
-- [ ] Given a fake batch output, the rows show the furthest state and its ref, and a ref without the file is skipped
-- [ ] `/progress branches` and `--branches` print the board, with the fetch age, or "never fetched"
-- [ ] No git command touches the network. Only `for-each-ref`, `cat-file`, `rev-parse` and `log` are run.
+- [x] Given a fake batch output, the rows show the furthest state and its ref, and a ref without the file is skipped
+- [x] `/progress branches` and `--branches` print the board, with the fetch age, or "never fetched"
+- [x] No git command touches the network. Only `for-each-ref`, `cat-file`, `rev-parse` and `log` are run.
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh` (a temporary repo with two branches)
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh` (a temporary repo with two branches)
 
 **Dependencies:** None
 
@@ -88,18 +88,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 4: Collision alerts
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/collisions.ts` finds collisions in the branch rows and the current list. A task collides when it is in progress or in review on two refs, or when it has two different owners. Done on one ref while in progress on another is not a collision. The band shows `! T4 is also in progress on feat/rate-limit by @bob (2d)` when the current task collides. The board pane marks colliding tasks, and `--json` lists `collisions`.
 
 **Acceptance criteria:**
-- [ ] Each collision rule and the done-elsewhere exception are covered by unit tests
-- [ ] Starting a task that is under way on another ref shows the collision in the band in the same prompt
-- [ ] `--json` has `collisions` with the task, ref, owner and age
+- [x] Each collision rule and the done-elsewhere exception are covered by unit tests
+- [x] Starting a task that is under way on another ref shows the collision in the band in the same prompt
+- [x] `--json` has `collisions` with the task, ref, owner and age
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T3
 
@@ -112,17 +112,17 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 5: Dashboard Board across branches
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** The dashboard's Board gets a "This branch | All branches" switch, kept in the URL as `#board?branches=all`. With all branches, each card shows its furthest state and its ref. Colliding cards get a mark and the collision line, and the fetch age shows above the columns. With JS off, the page shows this branch only.
 
 **Acceptance criteria:**
-- [ ] `?branches=all` changes the columns to the furthest states, and each card names its ref
-- [ ] Colliding cards are marked, and the mark has a text equivalent
-- [ ] The person filter from format-v2 still works together with the branch switch
+- [x] `?branches=all` changes the columns to the furthest states, and each card names its ref
+- [x] Colliding cards are marked, and the mark has a text equivalent
+- [x] The person filter from format-v2 still works together with the branch switch
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4
@@ -135,17 +135,17 @@ created: 2026-10-11
 **Estimated scope:** Small
 
 ## Task 6: The Team tab
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A new dashboard tab, `team`, has one row per person in `team.md`, plus "unowned". Each row shows the person's current task and step, their WIP count, their reviews waiting (with ages), handoffs to them and their collisions. A "Waiting on someone" list shows open questions and unsigned approvals by person. It shows no ranking, speed or totals per person. `/progress dashboard team` opens it.
 
 **Acceptance criteria:**
-- [ ] One row per team member, plus unowned. Rows are sorted by handle, not by any figure.
-- [ ] The review queue shows each PR's age, and handoffs and collisions link to their tasks
-- [ ] Without `team.md`, the tab shows owners found in the task list and says how to set up the team
+- [x] One row per team member, plus unowned. Rows are sorted by handle, not by any figure.
+- [x] The review queue shows each PR's age, and handoffs and collisions link to their tasks
+- [x] Without `team.md`, the tab shows owners found in the task list and says how to set up the team
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4

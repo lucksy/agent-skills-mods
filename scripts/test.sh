@@ -164,6 +164,66 @@ inside=$(awk '/^<<<<<<< /{m=1} m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
 outside=$(awk '/^<<<<<<< /{m=1} !m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
 if [[ $(grep -c '^<<<<<<< ' "$repo/tasks/todo.md") == 1 && $inside == *'## Task 3: Rate limit'*'- [x] 429 after 60 req/min'* && $inside != *'Task 1'* && $inside != *'Task 2'* && $outside == *'- [x] Builds'*'## Task 2: Schema'* ]]; then echo "ok   merge-driver-markers-one-task"; else echo "FAIL merge-driver-markers-one-task:"; sed 's/^/       /' "$repo/tasks/todo.md"; fail=1; fi
 check merge-driver-usage '--merge takes <base> <ours> <theirs> <path>' node "$script" --merge a b
+# The board across branches (team-view T3): a real repository with two branches, read without fetching.
+repo="$tmp/branches"; mkdir -p "$repo"
+g() { git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@" >/dev/null 2>&1; }
+g init -b main; echo x > "$repo/README.md"; g add .; g commit -m init; g branch docs
+mkdir -p "$repo/tasks"
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n- [ ] 429\n' > "$repo/tasks/todo.md"
+g add .; g commit -m plan; g checkout -b feat/rate-limit
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** in progress · @bob · started 2026-10-10\n- [ ] 429\n' > "$repo/tasks/todo.md"
+g commit -am 'T2 started'; g checkout main
+check branches-head 'Board across branches · main + 1 ref · never fetched' node "$script" "$repo" --branches --no-color
+check branches-furthest '● T2 Rate limit · in progress on feat/rate-limit @bob' node "$script" "$repo" --branches --no-color
+check branches-missing 'No tasks/todo.md on: docs.' node "$script" "$repo" --branches --no-color
+touch "$repo/.git/FETCH_HEAD"
+check branches-fetched 'fetched 0m ago' node "$script" "$repo" --branches --no-color
+check branches-json '"ref": "feat/rate-limit"' node "$script" "$repo" --json
+check branches-no-repo 'Not a git repository' node "$script" "$tmp/build" --branches
+if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   branches-untouched"; else echo "FAIL branches-untouched: the repository changed"; fail=1; fi
+# Collisions (team-view T4): T2 started here too, by someone else, collides with feat/rate-limit.
+check collisions-none '"collisions": []' node "$script" "$repo" --json
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** in progress · @amila · started 2026-10-10\n- [ ] 429\n' > "$repo/tasks/todo.md"
+check collisions-json '"under way"' node "$script" "$repo" --json
+check collisions-ref '"ref": "feat/rate-limit"' node "$script" "$repo" --json
+# The dashboard's Board across branches (team-view T5): the switch, the furthest states and the collision.
+check dashboard-branches 'Wrote' node "$script" "$repo" --dashboard "$tmp/across.html"
+if grep -q 'id="board-branches"' "$tmp/across.html" && grep -q 'T2 is also in progress on feat/rate-limit by @bob' "$tmp/across.html"; then echo "ok   dashboard-branches-board"; else echo "FAIL dashboard-branches-board"; fail=1; fi
+# The Team tab (team-view T6): a card per person the task lists name, the collision linked to its Board card.
+if grep -q 'id="view-team"' "$tmp/across.html" && grep -q 'data-person="bob"' "$tmp/across.html" && grep -q '<p class="p-clash"><a href="#card-T2">T2</a>' "$tmp/across.html"; then echo "ok   dashboard-team-tab"; else echo "FAIL dashboard-team-tab"; fail=1; fi
+# The page's script against a stand-in DOM: #board?branches=all&owner=… keeps both, and each control writes both back.
+cat > "$tmp/board-script.js" <<'JS'
+const html = require('fs').readFileSync(process.argv[2], 'utf8')
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1]
+const board = html.match(/id="view-board"[\s\S]*?<!-- \/view-board -->/)[0]
+const attr = (tag, k) => (tag.match(new RegExp(` data-${k}="([^"]*)"`)) || [])[1]
+const cards = [...board.matchAll(/<li [^>]*data-state="[^"]*"[^>]*>/g)].map(m => ({ hidden: false, dataset: { task: attr(m[0], 'task'), phase: attr(m[0], 'phase'), state: attr(m[0], 'state'), owner: attr(m[0], 'owner') } }))
+const cls = new Set(), on = {}
+const control = () => ({ value: '', checked: false, disabled: false, ls: {}, addEventListener(t, f) { this.ls[t] = f } })
+const ctl = Object.fromEntries(['board-phase', 'board-state', 'board-owner', 'board-group', 'board-branches'].map(id => [id, html.includes(`id="${id}"`) ? control() : null]))
+const tabs = [...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => ({ getAttribute: () => '#' + m[1], setAttribute() {}, addEventListener() {} }))
+const views = Object.fromEntries(tabs.map(t => [t.getAttribute().slice(1), { hidden: false, querySelectorAll: q => (q === '.col' ? [] : cards) }]))
+const document = {
+  body: { dataset: { view: 'overview' }, classList: { add: c => cls.add(c), toggle: (c, v) => (v ? cls.add(c) : cls.delete(c)) } },
+  getElementById: id => (id in ctl ? ctl[id] : views[id.replace(/^view-/, '')]),
+  querySelectorAll: q => (q === '[role=tab]' ? tabs : []),
+}
+// As a browser does: the hash reads back with its #, however it was set.
+let h = '#board?branches=all&owner=amila'
+const location = { get hash() { return h }, set hash(v) { h = v.replace(/^#?/, '#') } }
+require('vm').runInNewContext(script, { document, location, URLSearchParams, addEventListener: (t, f) => (on[t] = f) })
+const fail = m => { console.log(m); process.exit(1) }
+if (!cls.has('allb') || ctl['board-branches'].value !== 'all' || ctl['board-owner'].value !== 'amila') fail('the hash did not set both')
+if (cards.some(c => c.hidden !== (c.dataset.owner !== 'amila'))) fail('the person filter did not apply with all branches')
+ctl['board-owner'].value = ''; ctl['board-owner'].ls.change()
+if (location.hash !== '#board?branches=all') fail('the person filter dropped the switch: ' + location.hash)
+ctl['board-owner'].value = 'amila'; ctl['board-branches'].value = ''; ctl['board-branches'].ls.change()
+if (location.hash !== '#board?owner=amila') fail('the switch dropped the person filter: ' + location.hash)
+on.hashchange()
+if (cls.has('allb') || ctl['board-owner'].value !== 'amila') fail('this branch did not come back with the person filter')
+console.log('both kept')
+JS
+if out=$(node "$tmp/board-script.js" "$tmp/across.html" 2>&1); then echo "ok   dashboard-branches-script ($out)"; else echo "FAIL dashboard-branches-script: $out"; fail=1; fi
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

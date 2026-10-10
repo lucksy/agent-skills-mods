@@ -12,17 +12,20 @@ import { overviewHtml } from './overview'
 import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
 import { SPEC_STYLE, specHtml } from './spec'
 import { MODULES_STYLE, modulesHtml } from './modules'
+import { TEAM_STYLE, teamHtml } from './team'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
 
 export { chartMount, type ChartSpec }
 
-export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec' | 'modules'
+export type ViewId = 'overview' | 'board' | 'team' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
   { id: 'overview', label: 'Overview', render: overviewHtml },
   { id: 'board', label: 'Board', render: boardHtml },
+  // team-view (V6): who is on what, and what waits on whom.
+  { id: 'team', label: 'Team', render: teamHtml },
   { id: 'roadmap', label: 'Roadmap', render: roadmapHtml },
   { id: 'flow', label: 'Flow', render: flowHtml },
   { id: 'spec', label: 'Spec', render: specHtml },
@@ -122,8 +125,8 @@ ${chartsScript(panels)}
 }
 
 /**
- * Tabs over the views: the hash names the view (`#overview`; later `#board?phase=2`),
- * so a link opens it and Back returns; arrow keys, Home and End move between tabs.
+ * Tabs over the views: the hash names the view (`#overview`, `#board?phase=2&branches=all`)
+ * or a card on the Board (`#card-T4`), so a link opens it and Back returns; arrow keys, Home and End move between tabs.
  */
 export const DASHBOARD_SCRIPT = `(() => {
   const d = document, b = d.body, $ = id => d.getElementById(id)
@@ -132,14 +135,18 @@ export const DASHBOARD_SCRIPT = `(() => {
   const parse = h => { const [v, q = ''] = h.slice(1).split('?'); return [v, new URLSearchParams(q)] }
   b.classList.add('js')
   // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase.
-  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner')
+  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner'), br = $('board-branches')
   const board = q => {
     if (!ph) return
     ph.value = q.get('phase') || ''
     st.value = q.get('state') || ''
     if (ow) ow.value = q.get('owner') || ''
-    if (gr) gr.checked = q.get('group') === 'phase'
-    b.classList.toggle('grouped', !!gr && gr.checked)
+    if (br) br.value = q.get('branches') === 'all' ? 'all' : ''
+    // All branches has no lanes: its cards are the furthest states, not this branch's phases.
+    const all = !!br && br.value === 'all'
+    if (gr) { gr.checked = q.get('group') === 'phase'; gr.disabled = all }
+    b.classList.toggle('allb', all)
+    b.classList.toggle('grouped', !!gr && gr.checked && !all)
     for (const el of $('view-board').querySelectorAll('[data-state]'))
       el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value) || (!!ow && !!ow.value && el.dataset.owner !== (ow.value === '-' ? '' : ow.value))
     for (const c of $('view-board').querySelectorAll('.col'))
@@ -151,14 +158,18 @@ export const DASHBOARD_SCRIPT = `(() => {
     if (st.value) q.set('state', st.value)
     if (ow && ow.value) q.set('owner', ow.value)
     if (gr && gr.checked) q.set('group', 'phase')
+    if (br && br.value) q.set('branches', br.value)
     location.hash = 'board' + (String(q) ? '?' + q : '')
   }
-  for (const c of [ph, st, gr, ow]) if (c) c.addEventListener('change', write)
+  for (const c of [ph, st, gr, ow, br]) if (c) c.addEventListener('change', write)
   const show = h => {
     let [id, q] = parse(h)
     // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
     const pick = id.startsWith('spec-') ? id : ''
     if (pick) id = 'spec'
+    // #card-<task> is a card on the Board (the Team tab links to them): open the Board there.
+    const card = id.startsWith('card-') ? id : ''
+    if (card) id = 'board'
     for (const a of d.querySelectorAll('.spec-pick a[href^="#spec-"]'))
       a.getAttribute('href') === '#' + pick ? a.setAttribute('aria-current', 'true') : a.removeAttribute('aria-current')
     if (!ids.includes(id)) id = ids.includes(b.dataset.view) ? b.dataset.view : ids[0]
@@ -170,6 +181,7 @@ export const DASHBOARD_SCRIPT = `(() => {
     for (const v of ids) $('view-' + v).hidden = v !== id
     b.dataset.view = id
     board(id === 'board' ? q : new URLSearchParams())
+    if (card && $(card)) $(card).scrollIntoView({ block: 'center' })
   }
   addEventListener('hashchange', () => show(location.hash))
   tabs.forEach((t, i) => t.addEventListener('keydown', e => {
@@ -232,6 +244,7 @@ ${ROADMAP_STYLE}
 ${FLOW_STYLE}
 ${SPEC_STYLE}
 ${MODULES_STYLE}
+${TEAM_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {
@@ -309,6 +322,12 @@ function BOARD_STYLE(): string {
 .c-review{border-left-color:var(--focus)!important}.lane .c-phase{display:none}
 .cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
 .cp span{color:var(--needs)}
+/* All branches (team-view): its columns replace this branch's once the switch says so. */
+.js .across.js-only{display:none}.js.allb .across.js-only{display:block}.js.allb .flat,.js.allb .swim.js-only{display:none}
+.b-across{margin:0 0 var(--s3);font-size:13px;color:var(--ink2)}
+.c-ref{color:var(--ink2)}.c-ref code{font-size:12px}
+.clash{border-color:var(--blocked)}.c-flag{display:inline-block;color:var(--blocked);font-weight:700;margin-right:2px}
+.c-clash{margin:var(--s1) 0 0;font-size:12.5px;color:var(--blocked)}
 .lane+.lane{margin-top:var(--s5)}
 .lane-title{font-size:14px;margin:0 0 var(--s2)}
 @media (max-width:980px){.cols5{grid-template-columns:repeat(2,minmax(0,1fr))}}

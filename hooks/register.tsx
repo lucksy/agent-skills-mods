@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type Spec, type TaskList } from '../packages/core/parse'
+import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type Spec, type Task, type TaskList } from '../packages/core/parse'
 import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
@@ -25,6 +25,8 @@ import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
+import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
+import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
 import { approvalStatus, clearApprovals } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
@@ -100,6 +102,8 @@ const pixels = atom({ plugin: 'agent-skills-mods', key: 'pixels' } as const, fal
 /** The plan pane's tab (mockup 12): timeline, charts or tasks. */
 const tab = atom({ plugin: 'agent-skills-mods', key: 'tab' } as const, 'tasks' as Tab)
 const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as const, 1)
+/** The board across branches as last read (team-view): the band and the board pane find collisions in it. */
+const branchBoard = atom({ plugin: 'agent-skills-mods', key: 'branchBoard' } as const, null as BranchBoard | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -643,6 +647,46 @@ async function modulesCommand($: $, id?: string): Promise<string> {
     : 'No capability map in SPEC.md: a table under a "# Capability Map" heading, with a Module id column, lists the modules (the spec skill writes one when a request spans several).'
 }
 
+/** Each commit's copy of tasks/todo.md, read once a session: an unchanged ref is not read twice (team-view T3). */
+const branchCopies = new Map<string, string | null>()
+
+/** When this clone last fetched: FETCH_HEAD's time in the git folder; null when it never has. */
+async function fetchedAt($: $, cwd: string): Promise<number | null> {
+  const r = await $.process.run(GIT_DIR_ARGV, { timeoutMs: 10_000 }).catch(() => null)
+  if (!r || r.exitCode !== 0) return null
+  const dir = r.stdout.trim()
+  const entries = await $.fs.list(dir.startsWith('/') ? dir : `${cwd}/${dir}`).catch(() => [])
+  const ms = entries.find(e => e.name === 'FETCH_HEAD')?.mtimeMs
+  return ms ? ms : null
+}
+
+/**
+ * Reads the board across branches and keeps it for the band and the board pane
+ * (team-view T4). Only `for-each-ref`, `rev-parse` and `cat-file` run, and an
+ * unchanged ref's copy is not read twice. Null outside a git repository.
+ */
+async function readBoard($: $, p: AsmProject): Promise<BranchBoard | null> {
+  const now = await $.clock.now()
+  const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
+  const here = p.listFile === 'tasks/todo.md' ? p.list : null
+  const board = await readBranches(run, { file: 'tasks/todo.md', now, here, fetchedAt: await fetchedAt($, p.cwd), cache: branchCopies })
+  await update($, branchBoard, () => board)
+  return board
+}
+
+/** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
+async function branchesCommand($: $): Promise<string> {
+  const board = await readBoard($, await load($))
+  return board ? branchesText(board, await $.clock.now()) : 'Not a git repository: the board across branches reads the other branches from git.'
+}
+
+/** The band's collision line for a task (team-view T4), from the board last read; null when it collides with nothing. */
+async function collisionText($: $, t: Task): Promise<string | null> {
+  const board = await read($, branchBoard)
+  const c = collisionOf(t, board, await $.clock.now())
+  return c ? collisionLine(c, board?.here ?? null) : null
+}
+
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
 async function gitEmail($: $): Promise<string | null> {
   const r = await $.process.run(['git', 'config', 'user.email'], { timeoutMs: 10_000 }).catch(() => null)
@@ -805,15 +849,19 @@ async function mergeDriverCommand($: $, words: string[]): Promise<string> {
 
 /**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
- * board shows (the plugin's own history included), opened on `view`. Written even
- * without a task list, since the page then says how to start.
+ * board shows (the plugin's own history included, and the other branches when git
+ * has them), opened on `view`. Written even without a task list, since the page
+ * then says how to start.
  */
 async function writeDashboard($: $, p: AsmProject, view: string): Promise<string> {
   if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
   const specs = await allSpecs($, p)
+  const now = await $.clock.now()
+  // The Board's All branches (team-view T5): read from git objects already here, never fetched.
+  const board = await readBoard($, p).catch(() => null)
   const state = toState({
     cwd: p.cwd,
-    today: dayOf(await $.clock.now()),
+    today: dayOf(now),
     specs,
     specFile: p.specFile,
     list: p.list,
@@ -828,6 +876,8 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
       return { team, me: team ? whoIs(team, await gitEmail($)) : null }
     })()),
     modules: await projectModules($, p, specs),
+    branches: board,
+    collisions: board ? collisions(board, now) : null,
   })
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`
@@ -938,7 +988,15 @@ async function doctor($: $, fix: boolean): Promise<string> {
  * state, written into tasks/todo.md (and a blocking question into plan.md).
  */
 async function setTask($: $, verb: 'start' | 'done' | 'block' | 'unblock', rawId: string, why: string): Promise<string> {
-  return (await act($, await load($), verb, { id: rawId, why }, { clearPending: true })).reply
+  const r = await act($, await load($), verb, { id: rawId, why }, { clearPending: true })
+  if (!r.ok || verb !== 'start') return r.reply
+  // Starting a task someone has under way on another branch says so at once (team-view T4).
+  const after = await load($)
+  await readBoard($, after).catch(() => null)
+  const id = /^\d+$/.test(rawId) ? `T${rawId}` : rawId.toUpperCase()
+  const started = after.list?.tasks.find(t => t.id === id)
+  const clash = started ? await collisionText($, started) : null
+  return clash ? `${r.reply}\n! ${clash}` : r.reply
 }
 
 /**
@@ -1178,7 +1236,9 @@ export const register: Register = (on, options) => {
       }
     })()
     await update($, pixels, () => (style === 'pixels' ? true : style === 'cells' ? false : canDraw))
-    await load($, { recheckLogs: true }).catch(() => undefined)
+    const p = await load($, { recheckLogs: true }).catch(() => undefined)
+    // The other branches, for collisions in the band (team-view T4); never fetches.
+    if (p) await readBoard($, p).catch(() => undefined)
     return next(e)
   })
 
@@ -1263,6 +1323,7 @@ export const register: Register = (on, options) => {
       if (verb === 'assign' || verb === 'claim' || verb === 'unassign') return reply(await ownerCommand($, verb, words))
       if (verb === 'review') return reply(await reviewCommand($, words))
       if (verb === 'modules') return reply(await modulesCommand($, words[0]))
+      if (verb === 'branches') return reply(await branchesCommand($))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
@@ -1272,7 +1333,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1356,8 +1417,10 @@ export const register: Register = (on, options) => {
   // lasts the person's whole turn, so a subagent finishing inside it leaves it alone.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) await flushPending($).catch(() => undefined)
-    await load($).catch(() => undefined)
+    const p = await load($).catch(() => undefined)
     if (e.agentId === undefined) {
+      // A commit, checkout or fetch this turn changes the other branches; unchanged copies are not read again.
+      if (p && (await read($, branchBoard))) await readBoard($, p).catch(() => undefined)
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
       await update($, gateWarned, () => false)
@@ -1439,6 +1502,9 @@ export const register: Register = (on, options) => {
     if ((!list || !t) && !ask) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
+    // The current task under way on another branch too, or with another owner (team-view T4).
+    const clash = t ? await collisionText($, t) : null
+    if (clash) warnings.unshift(clash)
     // ▸ between turns; a turning marker while the agent works, where surface modules run.
     const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
     const Client = working ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
@@ -1691,6 +1757,15 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
     const width = Math.max(24, e.props.bodyColumns)
     const focused = await read($, focus)
     const rows = boardRows(list, { failed: await read($, failed) })
+    // Tasks under way on another branch too, or with two owners (team-view T4): marked under their row.
+    const board = await read($, branchBoard)
+    const now = await $.clock.now()
+    const clashes = new Map(
+      list.tasks.flatMap(t => {
+        const c = collisionOf(t, board, now)
+        return c ? [[t.id, collisionLine(c, board?.here ?? null)] as const] : []
+      }),
+    )
     const color = { done: 'success', now: 'warning', muted: 'subtle', blocked: 'error', accent: 'claude', needsYou: 'permission', text: undefined } as const
     const pct = Math.round((list.done / list.total) * 100)
     const where = phaseOf(list)
@@ -1753,6 +1828,11 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
                   </Text>
                 </Box>
               </Box>
+              {clashes.has(row.id) && (
+                <Text color="warning" wrap="truncate-end">
+                  {'  '}! {clashes.get(row.id)}
+                </Text>
+              )}
               {open === row.id
                 ? (list.tasks.find(t => t.id === row.id)?.boxes ?? []).map((b, bi) => (
                     <Box key={`box-${row.id}-${bi}`} paddingLeft={2}>

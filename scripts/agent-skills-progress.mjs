@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -13,7 +13,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync, watch, writeFileSync } from 'node:fs'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -50,6 +50,8 @@ Usage: agent-skills-progress [dir] [options]
   --brief         one line: stages and the current task
   --timeline      the run timeline: phases as a tree, a build · test · commit bar per task
   --json          the parsed state as JSON, for other tools
+  --branches      the board across branches: each task's furthest state on any
+                  local branch or fetched ref, and how long ago this clone fetched
   --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
@@ -76,6 +78,7 @@ function parseArgs(argv) {
     else if (a === '--brief') o.mode = 'brief'
     else if (a === '--timeline') o.mode = 'timeline'
     else if (a === '--json') o.mode = 'json'
+    else if (a === '--branches') o.mode = 'branches'
     else if (a === '--modules') {
       o.mode = 'modules'
       // A module id, not a folder: no slash, not . or ..
@@ -165,6 +168,12 @@ async function main() {
         () => [],
       ),
     run: o.git ? runner(cwd) : undefined,
+    // FETCH_HEAD's time: when this clone last fetched (team-view). Never fetches.
+    fetchedAt: async () => {
+      const r = await runner(cwd)(['git', 'rev-parse', '--git-dir'])
+      if (r.exitCode !== 0) return null
+      return stat(resolve(cwd, r.stdout.trim(), 'FETCH_HEAD')).then(s => s.mtimeMs, () => null)
+    },
   }
   let specFile
   if (o.spec) {
@@ -174,11 +183,18 @@ async function main() {
   }
   if (o.mode === 'serve') return serve(io, { specFile, port: o.port, open: o.open })
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
-  const state = await gather(io, { specFile }).finally(stop)
+  // The dashboard's Board has an All branches switch (team-view T5).
+  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard')
+  const state = await gather(io, { specFile, branches }).finally(stop)
 
   const env = process.env
   const color = o.color ?? (env.NO_COLOR ? false : env.FORCE_COLOR ? true : !!process.stdout.isTTY)
   if (o.mode === 'json') return console.log(renderJson(state))
+  if (o.mode === 'branches') {
+    const { branchesText } = await import('../packages/core/branches.ts')
+    if (!o.git) return console.log('The board across branches reads git; drop --no-git.')
+    return console.log(state.branches ? branchesText(state.branches, io.now) : 'Not a git repository: the board across branches reads the other branches from git.')
+  }
   if (o.mode === 'modules') {
     const { modulesText } = await import('../packages/core/modules.ts')
     if (!state.modules) return console.log('No capability map in SPEC.md.')

@@ -1559,3 +1559,114 @@ test('/progress merge-driver outside a git repository writes nothing', async ($,
   expect(Object.keys(files)).toEqual([])
 })
 const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n'
+// team-view T3 (V1): the board across branches.
+test('/progress branches shows each task\'s furthest state across refs, with the fetch age', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/main\t${'a'.repeat(40)}\t${Date.parse('2026-10-09T09:00:00Z') / 1000}\nrefs/remotes/origin/feat/keys\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\nrefs/heads/docs\t${'c'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(l => (l.startsWith('b') ? `@@asm blob\n${theirs}\n` : `${l} missing\n`)).join('')
+    return ''
+  }
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  seen.git.length = 0
+  const out = (await $.command.run(run('branches'))).text
+  expect(out.split('\n')).toEqual([
+    'Board across branches · main + 1 ref · never fetched',
+    '✓ T1 Monorepo scaffold · done on main',
+    '◐ T2 Prisma schema for keys · in review on origin/feat/keys @bob (never fetched)',
+    '○ T3 Issue and revoke keys · todo',
+    '○ T4 Rate limit per key · todo',
+    'No tasks/todo.md on: docs.',
+  ])
+  // Git objects already here, nothing that fetches; asked again, the copies are not read twice.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+  expect(seen.git.filter(c => c === 'git cat-file')).toHaveLength(1)
+  await $.command.run(run('branches'))
+  expect(seen.git.filter(c => c === 'git cat-file')).toHaveLength(1)
+})
+
+test('/progress branches outside a git repository says why there is no board', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  expect((await $.command.run(run('branches'))).text).toBe('Not a git repository: the board across branches reads the other branches from git.')
+})
+
+// team-view T4 (V1): collision alerts.
+test('starting a task under way on another branch shows the collision in the reply, the band and the board pane', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/main\t${'a'.repeat(40)}\t${Date.parse('2026-10-09T09:00:00Z') / 1000}\nrefs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(l => (l.startsWith('b') ? `@@asm blob\n${theirs}\n` : `${l} missing\n`)).join('')
+    return ''
+  }
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const props = { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props })
+  // T2 is current but not started here: no collision yet.
+  expect(await band.find({ text: /is also/ })).toBeUndefined()
+  const said = (await $.command.run(run('start T2'))).text
+  expect(said).toContain('! T2 is also in progress on feat/rate-limit by @bob (2d)')
+  await band.redraw(props)
+  expect((await band.find({ text: /^! T2 is also in progress on feat\/rate-limit by @bob \(2d\)$/ }))?.props).toMatchObject({ color: 'warning' })
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^ {2}! T2 is also in progress on feat\/rate-limit by @bob \(2d\)$/ })).toBeDefined()
+  // Read from git objects already here: nothing that fetches.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+})
+
+// team-view T5 (V1): the dashboard's Board across branches.
+test('/progress dashboard puts the other branches on the Board: furthest states, refs and collisions', async ($, on) => {
+  const here = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @amila · started 2026-10-08\n')
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @bob · started 2026-10-07\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(() => `@@asm blob\n${theirs}\n`).join('')
+    return ''
+  }
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: here }
+  const seen = world(on, files, { log: '', cat: '', answer })
+  await $.command.run(run('dashboard board'))
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toContain('<select id="board-branches">')
+  expect(html).toMatch(/<div class="across js-only">[\s\S]*?data-task="T2"[\s\S]*?on <code>main<\/code>/)
+  expect(html).toContain('T2 is also in progress on feat/rate-limit by @bob (2d)')
+  expect(embedded(html).collisions.map((c: { id: string }) => c.id)).toEqual(['T2'])
+  // Read from git objects already here: nothing that fetches.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+})
+
+// team-view T6 (V6): the Team tab.
+test('/progress dashboard team opens on the Team tab: a row per person in tasks/team.md, plus unowned', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @sara · started 2026-10-06 · PR #42 · reviewer @amila\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  const seen = world(on, files, asPerson('sara@example.com'))
+  const out = await $.command.run(run('dashboard team'))
+  expect(out.text).toMatch(/opened it in your browser on team/)
+  expect(seen.launched).toEqual([`${CWD}/tasks/progress-dashboard.html`])
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toContain('data-view="team"')
+  expect([...html.matchAll(/data-person="([^"]*)"/g)].map(m => m[1])).toEqual(['amila', 'sara', '-'])
+  expect(html).toMatch(/<a href="#card-T2">T2<\/a>[^<]*Prisma schema for keys · PR #42/)
+})
+
+test('done on another branch is no collision: the band stays quiet', async ($, on) => {
+  const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · @bob · started 2026-10-01 · done 2026-10-03\n')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/feat/rate-limit\t${'b'.repeat(40)}\t${Date.parse('2026-10-08T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(() => `@@asm blob\n${theirs}\n`).join('')
+    return ''
+  }
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }, { log: '', cat: '', answer })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  expect((await $.command.run(run('start T2'))).text).not.toContain('is also')
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never })
+  expect(await band.find({ text: /is also/ })).toBeUndefined()
+})
