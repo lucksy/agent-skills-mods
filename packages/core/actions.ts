@@ -317,7 +317,7 @@ const answer: Action = {
   edit: (args, input) => {
     if (input.plan === null) return refuse('No tasks/plan.md here.')
     const q = `Q${(args.q as string).trim().replace(/^q/i, '')}`
-    const text = ((args.text as string | undefined) ?? '').trim().replace(/^["'“”]|["'“”]$/g, '').trim()
+    const text = oneLine(args.text).trim().replace(/^["'“”]|["'“”]$/g, '').trim()
     if (!text) return refuse(`Say the answer: /progress answer ${q} "Upstash".`)
     const by = sessionHandle(input)
     const next = setAnswer(input.plan, q, { text, by, day: input.today })

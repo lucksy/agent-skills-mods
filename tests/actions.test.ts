@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { ACTION_NAMES, runAction, type ActionInput } from '../packages/core/actions'
-import { parseSpec, parseTasks } from '../packages/core/parse'
+import { parsePlan, parseSpec, parseTasks } from '../packages/core/parse'
 import { parseTeam } from '../packages/core/team'
 import { SPEC, TODO_T2_DONE, TODO_TEMPLATE } from './fixtures'
 
@@ -165,6 +165,11 @@ describe('answer and signoff (T2)', () => {
     const plan = block.writes.find(w => w.file === 'tasks/plan.md')!.text
     expect(plan).toContain('- Q1 (T2): Upstash ## Task 9: injected')
     expect(plan).not.toContain('\n## Task 9')
+    // An answer too: a lone carriage return (which the parser reads as a line break) can't open a question of its own.
+    const answer = runAction('answer', { q: 'Q1', text: 'argon2id\r- Q9 (T1): injected' }, input({ plan: PLAN }))
+    expect(answer.ok).toBe(true)
+    expect(answer.writes[0]!.text).toContain('  → A: argon2id - Q9 (T1): injected · 2026-10-11\n')
+    expect(parsePlan(answer.writes[0]!.text).openQuestions.some(q => q.startsWith('Q9'))).toBe(false)
   })
 
   test('signoff signs the checkpoint that is due and ticks its review box', () => {
