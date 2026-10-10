@@ -100,7 +100,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 4: Finish
 - [x] Task 12: Empty states, accessibility and the size and speed budget
-- [ ] Task 13: README, version bump and a final browser check
+- [x] Task 13: README, version bump and a final browser check
 
 ### Checkpoint: Complete
 - [ ] Every success criterion in SPEC-core.md and SPEC-dashboard.md met

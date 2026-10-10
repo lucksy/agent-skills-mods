@@ -2,7 +2,7 @@
 
 A Claude Code plugin that makes the [agent-skills](https://github.com/addyosmani/agent-skills) workflow readable inside Claude Code. You see `SPEC.md`, `tasks/plan.md` and `tasks/todo.md` as panes, a band above the prompt and the footer, so you don't have to open them in an editor.
 
-It runs next to agent-skills and changes nothing in it. The skills still write plain markdown, and this plugin reads it.
+It runs next to agent-skills and changes nothing in it. The skills still write plain markdown, and this plugin reads it. For people outside the terminal, `/progress dashboard` writes the same project as one page: Overview, Board, Roadmap, Flow charts and Spec.
 
 ```
 ╭ Plan ─────────────────────────────────────────────╮
@@ -54,6 +54,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Charts** | A burn-up (scope and done per day, plus a dotted forecast line to the median ETA) drawn in braille dots, and a flow chart (tasks done, in progress, blocked and to do, per day) drawn in half-blocks. Each chart fits the pane's width, is redrawn when the pane is resized, and sweeps in from the left when `/progress charts` opens it. Under each chart, a line gives the latest numbers and names each color, so the colors never carry the meaning on their own. Charts need two days of history. On kitty and Ghostty (outside tmux) the terminal charts are real pictures instead: anti-aliased lines, a soft fill under done, the forecast as a shaded cone with a dashed line to the median date, and stacked colour bands for the flow, painted by the plugin into a PNG of a few KB with the axis labels and legends kept as text beside it. The `chartStyle` option picks `auto` (the default), `pixels` or `cells`. On desktop, VS Code and mobile the same charts are interactive SVG: hover a day for its numbers; the forecast shows as a band from fast to slow. | `/progress charts` |
 | **Digest** | Four lines for Slack, copied to the clipboard: progress and the current task, the ETA, this week's sparkline with tasks done and added, and what needs a decision (checkpoints reached, open questions, a spec waiting for approval). | `/progress digest` |
 | `/progress standup` | Done since the last working day, today's task with its step and boxes left, what is blocked and why, what needs a decision, and progress with the ETA. Copied to the clipboard. |
+| **Dashboard** | One page in five tabs, for managers, leads, designers and anyone without Claude Code. **Overview:** health (on track, or at risk with each reason), the four headline figures with how far the ETA moved this week, tasks by state, what needs you, and the task under way. **Board:** to do, waiting, in progress, blocked and done, a card per task (its open boxes, days running, what it waits on or the question blocking it), checkpoints after their task, filters for phase and state and lanes by phase. **Roadmap:** the run timeline, the dependency tree and the critical path. **Flow:** burn-up with the forecast cone, cumulative flow, cycle time, aging work in progress and ETA drift, drawn by [Nivo](https://nivo.rocks) with tooltips in words. **Spec:** every spec file with its approval, six areas, boundaries, open questions and success criteria. Tabs and filters live in the address (`#board?state=blocked`), so a view can be linked to. It is one file that makes no outside requests (a Content-Security-Policy forbids them); without JavaScript every view still shows, stacked, and each chart its one-line summary. Light and dark; works on a phone. | `/progress dashboard [view]` writes `tasks/progress-dashboard.html` and opens it |
 | **HTML report** | One self-contained page for people without Claude Code: done, ETA, pace and added scope as headline figures, a bar of tasks by state, both charts, days per task, and what needs a decision. No scripts and no external requests, so it opens offline and can be attached to an email. Light and dark. | `/progress report` writes `tasks/progress-report.html` and opens it in your default browser |
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
 | **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess, laid out as cards in a text block: a header naming its source (`Checkpoint 1 · 1 task left    from tasks/todo.md`), the task with its glyph and open boxes, a blocked task's dependency chain (`T6 ← T5 ← T4`) and the open question, then one sentence on what you can do. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
@@ -77,6 +78,7 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress charts` | Opens the plan pane on the charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
+| `/progress dashboard [view]` | Writes `tasks/progress-dashboard.html` and opens it, on `overview`, `board`, `roadmap`, `flow` or `spec`. Uses the plugin's own history, so its ETA matches the board |
 | `/progress format` | Applies the progress format to the files here and writes its rules into `AGENTS.md` or `CLAUDE.md` |
 | `/progress history` | Lists the history sources and what each added |
 | `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
@@ -176,6 +178,7 @@ node scripts/agent-skills-progress.mjs [dir]          # the full summary, in col
 node scripts/agent-skills-progress.mjs --brief        # one line: ✓spec ✓plan ●build 1/4 ○review ○ship · T2 ...
 node scripts/agent-skills-progress.mjs --timeline     # the run timeline, as the plan pane draws it
 node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools (State v1)
+node scripts/agent-skills-progress.mjs --dashboard    # the dashboard page, to tasks/progress-dashboard.html (or --dashboard out.html)
 node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
 ```
 
@@ -189,7 +192,7 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 160 tests: parser, guard, forecast, state, and the mod on terminal and desktop
+claude plugin test .         # 247 tests: parser, guard, forecast, state, the dashboard's views, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
@@ -218,6 +221,8 @@ packages/core/specedit.ts  approve / draft in front matter, the editor to open
 packages/core/pixels.ts    pixel charts: RGBA canvas and PNG encoder
 packages/core/cli.ts       the summary agent-skills-progress prints
 packages/core/timeline.ts  the run timeline as rows of coloured segments
+packages/core/state.ts     State v1: what every surface reads, and the --json contract
+packages/core/health.ts    on track, or at risk with each reason
 packages/core/dashboard/   the dashboard page: shell and tabs, one module per view, the generated chart bundle
 packages/charts/           the chart bundle's source (React + Nivo, dev dependencies only) and its build
 hooks/ui/                  surface modules: the tabs, the animated bar, the turning task marker
@@ -226,11 +231,13 @@ types/index.d.ts           the session state contract
 statusline/                the status line script and its test
 ```
 
-History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report you ask for. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.
+History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report or dashboard you ask for. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.
 
 ## Roadmap
 
 The user stories, mockups and chart designs live in the proposal; every story in it is now built except the upstream one below.
+
+The next modules are mapped in [SPEC.md](SPEC.md): team fields in the progress format, a board across branches, Agile ceremonies, a team site, and a VS Code extension.
 
 Upstream, the plan is to propose the progress format to agent-skills (issue text and eval cases in [docs/upstream/](docs/upstream/)), so any tool, not only this plugin, can read progress reliably.
 

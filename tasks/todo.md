@@ -414,19 +414,27 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** M
 
 ## Task 13: README, version bump and a final browser check
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Document `/progress dashboard [view]` and `--dashboard [out]` in the README: the command table, "What you get", the CLI section and the layout. Bump the version to 0.37.0 in `.claude-plugin/plugin.json`. Do a final browser check on this repo.
 
 **Acceptance criteria:**
-- [ ] The README documents both entry points and the five views
-- [ ] The version is 0.37.0
-- [ ] Every success-criteria box in SPEC-core.md and SPEC-dashboard.md is checked
+- [x] The README documents both entry points and the five views
+- [x] The version is 0.37.0
+- [x] Every success-criteria box in SPEC-core.md and SPEC-dashboard.md is checked
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] Build succeeds: `claude plugin validate .`
-- [ ] Manual check: `/progress dashboard` on this repo in Chrome, all views, no network requests
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] Build succeeds: `claude plugin validate .`
+- [x] Manual check: `/progress dashboard` on this repo in Chrome, all views, no network requests
+
+**Notes:**
+- README: the dashboard in "What you get", `/progress dashboard [view]` in Commands, `--dashboard` in the CLI section, the new files in Layout, and the next modules in Roadmap.
+- Version 0.37.0.
+- Final checks in Chrome:
+  - With scripts removed, all five views show stacked with their chart summaries, and the Board's controls stay hidden. They had been showing: their own `display:flex` overrode the hiding rule. Fixed and tested.
+  - The committed files alone (git archive, no node_modules) load in a real session, and `/progress dashboard` works there.
+- A real marketplace install from GitHub is checked after the push.
 
 **Dependencies:** T5, T12
 
@@ -438,6 +446,6 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** S
 
 ## Checkpoint: Complete
-- [ ] All tests pass and `claude plugin validate .` is clean
-- [ ] Every success criterion in SPEC-core.md and SPEC-dashboard.md is met
-- [ ] Review with human before release
+- [x] All tests pass and `claude plugin validate .` is clean
+- [ ] Every success criterion in SPEC-core.md and SPEC-dashboard.md is met (one left: the marketplace install, checked after the push)
+- [x] Review with human before release

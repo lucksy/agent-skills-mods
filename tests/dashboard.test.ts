@@ -283,6 +283,10 @@ describe('Board (K2)', () => {
     expect(html).toMatch(/<div class="board-tools js-only"/)
     expect(html).toMatch(/<div class="swim js-only"/)
     expect(DASHBOARD_SCRIPT).toContain('board-phase')
+    // Hidden until the script runs: the controls' own layout must not override that.
+    const css = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo }))).match(/<style>([\s\S]*?)<\/style>/)![1]!
+    expect(css).not.toMatch(/(^|[}\n])\.board-tools\{[^}]*display:/)
+    expect(css).toContain('.js .board-tools{display:flex}')
   })
 
   test('an empty column says so, and a project without tasks gets one message', async () => {

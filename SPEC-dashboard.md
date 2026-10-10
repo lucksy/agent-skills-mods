@@ -159,17 +159,17 @@ There is no "off track" state until a target date exists (see Q1).
 
 ## Success Criteria
 
-- [ ] `/progress dashboard [view]` writes `tasks/progress-dashboard.html` and opens it on that view. Where it can't open a browser, it prints the path.
-- [ ] `agent-skills-progress --dashboard [out]` writes the same page for the same state and `today`.
-- [ ] The page has five views reached by tabs and by `#overview|board|roadmap|flow|spec`. Arrow keys move between tabs, and the back button restores the previous view and filters.
-- [ ] Overview, Board, Roadmap, Flow and Spec show the content in the Views table, and their numbers match `/progress` and `--json` for the same project.
-- [ ] With JS disabled, all five views are readable, stacked in order.
-- [ ] No network requests while the page loads and is used, and a CSP meta tag is present.
-- [ ] Empty and partial projects render with explanatory messages and no errors.
-- [ ] Light and dark themes both work. The page has no horizontal scroll at 360 px. Tabs use `role="tablist"`, and every chart has a text alternative.
-- [ ] The 60-task, 90-day fixture renders in under 200 ms. The page is under 250 KB without charts, and the chart bundle is under 600 KB (React 19 + Nivo measured 547 KB; limit raised from 450 KB on 2026-10-10).
-- [ ] The Flow charts are Nivo charts with hover tooltips, drawn from the embedded state, and readable in light and dark.
-- [ ] All tests pass, including the new dashboard, CLI and escaping tests. The README documents the command and the CLI flag.
+- [x] `/progress dashboard [view]` writes `tasks/progress-dashboard.html` and opens it on that view. Where it can't open a browser, it prints the path.
+- [x] `agent-skills-progress --dashboard [out]` writes the same page for the same state and `today`.
+- [x] The page has five views reached by tabs and by `#overview|board|roadmap|flow|spec`. Arrow keys move between tabs, and the back button restores the previous view and filters.
+- [x] Overview, Board, Roadmap, Flow and Spec show the content in the Views table, and their numbers match `/progress` and `--json` for the same project.
+- [x] With JS disabled, all five views are readable, stacked in order.
+- [x] No network requests while the page loads and is used, and a CSP meta tag is present.
+- [x] Empty and partial projects render with explanatory messages and no errors.
+- [x] Light and dark themes both work. The page has no horizontal scroll at 360 px. Tabs use `role="tablist"`, and every chart has a text alternative.
+- [x] The 60-task, 90-day fixture renders in under 200 ms. The page is under 250 KB without charts, and the chart bundle is under 600 KB (React 19 + Nivo measured 547 KB; limit raised from 450 KB on 2026-10-10).
+- [x] The Flow charts are Nivo charts with hover tooltips, drawn from the embedded state, and readable in light and dark.
+- [x] All tests pass, including the new dashboard, CLI and escaping tests. The README documents the command and the CLI flag.
 
 ## Open Questions
 

@@ -273,7 +273,8 @@ ul.h-why{padding-left:var(--s5)}ul.h-why li{padding:1px 0}
 function BOARD_STYLE(): string {
   return `
 .js-only{display:none}.js .js-only{display:block}
-.board-tools{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);margin-bottom:var(--s4);font-size:13px;color:var(--ink2)}
+/* Laid out only once the script runs: without it the controls do nothing, so they stay hidden. */
+.board-tools{flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);margin-bottom:var(--s4);font-size:13px;color:var(--ink2)}
 .js .board-tools{display:flex}
 .board-tools select{margin-left:var(--s1);font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r);padding:2px var(--s2)}
 .board-tools .check{display:flex;align-items:center;gap:var(--s1);cursor:pointer}
