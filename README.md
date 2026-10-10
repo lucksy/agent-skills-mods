@@ -187,34 +187,34 @@ Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_
 claude plugin validate .     # manifest, marketplace and hooks module
 claude plugin test .         # 154 tests: parser, guard, forecast, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
-bash scripts/test.sh         # agent-skills-progress under Node
+bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 ```
 
 Layout:
 
 ```
-hooks/register.tsx     the mod: commands, guard, panes, band, footer
-hooks/lib/parse.ts     SPEC.md / plan.md / todo.md parsers (pure, no Claude Code API)
-hooks/lib/forecast.ts  daily snapshots → ETA range
-hooks/lib/history.ts   past snapshots from git commits and commit messages
-hooks/lib/logs.ts      past snapshots from Claude Code's session logs
-hooks/lib/chart.ts     burn-up and flow charts as Raster cells
-hooks/lib/svg.ts       the same charts as SVG
-hooks/lib/report.ts    digest and HTML report
-hooks/lib/steps.ts     tool calls as build, test and commit
-hooks/lib/guard.ts     the overwrite check
-hooks/lib/view.ts      text views shared by panes and commands
-hooks/lib/gate.ts      the spec gate warning
-hooks/lib/format.ts    the progress format: front matter, Status lines, stamping
-hooks/lib/specedit.ts  approve / draft in front matter, the editor to open
-hooks/lib/pixels.ts    pixel charts: RGBA canvas and PNG encoder
-hooks/lib/cli.ts       the summary agent-skills-progress prints
-hooks/lib/timeline.ts  the run timeline as rows of coloured segments
-hooks/ui/              surface modules: the tabs, the animated bar, the turning task marker
-scripts/               agent-skills-progress and its test
-types/index.d.ts       the session state contract
-statusline/            the status line script and its test
+hooks/register.tsx         the mod: commands, guard, panes, band, footer
+packages/core/parse.ts     SPEC.md / plan.md / todo.md parsers (pure, no Claude Code API)
+packages/core/forecast.ts  daily snapshots → ETA range
+packages/core/history.ts   past snapshots from git commits and commit messages
+packages/core/logs.ts      past snapshots from Claude Code's session logs
+packages/core/chart.ts     burn-up and flow charts as Raster cells
+packages/core/svg.ts       the same charts as SVG
+packages/core/report.ts    digest and HTML report
+packages/core/steps.ts     tool calls as build, test and commit
+packages/core/guard.ts     the overwrite check
+packages/core/view.ts      text views shared by panes and commands
+packages/core/gate.ts      the spec gate warning
+packages/core/format.ts    the progress format: front matter, Status lines, stamping
+packages/core/specedit.ts  approve / draft in front matter, the editor to open
+packages/core/pixels.ts    pixel charts: RGBA canvas and PNG encoder
+packages/core/cli.ts       the summary agent-skills-progress prints
+packages/core/timeline.ts  the run timeline as rows of coloured segments
+hooks/ui/                  surface modules: the tabs, the animated bar, the turning task marker
+scripts/                   agent-skills-progress, its test, and the core purity check
+types/index.d.ts           the session state contract
+statusline/                the status line script and its test
 ```
 
 History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report you ask for. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.

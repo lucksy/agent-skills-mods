@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { AsmProject } from '../types'
-import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from './lib/parse'
-import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from './lib/forecast'
+import { parsePlan, parseSpec, parseTasks, taskKey, withBlockers, type TaskList } from '../packages/core/parse'
+import { dayOf, forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
   earliestDays,
@@ -14,22 +14,22 @@ import {
   type GitSources,
   type LogsChoice,
   type SourceData,
-} from './lib/history'
-import { historyFromLogs, logsDir, mentions } from './lib/logs'
-import { burnup, chartLegends, COLOR, flow, hex, revealCells, throughput } from './lib/chart'
-import { timeline, type Seg } from './lib/timeline'
-import { criticalPath, graphLines } from './lib/graph'
+} from '../packages/core/history'
+import { historyFromLogs, logsDir, mentions } from '../packages/core/logs'
+import { burnup, chartLegends, COLOR, flow, hex, revealCells, throughput } from '../packages/core/chart'
+import { timeline, type Seg } from '../packages/core/timeline'
+import { criticalPath, graphLines } from '../packages/core/graph'
 import { TABS, type Tab } from './ui/tabs'
-import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from './lib/report'
-import { burnupSvg, flowSvg } from './lib/svg'
-import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from './lib/pixels'
-import { spinnerWord, stepOf, testCounts, type Step } from './lib/steps'
-import { checkOverwrite, denyMessage, GUARDED } from './lib/guard'
-import { archiveDir, archiveReadme } from './lib/archive'
-import { diagnose, doctorText, type DoctorPast } from './lib/doctor'
-import { checkpointWarning, gateWarning } from './lib/gate'
-import { editorArgvs } from './lib/specedit'
-import { addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './lib/format'
+import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
+import { burnupSvg, flowSvg } from '../packages/core/svg'
+import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from '../packages/core/pixels'
+import { spinnerWord, stepOf, testCounts, type Step } from '../packages/core/steps'
+import { checkOverwrite, denyMessage, GUARDED } from '../packages/core/guard'
+import { archiveDir, archiveReadme } from '../packages/core/archive'
+import { diagnose, doctorText, type DoctorPast } from '../packages/core/doctor'
+import { checkpointWarning, gateWarning } from '../packages/core/gate'
+import { editorArgvs } from '../packages/core/specedit'
+import { addQuestion, applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, hasTaskSection, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from '../packages/core/format'
 import {
   bandText,
   bar,
@@ -58,8 +58,8 @@ import {
   statusText,
   timelineRows,
   type Stage,
-} from './lib/view'
-import { replyLines, type Inline, type ReplyLine } from './lib/reply'
+} from '../packages/core/view'
+import { replyLines, type Inline, type ReplyLine } from '../packages/core/reply'
 
 const NAME = 'agent-skills-mods'
 const project = atom({ plugin: 'agent-skills-mods', key: 'project' } as const, null as AsmProject | null)

@@ -1,19 +1,19 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { parsePlan, parseSpec, parseTasks, withBlockers } from '../hooks/lib/parse'
-import { checkOverwrite } from '../hooks/lib/guard'
-import { archiveDir } from '../hooks/lib/archive'
-import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
-import { criticalPath, graphLines } from '../hooks/lib/graph'
-import { plain, shortItem, timeline } from '../hooks/lib/timeline'
-import { replyLines } from '../hooks/lib/reply'
-import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../hooks/lib/gate'
-import { editorArgvs, withStatus } from '../hooks/lib/specedit'
-import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
-import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../hooks/lib/cli'
-import { alerts, ANSWER_CARDS, areaSummary, runnableCount } from '../hooks/lib/view'
-import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask, toggleBox } from '../hooks/lib/format'
-import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../hooks/lib/forecast'
+import { parsePlan, parseSpec, parseTasks, withBlockers } from '../packages/core/parse'
+import { checkOverwrite } from '../packages/core/guard'
+import { archiveDir } from '../packages/core/archive'
+import { cycles, diagnose, doctorText } from '../packages/core/doctor'
+import { criticalPath, graphLines } from '../packages/core/graph'
+import { plain, shortItem, timeline } from '../packages/core/timeline'
+import { replyLines } from '../packages/core/reply'
+import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../packages/core/gate'
+import { editorArgvs, withStatus } from '../packages/core/specedit'
+import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../packages/core/pixels'
+import { gather, renderBrief, renderCli, renderJson, renderTimelineCli, type CliIo } from '../packages/core/cli'
+import { alerts, ANSWER_CARDS, areaSummary, runnableCount } from '../packages/core/view'
+import { addQuestion, applyEdit, driftedSpec, editBetween, parseStatusLine, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, statusLine, taskStates, tickTask, toggleBox } from '../packages/core/format'
+import { forecast, record, shortDay, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import {
   combine,
   doneDaysFromGit,
@@ -29,14 +29,14 @@ import {
   snapshotsFromDoneDays,
   snapshotsFromGit,
   splitBatch,
-} from '../hooks/lib/history'
-import { historyFromLogs, logsDir, textAfter } from '../hooks/lib/logs'
-import { spinnerWord, stepOf } from '../hooks/lib/steps'
-import { decisions, digestText, headline, nowCounts, sparkline } from '../hooks/lib/report'
-import { burnupSvg, flowSvg } from '../hooks/lib/svg'
-import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../hooks/lib/chart'
+} from '../packages/core/history'
+import { historyFromLogs, logsDir, textAfter } from '../packages/core/logs'
+import { spinnerWord, stepOf } from '../packages/core/steps'
+import { decisions, digestText, headline, nowCounts, sparkline } from '../packages/core/report'
+import { burnupSvg, flowSvg } from '../packages/core/svg'
+import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../packages/core/chart'
 import { meterCells } from '../hooks/ui/meter'
-import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../hooks/lib/view'
+import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../packages/core/view'
 import {
   CHECKLIST,
   GOOD_SPEC,

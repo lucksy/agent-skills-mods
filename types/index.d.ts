@@ -1,5 +1,5 @@
 // State this mod keeps for the session. Plain JSON data; the shapes are the parser's
-// (hooks/lib/parse.ts) and the forecast's (hooks/lib/forecast.ts).
+// (packages/core/parse.ts) and the forecast's (packages/core/forecast.ts).
 
 export type AsmBox = { text: string; isDone: boolean }
 export type AsmCheckpoint = { title: string; items: AsmBox[] }

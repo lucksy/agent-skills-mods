@@ -1,6 +1,7 @@
 ---
-status: draft
+status: approved
 created: 2026-10-10
+approved: 2026-10-10
 ---
 # Spec: core (shared library and state contract)
 
@@ -72,7 +73,7 @@ export async function buildState(io: CliIo, opts: { specFile?: string } = {}): P
 
 - **Regression:** every existing test passes unchanged except for import paths: `claude plugin test .`, `bash scripts/test.sh` and `bash statusline/test.sh`.
 - **Contract:** a new `tests/state.test.ts` checks that `buildState` on the shared fixtures gives `schema: 1` and the documented fields, and that `--json` output parses back to the same object.
-- **Purity guard:** a test reads every file in `packages/core/` and fails if one imports anything other than a sibling module or `node:` built-ins, or uses `$.` (the Claude Code API).
+- **Purity guard:** `scripts/purity.mjs`, run by `bash scripts/test.sh`, reads every file in `packages/core/`. It fails if a file imports anything outside `packages/core` (`claude-code` and `node:` built-ins included) or uses `$.`, the Claude Code API, in code. It runs under Node because the mods engine only lets plugin tests import relative files and `claude-code`. The same limit means core itself can import nothing but its own files.
 - **Manual:** `claude --plugin-dir .` loads the plugin, and `/progress`, `/spec-view` and `/progress report` work as before.
 
 ## Boundaries
@@ -83,12 +84,12 @@ export async function buildState(io: CliIo, opts: { specFile?: string } = {}): P
 
 ## Success Criteria
 
-- [ ] `hooks/lib/` no longer exists; `packages/core/` holds the library; nothing imports from `hooks/lib`.
-- [ ] `claude plugin validate .` passes; `claude plugin test .`, `bash scripts/test.sh` and `bash statusline/test.sh` all pass.
-- [ ] The plugin loads with `claude --plugin-dir .` and from a marketplace install; `/progress` shows the same board as before on this repo.
+- [x] `hooks/lib/` no longer exists; `packages/core/` holds the library; nothing imports from `hooks/lib`.
+- [x] `claude plugin validate .` passes; `claude plugin test .`, `bash scripts/test.sh` and `bash statusline/test.sh` all pass.
+- [ ] The plugin loads with `claude --plugin-dir .` and from a marketplace install; `/progress` shows the same board as before on this repo. (`--plugin-dir` checked in T2; the marketplace install is still to check, before release in T13.)
 - [ ] `buildState` returns State v1; `agent-skills-progress --json` prints it, with `schema: 1` and every field it printed before.
-- [ ] The purity-guard test passes.
-- [ ] The Development section of the README shows the new layout.
+- [x] The purity-guard test passes.
+- [x] The Development section of the README shows the new layout.
 
 ## Open Questions
 

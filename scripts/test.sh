@@ -44,4 +44,13 @@ check module-spec 'Spec · specs/auth.md' node "$script" "$tmp/build" --spec aut
 
 out=$(node "$script" "$tmp/build" --no-color 2>&1)
 if [[ $out == *Warning* ]]; then echo "FAIL no-warnings: Node printed a warning"; fail=1; else echo "ok   no-warnings"; fi
+# The shared core imports only itself (J1).
+if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
+
+# The checker itself catches an import that leaves the library.
+mkdir -p "$tmp/impure"; printf "import { x } from '../elsewhere'\nexport const y = x\n" > "$tmp/impure/a.ts"
+if node "$here/purity.mjs" "$tmp/impure" >/dev/null 2>&1; then echo "FAIL core-purity-catches: an outside import passed"; fail=1; else echo "ok   core-purity-catches"; fi
+mkdir -p "$tmp/api"; printf "// stands in for \$.process.run\nexport const run = (\$: any) => \$.process.run\n" > "$tmp/api/a.ts"
+out=$(node "$here/purity.mjs" "$tmp/api" 2>&1)
+if [[ $out == *"a.ts: uses the Claude Code API"* && $out == "1 offence"* || $out == *$'\n1 offence'* ]]; then echo "ok   core-purity-api (code caught, comment ignored)"; else echo "FAIL core-purity-api:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 exit $fail

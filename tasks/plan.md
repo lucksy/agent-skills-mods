@@ -101,7 +101,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ## Open Questions
 
-- Q1 (T1, T2): Does the mods engine load `../packages/core` from `hooks/register.tsx`? **Answered by T1 (2026-10-10): yes.** With `import { SPIKE } from '../packages/core/spike'` in the mod, `claude plugin validate .` passed. A mod test running `/progress spike` passed (155 pass, 0 fail). A real session, `claude -p --plugin-dir . "/progress spike"` on Claude Code 2.1.296, replied `agent-skills-mods: packages/core reached`. T2 goes ahead with the move.
-- Q2 (T6): Health is *on track* or *at risk* until a target date exists. Does the target date come from `ceremonies` (sprint end) or from a `format-v2` `target:` field? T6 doesn't block on this.
-- Q3 (T4, T5): The output goes to `tasks/progress-dashboard.html`. Should `/progress format` also gitignore it and the report? It's not in this plan unless you say so.
-- Q4 (T13): Is it right to keep `/progress report` unchanged, as the email-safe page?
+- Q2: Health is *on track* or *at risk* until a target date exists. Does the target date come from `ceremonies` (sprint end) or from a `format-v2` `target:` field? It affects T6 but doesn't block it.
+- Q3: The output goes to `tasks/progress-dashboard.html`. Should `/progress format` also gitignore it and the report? It affects T4 and T5 but doesn't block them, and isn't in this plan unless you say so.
+- Q4: Is it right to keep `/progress report` unchanged, as the email-safe page? It affects T13 but doesn't block it.
+
+## Resolved Questions
+
+- Q1 (resolved, was T1 and T2): Does the mods engine load `../packages/core` from `hooks/register.tsx`? **Answered by T1 (2026-10-10): yes.** With `import { SPIKE } from '../packages/core/spike'` in the mod, `claude plugin validate .` passed. A mod test running `/progress spike` passed (155 pass, 0 fail). A real session, `claude -p --plugin-dir . "/progress spike"` on Claude Code 2.1.296, replied `agent-skills-mods: packages/core reached`. T2 goes ahead with the move.

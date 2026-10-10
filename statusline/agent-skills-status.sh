@@ -22,7 +22,7 @@ if [[ ! -f $spec && ! -f $plan && ! -f $todo ]]; then
   printf '%s' "$line"; exit 0
 fi
 
-# Same rules as hooks/lib/parse.ts:
+# Same rules as packages/core/parse.ts:
 # - "## Task N: title" sections: done when every box in the section is ticked,
 #   blocked while a task named on its **Dependencies:** line isn't done;
 # - "- [ ] Task N: title" lines (the plan's index): done when ticked;

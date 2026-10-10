@@ -108,8 +108,8 @@ function spinner(text) {
 async function main() {
   const o = parseArgs(process.argv.slice(2))
   if (o.mode === 'help') return console.log(HELP)
-  const { gather, renderBrief, renderCli, renderJson, renderTimelineCli } = await import('../hooks/lib/cli.ts')
-  const { specCandidates } = await import('../hooks/lib/view.ts')
+  const { gather, renderBrief, renderCli, renderJson, renderTimelineCli } = await import('../packages/core/cli.ts')
+  const { specCandidates } = await import('../packages/core/view.ts')
   const cwd = resolve(o.dir)
   const io = {
     cwd,

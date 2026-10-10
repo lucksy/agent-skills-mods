@@ -29,20 +29,22 @@ created: 2026-10-10
 **Estimated scope:** XS
 
 ## Task 2: Move hooks/lib to packages/core with a purity guard
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Run `git mv hooks/lib packages/core` and update the imports in the plugin, CLI and tests. Add a test that fails if any core file imports something other than a sibling module or a `node:` built-in, or uses the Claude Code API. If T1 said no, skip the move and add only the purity guard over `hooks/lib`. This is a mechanical move, so it touches more than 5 files.
 
 **Acceptance criteria:**
-- [ ] `hooks/lib/` is gone, and nothing imports from it (`grep -r "hooks/lib"` finds only docs history)
-- [ ] The purity-guard test passes
-- [ ] README Development layout lists `packages/core/`
+- [x] `hooks/lib/` is gone, and nothing imports from it (`grep -r "hooks/lib"` finds only docs history)
+- [x] The purity-guard test passes
+- [x] README Development layout lists `packages/core/`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh` and `bash statusline/test.sh`
-- [ ] Build succeeds: `claude plugin validate .`
-- [ ] Manual check: `claude --plugin-dir .`, `/progress` and `/spec-view` look as before on this repo
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh` and `bash statusline/test.sh`
+- [x] Build succeeds: `claude plugin validate .`
+- [x] Manual check: `claude --plugin-dir .`, `/progress` and `/spec-view` look as before on this repo
+
+**Note:** the engine only lets plugin tests import relative files and `claude-code`, not `node:fs`. So the guard is `scripts/purity.mjs`, run by `bash scripts/test.sh`, rather than a plugin test.
 
 **Dependencies:** T1
 
