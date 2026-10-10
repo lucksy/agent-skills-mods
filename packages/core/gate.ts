@@ -43,11 +43,11 @@ export function gateWarning(input: { cwd: string; path: string; spec: Spec | nul
   }
 }
 
-/** The first checkpoint reached (its task done) whose own items are not all ticked. */
+/** The first checkpoint reached (its task done) whose own items are not all ticked, and not signed off (team-view). */
 export function dueCheckpoint(list: TaskList | null): { after: string; title: string; open: string[] } | null {
   for (const t of list?.tasks ?? []) {
     const cp = t.checkpoint
-    if (!cp || t.status !== 'done' || cp.items.length === 0) continue
+    if (!cp || t.status !== 'done' || cp.items.length === 0 || cp.signedOff) continue
     const open = cp.items.filter(b => !b.isDone).map(b => b.text)
     if (open.length) return { after: t.id, title: cp.title, open }
   }

@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FORMAT_RULES, addHandoff, parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { FORMAT_RULES, addHandoff, parseAnswerLine, parseSignedOffLine, parseStatusLine, setAnswer, setOwner, setReview, signOff, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
 import { nowCounts } from '../packages/core/report'
-import { parseTasks } from '../packages/core/parse'
+import { parsePlan, parseTasks } from '../packages/core/parse'
+import { decisions } from '../packages/core/report'
+import { dueCheckpoint } from '../packages/core/gate'
 import { bandText, boardRows, progressBrief, taskDetail, timelineRows } from '../packages/core/view'
 import { dashboardHtml } from '../packages/core/dashboard/page'
 import { plain, timeline } from '../packages/core/timeline'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
-import { TODO_TEMPLATE } from './fixtures'
+import { TODO_T2_DONE, TODO_TEMPLATE } from './fixtures'
 
 // Progress format v2, T1: a Status line carries an owner, in review, a PR and a
 // reviewer, and every way the plugin rewrites the line keeps them.
@@ -177,5 +179,100 @@ describe('the rules Claude is told, v2 (T13)', () => {
     expect(FORMAT_RULES).toMatch(/approvals:.*role @handle YYYY-MM-DD/)
     expect(FORMAT_RULES).toMatch(/never sign for anyone/i)
     expect(FORMAT_RULES).toContain('module: <id>')
+  })
+})
+
+// team-view T2: an answer under an open question, and a checkpoint signed off.
+
+const PLAN = `---
+status: approved
+---
+# Implementation Plan: keys
+
+## Open Questions
+
+- Q1 (T3): Hash with argon2 or bcrypt?
+- Q2 (T4): Upstash Redis or self-hosted
+  for the sliding window?
+- Q3: Who owns rate-limit alerts?
+
+## Notes
+- Q9 is not a question here.
+`
+
+describe('answers to open questions (team-view T2)', () => {
+  test('an answer line reads back its text, who and when; a line without them is just text', () => {
+    expect(parseAnswerLine('  → A: Upstash · @pm 2026-10-11')).toEqual({ text: 'Upstash', by: '@pm', day: '2026-10-11' })
+    expect(parseAnswerLine('  -> A: Upstash, then self-hosted · later · @Pm-K 2026-10-11')).toEqual({ text: 'Upstash, then self-hosted · later', by: '@Pm-K', day: '2026-10-11' })
+    expect(parseAnswerLine('  → A: Upstash · 2026-10-11')).toEqual({ text: 'Upstash', by: null, day: '2026-10-11' })
+    expect(parseAnswerLine('  → A: Upstash')).toEqual({ text: 'Upstash', by: null, day: null })
+    expect(parseAnswerLine('- Q2 (T4): Upstash?')).toBeNull()
+  })
+
+  test('setAnswer writes the line under the question, after its wrapped lines, keeping every other byte', () => {
+    const one = setAnswer(PLAN, 'Q1', { text: 'argon2id', by: '@amila', day: '2026-10-11' })!
+    expect(one).toBe(PLAN.replace('- Q1 (T3): Hash with argon2 or bcrypt?\n', '- Q1 (T3): Hash with argon2 or bcrypt?\n  → A: argon2id · @amila 2026-10-11\n'))
+    const two = setAnswer(PLAN, 'Q2', { text: 'Upstash', by: '@pm', day: '2026-10-11' })!
+    expect(two).toBe(PLAN.replace('  for the sliding window?\n', '  for the sliding window?\n  → A: Upstash · @pm 2026-10-11\n'))
+    const crlf = PLAN.replace(/\n/g, '\r\n')
+    expect(setAnswer(crlf, 'Q3', { text: 'SRE', by: null, day: '2026-10-11' })).toBe(crlf.replace('- Q3: Who owns rate-limit alerts?\r\n', '- Q3: Who owns rate-limit alerts?\r\n  → A: SRE · 2026-10-11\r\n'))
+  })
+
+  test('a second answer replaces the first; an unknown question gives null', () => {
+    const once = setAnswer(PLAN, 'Q2', { text: 'Upstash', by: '@pm', day: '2026-10-10' })!
+    const twice = setAnswer(once, 'Q2', { text: 'self-hosted', by: '@amila', day: '2026-10-11' })!
+    expect(twice).toBe(PLAN.replace('  for the sliding window?\n', '  for the sliding window?\n  → A: self-hosted · @amila 2026-10-11\n'))
+    expect(setAnswer(PLAN, 'Q9', { text: 'x', by: null, day: '2026-10-11' })).toBeNull()
+    expect(setAnswer('# Plan\n', 'Q1', { text: 'x', by: null, day: '2026-10-11' })).toBeNull()
+  })
+
+  test('the plan parser lists answered questions apart; they are no longer open or waiting on anyone', () => {
+    const plan = parsePlan(setAnswer(PLAN, 'Q2', { text: 'Upstash', by: '@pm', day: '2026-10-11' })!)
+    expect(plan.openQuestions).toEqual(['Q1 (T3): Hash with argon2 or bcrypt?', 'Q3: Who owns rate-limit alerts?'])
+    expect(plan.answered).toEqual([{ q: 'Q2', question: 'Q2 (T4): Upstash Redis or self-hosted', answer: { text: 'Upstash', by: '@pm', day: '2026-10-11' } }])
+    const needs = decisions({ spec: null, list: null, plan, forecast: null, snapshots: [] })
+    expect(needs).toEqual(['Q1 (T3): Hash with argon2 or bcrypt?', 'Q3: Who owns rate-limit alerts?'])
+  })
+
+  test('a plan without answers parses as before', () => {
+    const plan = parsePlan(PLAN)
+    expect(plan.openQuestions).toEqual(['Q1 (T3): Hash with argon2 or bcrypt?', 'Q2 (T4): Upstash Redis or self-hosted', 'Q3: Who owns rate-limit alerts?'])
+    expect(plan.answered).toEqual([])
+  })
+})
+
+describe('checkpoints signed off (team-view T2)', () => {
+  test('a Signed off line reads back who and when', () => {
+    expect(parseSignedOffLine('**Signed off:** @amila 2026-10-11')).toEqual({ by: '@amila', day: '2026-10-11' })
+    expect(parseSignedOffLine('**Signed off:** 2026-10-11')).toEqual({ by: null, day: '2026-10-11' })
+    expect(parseSignedOffLine('**Status:** done')).toBeNull()
+  })
+
+  test('signOff writes the line under the heading and ticks the review box, keeping every other byte', () => {
+    const out = signOff(TODO_T2_DONE, 0, { by: '@amila', day: '2026-10-11' })
+    expect(out).toBe(TODO_T2_DONE.replace('## Checkpoint: After Tasks 1-2\n', '## Checkpoint: After Tasks 1-2\n**Signed off:** @amila 2026-10-11\n').replace('- [ ] Review with human', '- [x] Review with human'))
+    // Signing again replaces the line rather than adding one.
+    expect(signOff(out, 0, { by: '@sara', day: '2026-10-12' })).toBe(out.replace('**Signed off:** @amila 2026-10-11', '**Signed off:** @sara 2026-10-12'))
+    expect(signOff(TODO_T2_DONE, 5, { by: '@amila', day: '2026-10-11' })).toBe(TODO_T2_DONE)
+  })
+
+  test('the parser exposes the sign-off; a signed-off checkpoint no longer waits on anyone', () => {
+    expect(parseTasks(TODO_T2_DONE).checkpoints[0]!.signedOff).toBeUndefined()
+    expect(decisions({ spec: null, list: parseTasks(TODO_T2_DONE), plan: null, forecast: null, snapshots: [] })).toEqual(['checkpoint 1, after T2: tests · review with you'])
+    const list = parseTasks(signOff(TODO_T2_DONE, 0, { by: '@amila', day: '2026-10-11' }))
+    expect(list.checkpoints[0]!.signedOff).toEqual({ by: '@amila', day: '2026-10-11' })
+    expect(list.checkpoints[0]!.items.map(b => b.text)).toEqual(['All tests pass', 'Review with human before proceeding'])
+    expect(decisions({ spec: null, list, plan: null, forecast: null, snapshots: [] })).toEqual([])
+    // Reviewed, so the checkpoint gate stops warning about it too.
+    expect(dueCheckpoint(parseTasks(TODO_T2_DONE))?.title).toBe('After Tasks 1-2')
+    expect(dueCheckpoint(list)).toBeNull()
+  })
+})
+
+describe('the rules Claude is told, team-view (T2)', () => {
+  test('answers and sign-offs are in the rules', () => {
+    expect(FORMAT_RULES).toContain('→ A: <answer> · @handle YYYY-MM-DD')
+    expect(FORMAT_RULES).toContain('**Signed off:** @handle YYYY-MM-DD')
+    expect(FORMAT_RULES).toMatch(/never (answer|sign off) for anyone/i)
   })
 })

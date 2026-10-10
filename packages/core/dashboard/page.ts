@@ -264,6 +264,8 @@ ul.h-why{padding-left:var(--s5)}ul.h-why li{padding:1px 0}
 .needs li{display:flex;gap:var(--s2);padding:var(--s2) 0;border-top:1px solid var(--line)}
 .needs li:first-child{border-top:0;padding-top:0}
 .needs .g{color:var(--needs);font-weight:700}
+.cols h4{font-size:12px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin:var(--s4) 0 var(--s2)}.cols h4 .n{color:var(--ink3);font-weight:500}
+.answered .g{color:var(--done)}.answered .ans{color:var(--ink2)}
 .good{color:var(--done);margin:0}
 .now-title{font-size:16px;font-weight:600;margin:0}
 .now-title .id{color:var(--doing);margin-right:var(--s1)}

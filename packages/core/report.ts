@@ -35,12 +35,15 @@ export function week(snapshots: Snapshot[]): { days: Snapshot[]; done: number; a
   return { days, done: last.done - before.done, added: Math.max(0, last.total - before.total) }
 }
 
-/** What is waiting on a person: checkpoints reached, open questions in the plan and in an unapproved spec. */
+/**
+ * What is waiting on a person: checkpoints reached and not signed off, open
+ * questions in the plan (answered ones aren't) and in an unapproved spec.
+ */
 export function decisions(p: ProgressInput): string[] {
   const out: string[] = []
   for (const t of p.list?.tasks ?? []) {
     const cp = t.checkpoint
-    if (cp && t.status === 'done' && !(cp.items.length > 0 && cp.items.every(b => b.isDone))) {
+    if (cp && t.status === 'done' && !cp.signedOff && !(cp.items.length > 0 && cp.items.every(b => b.isDone))) {
       // Numbered as on the timeline, with what is open in a few words: its heading is often "After Tasks 1-3".
       // By position: the list may be a copy, so the checkpoint is not the same object as in list.checkpoints.
       const tasks = p.list?.tasks ?? []

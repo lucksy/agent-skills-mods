@@ -3,18 +3,18 @@
 // POST /action both call it, so the dashboard and the commands can't drift apart.
 // Text in, `{ ok, reply, writes }` out; the caller reads, writes and replies. Pure.
 
-import { addHandoff, addQuestion, hasTaskSection, setFrontMatter, setOwner, setReview, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './format'
-import { parseSpec, parseTasks, type Task, type TaskList } from './parse'
+import { addHandoff, addQuestion, hasTaskSection, setAnswer, setFrontMatter, setOwner, setReview, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './format'
+import { parsePlan, parseSpec, parseTasks, type Task, type TaskList } from './parse'
 import { approvalStatus, signSpec } from './approvals'
 import { shortDay } from './forecast'
 import { TEAM_FILE, whoIs, type Team } from './team'
 
-export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign'] as const
+export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 /** What an action reads: the files as they are on disk, and who runs it. */
 export type ActionInput = {
-  /** tasks/todo.md and tasks/plan.md; null when missing. */
+  /** tasks/todo.md and tasks/plan.md; null when missing (the plan is read for block and answer). */
   todo: string | null
   plan: string | null
   /** The spec `sign` signs; null when there is none. */
@@ -248,6 +248,71 @@ const sign: Action = {
   },
 }
 
+/** What a sign-off or an answer says about who wrote it: your handle, or why it has none. */
+const unnamed = (input: ActionInput, what: string) =>
+  ` ${input.team ? (input.email ? `${input.email} is not in ${TEAM_FILE}` : 'git config user.email is not set') : `${TEAM_FILE} doesn't name you`}, so the ${what} is unsigned.`
+
+/**
+ * signoff (team-view): the checkpoint that is due (the first after a done task
+ * with a box still open, not yet signed off) gets `**Signed off:** @you <date>`
+ * under its heading, and its review box ticked. Refused, with why, when none is due.
+ */
+const signoff: Action = {
+  todo: true,
+  check: args => args,
+  edit: (_args, input) => {
+    const text = input.todo!
+    const list = parseTasks(text)
+    if (!list.checkpoints.length) return refuse('No checkpoint is due: tasks/todo.md has no "## Checkpoint" headings.')
+    const open = (t: Task) => t.checkpoint && !t.checkpoint.signedOff && !(t.checkpoint.items.length > 0 && t.checkpoint.items.every(b => b.isDone))
+    const due = list.tasks.find(t => t.status === 'done' && open(t))
+    if (!due) {
+      const next = list.tasks.find(t => t.status !== 'done' && open(t))
+      return refuse(`No checkpoint is due: ${next ? `"${next.checkpoint!.title}" comes after ${next.id}, which is not done yet.` : 'every checkpoint reached is signed off.'}`)
+    }
+    const cp = due.checkpoint!
+    const by = sessionHandle(input)
+    const next = signOff(text, list.checkpoints.indexOf(cp), { by, day: input.today })
+    const left = parseTasks(next).checkpoints[list.checkpoints.indexOf(cp)]!.items.filter(b => !b.isDone).map(b => b.text)
+    return {
+      ok: true,
+      reply: `Checkpoint "${cp.title}" signed off${by ? ` by ${by}` : ''} on ${input.today}.${left.length ? ` Still open: ${left.join(' · ')}.` : ''}${by ? '' : unnamed(input, 'sign-off')}`,
+      writes: [{ file: TODO, text: next }],
+    }
+  },
+}
+
+/**
+ * answer (team-view): `→ A: <text> · @you <date>` under question `q` of
+ * tasks/plan.md, in place of an earlier answer. An answered question no longer
+ * blocks its task or waits on anyone.
+ */
+const answer: Action = {
+  todo: false,
+  check: args => (isStr(args.q) && args.q.trim() && strings(args, ['text']) ? args : 'Say which question and the answer: /progress answer Q2 "Upstash".'),
+  edit: (args, input) => {
+    if (input.plan === null) return refuse('No tasks/plan.md here.')
+    const q = `Q${(args.q as string).trim().replace(/^q/i, '')}`
+    const text = ((args.text as string | undefined) ?? '').trim().replace(/^["'“”]|["'“”]$/g, '').trim()
+    if (!text) return refuse(`Say the answer: /progress answer ${q} "Upstash".`)
+    const by = sessionHandle(input)
+    const next = setAnswer(input.plan, q, { text, by, day: input.today })
+    const plan = parsePlan(input.plan)
+    if (next === null) {
+      const qs = [...plan.openQuestions, ...plan.answered.map(a => a.question)].map(x => /^Q\d+\b/.exec(x)?.[0]).filter((x): x is string => !!x)
+      const sorted = [...new Set(qs)].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
+      return refuse(`No ${q} under Open Questions in tasks/plan.md.${sorted.length ? ` Questions: ${sorted.join(', ')}.` : ''}`)
+    }
+    const was = plan.answered.find(a => a.q === q)?.answer
+    const sig = [by, input.today].filter(Boolean).join(' ')
+    return {
+      ok: true,
+      reply: `${q} answered: "${text}" · ${sig}${was ? ` (was "${was.text}"${was.by ? ` · ${was.by}` : ''})` : ''}.${by ? '' : unnamed(input, 'answer')}`,
+      writes: [{ file: 'tasks/plan.md', text: next }],
+    }
+  },
+}
+
 export const ACTIONS: Record<ActionName, Action> = {
   start: setTask('start'),
   done: setTask('done'),
@@ -260,6 +325,8 @@ export const ACTIONS: Record<ActionName, Action> = {
   review,
   handoff,
   sign,
+  signoff,
+  answer,
 }
 
 export const isActionName = (name: string): name is ActionName => (ACTION_NAMES as readonly string[]).includes(name)

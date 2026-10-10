@@ -1,7 +1,7 @@
 // Parsers for the files agent-skills writes: SPEC.md, tasks/plan.md and tasks/todo.md.
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
-import { parseHandoffLine, parseStatusLine, readFrontMatter, type Handoff, type TaskState } from './format'
+import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseStatusLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskState } from './format'
 import { parseApprovals, type Signature } from './approvals'
 
 export type Box = { text: string; isDone: boolean }
@@ -42,7 +42,8 @@ export type Task = {
   mark?: 'done' | 'doing'
 }
 
-export type Checkpoint = { title: string; items: Box[] }
+/** `signedOff`: its `**Signed off:**` line (team-view), when a person has signed it off. */
+export type Checkpoint = { title: string; items: Box[]; signedOff?: SignOff }
 
 /** A task's identity across edits and plans: its id and its title together. */
 export const taskKey = (t: Task) => `${t.id}|${t.title}`
@@ -164,6 +165,14 @@ export function parseTasks(text: string): TaskList {
         if (st.owner) section.task.owner = st.owner
         if (st.pr) section.task.pr = st.pr
         if (st.reviewer) section.task.reviewer = st.reviewer
+        continue
+      }
+    }
+
+    if (section.kind === 'checkpoint') {
+      const signed = parseSignedOffLine(line)
+      if (signed) {
+        section.cp.signedOff = signed
         continue
       }
     }
@@ -452,23 +461,38 @@ function weakness(a: SpecArea, criteria: string[]): string | null {
 
 export type PlanDoc = {
   trackedIn: string | null
+  /** The questions still waiting on an answer. */
   openQuestions: string[]
+  /** The questions with an `→ A:` line under them (team-view): no longer open. */
+  answered: AnsweredQuestion[]
   /** Front matter (the progress format): approval and dates. */
   status?: 'draft' | 'approved'
   created?: string
   approvedOn?: string
 }
 
+/** An open question with its answer: `q` is its number (`Q2`), null when it has none. */
+export type AnsweredQuestion = { q: string | null; question: string; answer: Answer }
+
 export function parsePlan(text: string): PlanDoc {
   const trackedIn = /tasks (?:are )?tracked in ([^\n.]+)/i.exec(text)?.[1]?.trim() ?? null
   const oq = /^##\s+Open Questions\s*\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/im.exec(text)?.[1] ?? ''
-  const openQuestions = oq
-    .split('\n')
-    .map(l => /^\s*[-*+]\s+(.*)$/.exec(l)?.[1])
-    .filter((l): l is string => !!l && !/^\[.*\]$/.test(l.trim()))
-    .map(stripMd)
+  // Each question, with the answer on a line under it when it has one.
+  const items: { question: string; answer?: Answer }[] = []
+  for (const l of oq.replace(/\r\n?/g, '\n').split('\n')) {
+    const answer = parseAnswerLine(l)
+    if (answer) {
+      const last = items[items.length - 1]
+      if (last) last.answer = answer
+      continue
+    }
+    const item = /^\s*[-*+]\s+(.*)$/.exec(l)?.[1]
+    if (item && !/^\[.*\]$/.test(item.trim())) items.push({ question: stripMd(item) })
+  }
+  const openQuestions = items.filter(i => !i.answer).map(i => i.question)
+  const answered = items.flatMap(i => (i.answer ? [{ q: /^Q\d+\b/.exec(i.question)?.[0] ?? null, question: i.question, answer: i.answer }] : []))
   const fm = readFrontMatter(text).fields
   const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)
   const status = fm.status === 'approved' || fm.status === 'draft' ? fm.status : undefined
-  return { trackedIn, openQuestions, status, created: day(fm.created), approvedOn: day(fm.approved) }
+  return { trackedIn, openQuestions, answered, status, created: day(fm.created), approvedOn: day(fm.approved) }
 }

@@ -722,6 +722,20 @@ async function reviewCommand($: $, words: string[]): Promise<string> {
 }
 
 /**
+ * `/progress answer Q2 "Upstash"` (team-view): your answer under the question in
+ * tasks/plan.md, with your name and the date, in place of an earlier one.
+ */
+async function answerCommand($: $, rest: string): Promise<string> {
+  const m = /^(\S+)?\s*([\s\S]*)$/.exec(rest)!
+  return (await act($, await load($), 'answer', { q: m[1] ?? '', text: m[2] ?? '' })).reply
+}
+
+/** `/progress signoff` (team-view): sign off the checkpoint that is due, and tick its review box. */
+async function signoffCommand($: $): Promise<string> {
+  return (await act($, await load($), 'signoff', {})).reply
+}
+
+/**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
  * board shows (the plugin's own history included), opened on `view`. Written even
  * without a task list, since the page then says how to start.
@@ -876,7 +890,7 @@ async function act(
   const team = await readTeam($, cwd)
   const r = runAction(name, args, {
     todo: await readText($, `${cwd}/tasks/todo.md`),
-    plan: name === 'block' ? await readText($, `${cwd}/tasks/plan.md`) : null,
+    plan: name === 'block' || name === 'answer' ? await readText($, `${cwd}/tasks/plan.md`) : null,
     spec: opts.spec ?? null,
     list: p.list,
     today: dayOf(await $.clock.now()),
@@ -893,12 +907,12 @@ async function act(
 }
 
 /**
- * Your git email, read only for the actions that ask who you are: claiming, and
- * signing when the team names approvals, read it afresh; start and handoff use
- * the session's.
+ * Your git email, read only for the actions that ask who you are: claiming,
+ * signing when the team names approvals, signing off and answering read it
+ * afresh; start and handoff use the session's.
  */
 async function actionEmail($: $, cwd: string, name: ActionName, args: Record<string, unknown>, team: Team): Promise<string | null> {
-  if (name === 'claim' || (name === 'assign' && args.who === 'me') || (name === 'sign' && team.approvals.length)) return gitEmail($)
+  if (name === 'claim' || (name === 'assign' && args.who === 'me') || (name === 'sign' && team.approvals.length) || name === 'signoff' || name === 'answer') return gitEmail($)
   if (name === 'start' || name === 'handoff') {
     if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
     return emails.get(cwd)!
@@ -1182,12 +1196,14 @@ export const register: Register = (on, options) => {
       if (verb === 'review') return reply(await reviewCommand($, words))
       if (verb === 'modules') return reply(await modulesCommand($, words[0]))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
+      if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
+      if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
     }
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|modules|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

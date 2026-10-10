@@ -37,7 +37,7 @@ export function overviewHtml(s: State): string {
 ${basis ? `<p class="basis">${esc(basis)}</p>` : ''}
 ${statesHtml(s)}
 <div class="cols">
-<div class="card"><h3>Needs you</h3>${needsHtml(s)}</div>
+<div class="card"><h3>Needs you</h3>${needsHtml(s)}${answeredHtml(s)}</div>
 <div class="card"><h3>Now</h3>${nowHtml(s)}</div>
 </div>`
 }
@@ -87,6 +87,17 @@ function statesHtml(s: State): string {
 function needsHtml(s: State): string {
   if (!s.needsYou.length) return '<p class="good">✓ Nothing is waiting on you.</p>'
   return `<ul class="needs">${s.needsYou.map(n => `<li><span class="g" aria-hidden="true">♦</span><span>${inline(n)}</span></li>`).join('')}</ul>`
+}
+
+/** The plan's questions already answered (team-view), with who answered and when: decided, so no longer waiting on anyone. */
+function answeredHtml(s: State): string {
+  const done = s.plan?.answered ?? []
+  if (!done.length) return ''
+  const items = done.map(({ question, answer: a }) => {
+    const sig = [a.by, a.day && shortDay(a.day)].filter(Boolean).join(' ')
+    return `<li><span class="g" aria-hidden="true">✓</span><span>${inline(question)} <span class="ans">→ ${inline(a.text)}${sig ? ` · ${esc(sig)}` : ''}</span></span></li>`
+  })
+  return `<h4>Answered <span class="n">${done.length}</span></h4><ul class="needs answered">${items.join('')}</ul>`
 }
 
 function nowHtml(s: State): string {

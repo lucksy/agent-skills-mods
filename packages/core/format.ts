@@ -195,6 +195,105 @@ export function addHandoff(text: string, id: string, h: Handoff): string {
   return lines.join(eol)
 }
 
+/** An answer to an open question (team-view): `  → A: Upstash · @pm 2026-10-11` on the line below it. */
+export type Answer = { text: string; by: string | null; day: string | null }
+
+const ANSWER_LINE = /^\s*(?:→|->)\s*A:\s*(.*?)\s*$/
+/** The ` · @pm 2026-10-11` an answer ends with; the handle may be missing. */
+const ANSWER_SIG = /^(.*?)\s*·\s*(?:(@[\w.-]+)\s+)?(\d{4}-\d{2}-\d{2})$/
+
+/** An `→ A:` line, or null for another line. */
+export function parseAnswerLine(line: string): Answer | null {
+  const m = ANSWER_LINE.exec(line)
+  if (!m) return null
+  const sig = ANSWER_SIG.exec(m[1]!)
+  return sig ? { text: sig[1]!, by: sig[2] ?? null, day: sig[3]! } : { text: m[1]!, by: null, day: null }
+}
+
+const QUESTION_ITEM = /^(\s*)[-*+]\s+(?:\*\*)?Q(\d+)\b/
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/
+
+/**
+ * `/progress answer Q2 "Upstash"` (team-view): the answer written under
+ * question `q` of tasks/plan.md's Open Questions, after any lines the question
+ * wraps onto, in place of an earlier answer. Every other byte is kept. Null
+ * when the plan has no such question.
+ */
+export function setAnswer(text: string, q: string, a: Answer): string | null {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const n = q.replace(/^Q/i, '')
+  const head = lines.findIndex(l => /^##\s+Open Questions\s*$/i.test(l))
+  if (head < 0) return null
+  let at = -1
+  for (let i = head + 1; i < lines.length && !/^##\s/.test(lines[i]!); i++) {
+    const m = QUESTION_ITEM.exec(lines[i]!)
+    if (m && m[2] === n) at = i
+  }
+  if (at < 0) return null
+  const indent = QUESTION_ITEM.exec(lines[at]!)![1]!
+  const sig = [a.by, a.day].filter(Boolean).join(' ')
+  const line = `${indent}  → A: ${a.text.replace(/\s*\n\s*/g, ' ').trim()}${sig ? ` · ${sig}` : ''}`
+  // The question's own lines: indented, not blank, not a list item or a heading.
+  let end = at + 1
+  while (end < lines.length && /^\s+\S/.test(lines[end]!) && !LIST_ITEM.test(lines[end]!)) {
+    if (parseAnswerLine(lines[end]!)) {
+      lines[end] = line
+      return lines.join(eol)
+    }
+    end++
+  }
+  lines.splice(end, 0, line)
+  return lines.join(eol)
+}
+
+/** A checkpoint signed off (team-view): `**Signed off:** @amila 2026-10-11` under its heading. */
+export type SignOff = { by: string | null; day: string }
+
+const SIGNED_OFF_LINE = /^\s*\*\*Signed off:?\*\*:?\s*(?:(@[\w.-]+)\s+)?(\d{4}-\d{2}-\d{2})\s*$/i
+const CHECKPOINT_HEADING = /^#{1,6}\s+(?:\*\*)?Checkpoint\b/i
+
+/** A `**Signed off:**` line, or null for another line. */
+export function parseSignedOffLine(line: string): SignOff | null {
+  const m = SIGNED_OFF_LINE.exec(line)
+  return m ? { by: m[1] ?? null, day: m[2]! } : null
+}
+
+/**
+ * `/progress signoff` (team-view): checkpoint `index` (counting the list's
+ * `## Checkpoint` headings from 0) signed off, in place of an earlier sign-off,
+ * and its review box ticked. Every other byte is kept. The text unchanged when
+ * there is no such checkpoint.
+ */
+export function signOff(text: string, index: number, s: SignOff): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  let inFence = false
+  let n = -1
+  let head = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(```|~~~)/.test(lines[i]!)) inFence = !inFence
+    if (!inFence && CHECKPOINT_HEADING.test(lines[i]!) && ++n === index) {
+      head = i
+      break
+    }
+  }
+  if (head < 0) return text
+  let end = head + 1
+  while (end < lines.length && !ANY_HEADING.test(lines[end]!)) end++
+  for (let i = head + 1; i < end; i++) {
+    const m = /^(\s*[-*+]\s+)\[ \](.*\breview\b.*)$/i.exec(lines[i]!)
+    if (m) {
+      lines[i] = `${m[1]}[x]${m[2]}`
+      break
+    }
+  }
+  const line = `**Signed off:** ${s.by ? `${s.by} ` : ''}${s.day}`
+  if (head + 1 < lines.length && parseSignedOffLine(lines[head + 1]!)) lines[head + 1] = line
+  else lines.splice(head + 1, 0, line)
+  return lines.join(eol)
+}
+
 /**
  * `/progress review T4 #42 @bob` (format-v2, F4): task `id` in review, with the
  * PR and reviewer given (each kept from before when not given), owner and
@@ -393,6 +492,8 @@ export const FORMAT_RULES = [
   '- A task may have `**Handoff:** YYYY-MM-DD @from → @to: note` lines under its Status line: read them before working on the task, and never remove them.',
   '- When tasks/team.md has `approvals: <roles>`, a spec is approved only once every listed role has signed in its front matter `approvals:` (`role @handle YYYY-MM-DD`, comma-separated); `status: approved` comes with the last signature. Record a signature only for the person who approved, by their own role, and never sign for anyone.',
   '- A task list may name the module of SPEC.md\'s capability map it builds: `module: <id>` in its front matter.',
+  '- An answered open question in tasks/plan.md has its answer on the line below it: `  → A: <answer> · @handle YYYY-MM-DD`. An answered question no longer blocks its task. Write an answer only when the person gives it (`/progress answer Q2 "…"`), in their name, and never answer for anyone.',
+  '- A checkpoint the person has reviewed has `**Signed off:** @handle YYYY-MM-DD` on the line below its heading, and its review box ticked (`/progress signoff`). Never sign off for anyone.',
 ].join('\n')
 
 // ------------------------------------------------------------------ the person's own changes

@@ -1471,3 +1471,28 @@ test('/progress modules <id> prints that module\'s run timeline, from its archiv
   expect(out).toMatch(/✓ T1 Lib +▬▬▬ done 25 Sep/)
   expect((await $.command.run(run('modules ui'))).text).toBe('ui has no plan yet (not started; needs api).')
 })
+
+// team-view T2: answer an open question, sign off the checkpoint that is due.
+const PLAN_MD = '# Plan\n\n## Open Questions\n\n- Q1 (T3): argon2 or bcrypt?\n- Q2 (T4): Upstash or self-hosted?\n'
+test('/progress answer writes your answer under the question; the question drops out of what needs you', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/plan.md`]: PLAN_MD, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('sara@example.com'))
+  expect((await $.command.run(run('answer Q2 "Upstash, with a fallback"'))).text).toBe('Q2 answered: "Upstash, with a fallback" · @sara 2026-10-09.')
+  expect(files[`${CWD}/tasks/plan.md`]).toBe(PLAN_MD.replace('self-hosted?\n', 'self-hosted?\n  → A: Upstash, with a fallback · @sara 2026-10-09\n'))
+  expect((await $.command.run(run('answer Q9 "x"'))).text).toBe('No Q9 under Open Questions in tasks/plan.md. Questions: Q1, Q2.')
+  expect((await $.command.run(run('answer'))).text).toBe('Say which question and the answer: /progress answer Q2 "Upstash".')
+  const digest = (await $.command.run(run('digest'))).text
+  expect(digest).toContain('Q1 (T3): argon2 or bcrypt?')
+  expect(digest).not.toContain('Q2 (T4)')
+})
+
+test('/progress signoff signs the checkpoint that is due; with none due it says why and writes nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  world(on, files, asPerson('amila@example.com'))
+  expect((await $.command.run(run('signoff'))).text).toBe('No checkpoint is due: "After Tasks 1-2" comes after T2, which is not done yet.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  files[`${CWD}/tasks/todo.md`] = TODO_T2_DONE
+  expect((await $.command.run(run('signoff'))).text).toBe('Checkpoint "After Tasks 1-2" signed off by @amila on 2026-10-09. Still open: All tests pass.')
+  expect(files[`${CWD}/tasks/todo.md`]).toContain('## Checkpoint: After Tasks 1-2\n**Signed off:** @amila 2026-10-09\n- [ ] All tests pass\n- [x] Review with human before proceeding\n')
+  expect((await $.command.run(run('signoff'))).text).toBe('No checkpoint is due: every checkpoint reached is signed off.')
+})

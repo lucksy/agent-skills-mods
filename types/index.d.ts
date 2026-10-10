@@ -2,7 +2,7 @@
 // (packages/core/parse.ts) and the forecast's (packages/core/forecast.ts).
 
 export type AsmBox = { text: string; isDone: boolean }
-export type AsmCheckpoint = { title: string; items: AsmBox[] }
+export type AsmCheckpoint = { title: string; items: AsmBox[]; /** Its Signed off line (team-view). */ signedOff?: { by: string | null; day: string } }
 export type AsmTask = {
   id: string
   title: string
@@ -36,7 +36,15 @@ export type AsmSpec = {
   /** Signatures by role (format-v2). */
   approvals?: { role: string; handle: string; day: string }[]
 }
-export type AsmPlan = { trackedIn: string | null; openQuestions: string[]; status?: 'draft' | 'approved'; created?: string; approvedOn?: string }
+export type AsmPlan = {
+  trackedIn: string | null
+  openQuestions: string[]
+  /** Questions with an answer under them (team-view). */
+  answered: { q: string | null; question: string; answer: { text: string; by: string | null; day: string | null } }[]
+  status?: 'draft' | 'approved'
+  created?: string
+  approvedOn?: string
+}
 export type AsmForecast =
   | { kind: 'done' }
   | { kind: 'not-enough'; reason: string }

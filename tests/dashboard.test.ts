@@ -330,3 +330,22 @@ describe('Board with a team (format-v2 T6)', () => {
     expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
   })
 })
+
+// team-view T2: an answered question leaves Needs you and shows as answered on the Overview.
+describe('Overview decisions (team-view T2)', () => {
+  test('answered questions show with the answer, who and when; open ones still need you', async () => {
+    const plan = '# Plan\n\n## Open Questions\n\n- Q1 (T3): argon2 or bcrypt?\n  → A: argon2id · @amila 2026-10-08\n- Q2 (T4): Upstash or <self-hosted>?\n'
+    const s = await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE, 'tasks/plan.md': plan }))
+    expect(s.needsYou).toEqual(['Q2 (T4): Upstash or <self-hosted>?'])
+    const html = section(dashboardHtml(s), 'overview')
+    expect(html).toMatch(/<h4>Answered <span class="n">1<\/span><\/h4>/)
+    expect(text(html)).toContain('Q1 (T3): argon2 or bcrypt? → argon2id · @amila 8 Oct')
+    expect(html).toContain('Upstash or &lt;self-hosted&gt;?')
+    expect(stateJson(s).plan!.answered).toEqual([{ q: 'Q1', question: 'Q1 (T3): argon2 or bcrypt?', answer: { text: 'argon2id', by: '@amila', day: '2026-10-08' } }])
+  })
+
+  test('with nothing answered the Overview has no Answered list', async () => {
+    const html = section(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE, 'tasks/plan.md': '# Plan\n\n## Open Questions\n\n- Q1: x?\n' }))), 'overview')
+    expect(html).not.toContain('Answered')
+  })
+})

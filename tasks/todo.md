@@ -31,18 +31,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 2: Answer questions and sign off checkpoints
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** Two new format lines and their actions. `answer` writes `  → A: <text> · @me <date>` under `Q<n>` in tasks/plan.md, and replaces an earlier answer if there is one. `signoff` writes `**Signed off:** @me <date>` under the heading of the checkpoint that is due, and ticks its review box. Both come with commands, `/progress answer Q2 "…"` and `/progress signoff`. The parser exposes answers and sign-offs, and `FORMAT_RULES` describes both lines.
 
 **Acceptance criteria:**
-- [ ] Both lines round-trip and keep every other byte. Older files without them parse as before.
-- [ ] `/progress answer` refuses an unknown question. `/progress signoff` refuses when no checkpoint is due.
-- [ ] Answered questions drop out of "what needs you" and show as answered on the Overview's decisions
+- [x] Both lines round-trip and keep every other byte. Older files without them parse as before.
+- [x] `/progress answer` refuses an unknown question. `/progress signoff` refuses when no checkpoint is due.
+- [x] Answered questions drop out of "what needs you" and show as answered on the Overview's decisions
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T1
 
