@@ -93,6 +93,8 @@ export function parseTasks(text: string): TaskList {
   }
   let inFence = false
   let boxKind: 'criteria' | 'verification' = 'criteria'
+  // The box the lines below may continue: a criterion wrapped onto indented lines.
+  let lastBox: Box | null = null
 
   const closeCheckpoint = (cp: Checkpoint) => {
     const last = tasks[tasks.length - 1]
@@ -103,6 +105,13 @@ export function parseTasks(text: string): TaskList {
   for (const line of lines) {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
     if (inFence) continue
+
+    // An indented line under a box, not a box or list item of its own, carries on its text.
+    if (lastBox && /^\s{2,}\S/.test(line) && !/^\s*([-*+]|\d+\.)\s/.test(line)) {
+      lastBox.text = `${lastBox.text} ${stripMd(line.trim())}`.trim()
+      continue
+    }
+    lastBox = null
 
     const h = HEADING.exec(line)
     if (h) {
@@ -153,6 +162,7 @@ export function parseTasks(text: string): TaskList {
     const box = BOX.exec(line)
     if (!box) continue
     const item: Box = { text: stripMd(box[2] ?? ''), isDone: box[1] === 'x' || box[1] === 'X' }
+    lastBox = item
 
     if (section.kind === 'task') {
       section.task.boxes.push(item)

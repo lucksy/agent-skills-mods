@@ -949,6 +949,17 @@ test('/progress format on a project under way dates its files and done tasks fro
   expect(files[`${CWD}/tasks/todo.md`]).toMatch(/done 2026-10-08/)
 })
 
+test('the plugin draws its own command replies styled: title, boxes with their glyph, fields', async ($, on) => {
+  world(on, {})
+  const row = (command: string, text: string) =>
+    $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'CommandOutput', props: { command, args: 'next', text, isErrored: false } as never })
+  const ours = await row('progress', 'Next: T4 CI pipeline  (Phase 0)\n  [x] Lint runs\n  [ ] Gate blocks merge\nProgress: 1/2 tasks done.')
+  expect(await ours.find({ text: /^Next  T4 CI pipeline  Phase 0$/ })).toBeDefined()
+  expect(await ours.find({ text: /^✓$/ })).toBeDefined()
+  expect(await ours.find({ text: /^Gate blocks merge$/ })).toBeDefined()
+  expect(await ours.find({ text: /^Progress  1\/2 tasks done\.$/ })).toBeDefined()
+})
+
 const readFm = (text: string) => /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? ''
 
 test('the charts tab: side by side when wide, colour swatch legends, phase bars and the pace', async ($, on) => {

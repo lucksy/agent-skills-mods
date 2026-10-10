@@ -6,6 +6,7 @@ import { archiveDir } from '../hooks/lib/archive'
 import { cycles, diagnose, doctorText } from '../hooks/lib/doctor'
 import { criticalPath, graphLines } from '../hooks/lib/graph'
 import { plain, shortItem, timeline } from '../hooks/lib/timeline'
+import { replyLines } from '../hooks/lib/reply'
 import { checkpointWarning, dueCheckpoint, gateWarning, isSourceFile } from '../hooks/lib/gate'
 import { editorArgvs, withStatus } from '../hooks/lib/specedit'
 import { burnupPixels, dateRow, drawsPixels, encodePng, flowPixels } from '../hooks/lib/pixels'
@@ -1074,5 +1075,48 @@ describe('what needs a decision', () => {
       const [first] = decisions({ spec: null, list: l, plan: null, snapshots: [], forecast: null } as never)
       expect(first).toMatch(/^checkpoint 1, after T2: /)
     }
+  })
+})
+
+describe('command replies, drawn styled', () => {
+  test('the reply text read back as a title, fields, boxes, marks, headings and code', async () => {
+    const lines = replyLines(
+      [
+        'Next: T4 CI pipeline and lint rules  (Phase 0 — Baseline)',
+        'Depends on: T3 (done)',
+        '  [x] GitHub Actions runs `pnpm lint`',
+        '  [ ] A red gate blocks merge',
+        'Progress: 48/92 tasks done.',
+        '',
+        '',
+        'tasks/todo.md',
+        '  ! T5 has no Verification boxes  (fixable)',
+        '  × T6 depends on itself',
+        'Run `/progress doctor fix` to apply the fixable ones.',
+        '',
+      ].join('\n'),
+    )
+    expect(lines.map(l => l.kind)).toEqual(['title', 'field', 'box', 'box', 'field', 'blank', 'heading', 'mark', 'mark', 'text'])
+    expect(lines[0]).toEqual({ kind: 'title', label: 'Next', text: [{ text: 'T4 CI pipeline and lint rules', isCode: false }], note: 'Phase 0 — Baseline' })
+    expect(lines[2]).toEqual({ kind: 'box', indent: 2, isDone: true, text: [{ text: 'GitHub Actions runs ', isCode: false }, { text: 'pnpm lint', isCode: true }] })
+    expect(lines[7]).toMatchObject({ kind: 'mark', level: 'warn', note: 'fixable' })
+    expect(lines[8]).toMatchObject({ kind: 'mark', level: 'error' })
+  })
+
+  test('a criterion wrapped onto indented lines in the file is one box', async () => {
+    const list = parseTasks(
+      [
+        '## Task 4: CI pipeline',
+        '**Acceptance criteria:**',
+        '- [x] GitHub Actions runs check:domain-deps, typecheck, lint, format:check,',
+        '      test:cov and build on every push.',
+        '- [ ] A red gate blocks merge',
+        '  - a list item under it stays apart',
+      ].join('\n'),
+    )
+    expect(list.tasks[0]?.boxes.map(b => b.text)).toEqual([
+      'GitHub Actions runs check:domain-deps, typecheck, lint, format:check, test:cov and build on every push.',
+      'A red gate blocks merge',
+    ])
   })
 })

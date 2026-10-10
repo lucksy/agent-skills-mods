@@ -59,6 +59,7 @@ import {
   timelineRows,
   type Stage,
 } from './lib/view'
+import { replyLines, type Inline, type ReplyLine } from './lib/reply'
 
 const NAME = 'agent-skills-mods'
 const project = atom({ plugin: 'agent-skills-mods', key: 'project' } as const, null as AsmProject | null)
@@ -805,6 +806,96 @@ async function stageLabel($: $): Promise<string | null> {
 
 const reply = (text: string) => ({ text })
 
+/** The commands whose replies are drawn styled (see `drawReply`). */
+const REPLY_COMMANDS = new Set(['progress', 'spec-view'])
+
+/** A reply as kinds of line (lib/reply.ts), drawn at the transcript's width. */
+function drawReply($: $, e: Parameters<$['ui']['resolve']>[0], lines: ReplyLine[]) {
+  const { Box, Text } = $.ui.resolve(e)
+  const words = (parts: Inline[], props: { bold?: boolean; dim?: boolean } = {}) =>
+    parts.map((x, i) =>
+      x.isCode ? (
+        <Text key={`w${i}`} color="claude">
+          {x.text}
+        </Text>
+      ) : (
+        <Text key={`w${i}`} bold={props.bold} dimColor={props.dim}>
+          {x.text}
+        </Text>
+      ),
+    )
+  // A glyph in its own column, so a wrapped line stays under the text, not the glyph.
+  const row = (key: string, indent: number, glyph: JSX.Element | null, body: JSX.Element) => (
+    <Box key={key} flexDirection="row" paddingLeft={Math.min(indent, 8)}>
+      {glyph && (
+        <Box width={2} flexShrink={0}>
+          {glyph}
+        </Box>
+      )}
+      <Box flexGrow={1} flexShrink={1}>
+        {body}
+      </Box>
+    </Box>
+  )
+  // Under the echo, as every command's row is: `  ⎿  ` then the reply.
+  return (
+    <Box flexDirection="row">
+      <Box width={5} flexShrink={0}>
+        <Text dimColor>{'  ⎿  '}</Text>
+      </Box>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+      {lines.map((l, i) => {
+        const k = `r${i}`
+        switch (l.kind) {
+          case 'blank':
+            return <Text key={k}> </Text>
+          case 'title':
+            return (
+              <Text key={k} wrap="wrap">
+                {l.label && <Text color="claude">{`${l.label}  `}</Text>}
+                {words(l.text, { bold: true })}
+                {l.note && <Text dimColor>{`  ${l.note}`}</Text>}
+              </Text>
+            )
+          case 'heading':
+            return (
+              <Text key={k} bold color="claude">
+                {l.text}
+              </Text>
+            )
+          case 'box':
+            return row(k, l.indent, <Text color={l.isDone ? 'success' : 'subtle'}>{l.isDone ? '✓' : '☐'}</Text>, <Text wrap="wrap" dimColor={l.isDone}>{words(l.text)}</Text>)
+          case 'mark':
+            return row(
+              k,
+              l.indent,
+              <Text color={l.level === 'error' ? 'error' : 'warning'}>{l.level === 'error' ? '×' : '!'}</Text>,
+              <Text wrap="wrap">
+                {words(l.text)}
+                {l.note && <Text dimColor>{`  ${l.note}`}</Text>}
+              </Text>,
+            )
+          case 'bullet':
+            return row(k, l.indent, <Text dimColor>·</Text>, <Text wrap="wrap">{words(l.text)}</Text>)
+          case 'field':
+            return row(
+              k,
+              l.indent,
+              null,
+              <Text wrap="wrap">
+                <Text dimColor>{`${l.label}  `}</Text>
+                {words(l.text)}
+              </Text>,
+            )
+          default:
+            return row(k, l.indent, null, <Text wrap="wrap">{words(l.text)}</Text>)
+        }
+      })}
+      </Box>
+    </Box>
+  )
+}
+
 export const register: Register = (on, options) => {
   keepFormat = options.progressFormat !== false
   notifyOn = options.notifications !== false
@@ -1053,6 +1144,19 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const s = await read($, stage)
     return s ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, s] } }) : next(e)
+  })
+
+  // ------------------------------------------------------------ command replies
+
+  // The plugin's replies are plain text, which is what the model reads. The row
+  // that shows them is drawn styled: a bold title, boxes with their glyph, marks
+  // in their colour, fields with a dim label, wrapped lines kept under their text.
+  on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
+    if (e.props.isErrored || !REPLY_COMMANDS.has(e.props.command)) return next(e)
+    // The row's text carries the plugin's name in front: `agent-skills-mods: Next: …`.
+    const lines = replyLines(e.props.text.replace(/^agent-skills-mods:\s*/, ''))
+    if (lines.length === 0) return next(e)
+    return drawReply($, e, lines)
   })
 
   // ----------------------------------------------------------- current task band (B2)
