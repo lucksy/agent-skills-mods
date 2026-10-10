@@ -1,6 +1,7 @@
 ---
-status: draft
+status: approved
 created: 2026-10-10
+approved: 2026-10-10
 ---
 # Spec: dashboard (project management dashboard, read-only)
 
