@@ -31,7 +31,7 @@ import {
 } from '../hooks/lib/history'
 import { historyFromLogs, logsDir, textAfter } from '../hooks/lib/logs'
 import { spinnerWord, stepOf } from '../hooks/lib/steps'
-import { digestText, headline, nowCounts, sparkline } from '../hooks/lib/report'
+import { decisions, digestText, headline, nowCounts, sparkline } from '../hooks/lib/report'
 import { burnupSvg, flowSvg } from '../hooks/lib/svg'
 import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../hooks/lib/chart'
 import { meterCells } from '../hooks/ui/meter'
@@ -997,7 +997,7 @@ describe('headline figures', () => {
     expect(figs.map(f => `${f.label}: ${f.value}${f.unit ? ` ${f.unit}` : ''} (${f.sub})`)).toEqual([
       'Done: 1 of 4 (25%)',
       'Forecast: — (needs 3 tasks done)',
-      'Scope change: +1 tasks (since 1 Oct)',
+      'Scope change: +1 task (since 1 Oct)',
       'Needs a decision: 0 (nothing waiting)',
     ])
     expect(nowCounts(list)).toEqual({ done: 1, doing: 1, blocked: 0, todo: 2 })
@@ -1063,5 +1063,16 @@ describe('a hand-kept index over task sections', () => {
     const done = parseTasks(TODO.replace('- [ ] Merge blocked on red', '- [x] Merge blocked on red').replace('- [~] T3', '- [x] T3'))
     const due = timeline({ spec: null, list: done, plan: null, forecast: null, dates: {}, today: '2026-10-10' }).rows.map(plain).find(r => r.includes('checkpoint 1'))
     expect(due?.trimEnd().endsWith('checkpoint 1   needs you: review with you')).toBe(true)
+  })
+})
+
+describe('what needs a decision', () => {
+  test('a reached checkpoint is named by number and task, with its open items in short, also from a copied list', async () => {
+    const list = parseTasks(TODO_T2_DONE)
+    const copy = JSON.parse(JSON.stringify(list))
+    for (const l of [list, copy]) {
+      const [first] = decisions({ spec: null, list: l, plan: null, snapshots: [], forecast: null } as never)
+      expect(first).toMatch(/^checkpoint 1, after T2: /)
+    }
   })
 })

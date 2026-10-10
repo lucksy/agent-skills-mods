@@ -76,7 +76,10 @@ const focus = atom({ plugin: 'agent-skills-mods', key: 'focus' } as const, null 
 const gateWarned = atom({ plugin: 'agent-skills-mods', key: 'gateWarned' } as const, false)
 /** Whether the checkpoint gate already raised its toast this turn. */
 const cpWarned = atom({ plugin: 'agent-skills-mods', key: 'cpWarned' } as const, false)
-/** The task opened on the board with a click, its boxes shown to tick. */
+/**
+ * The task opened on the board with a click, its boxes shown to tick. Null: the
+ * current task is open by default; '' when that was closed with a click.
+ */
 const expanded = atom({ plugin: 'agent-skills-mods', key: 'expanded' } as const, null as string | null)
 /** The spec area opened for reading in the spec pane (A1), by key. */
 const specSection = atom({ plugin: 'agent-skills-mods', key: 'specSection' } as const, null as string | null)
@@ -98,6 +101,9 @@ const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/](
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
 type $ = EngineInterface
+
+/** Text cut to a column width with an ellipsis, then padded to it. */
+const fitTo = (text: string, w: number) => (text.length > w ? `${text.slice(0, w - 1)}…` : text.padEnd(w))
 
 async function readText($: $, path: string): Promise<string | null> {
   try {
@@ -1297,8 +1303,10 @@ async function showTab($: $, t: Tab) {
 
 async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const open = await read($, expanded)
+    const picked = await read($, expanded)
     const list = p?.list
+    // The current task is open by default, so its boxes can be ticked with a click.
+    const open = picked === null ? (list?.current?.id ?? null) : picked || null
     if (!list || list.total === 0) {
       return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
     }
@@ -1354,7 +1362,7 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
             <Box key={row.id} flexDirection="column">
               {/* The current task's row is shaded (mockups 7, 9) with the theme's own dimmed diff tint, so it reads in light and dark. */}
               <Box flexDirection="row" justifyContent="space-between" gap={1} backgroundColor={row.isCurrent ? 'diffAddedDimmed' : undefined}>
-                <Button key={`task-${row.id}`} label={`${row.glyph} ${row.id} ${row.title}`} plain onPress={() => void update($, expanded, x => (x === row.id ? null : row.id))}>
+                <Button key={`task-${row.id}`} label={`${row.glyph} ${row.id} ${row.title}`} plain onPress={() => void update($, expanded, () => (open === row.id ? '' : row.id))}>
                   <Text inverse={row.id === focused} bold={row.isCurrent}>
                     <Text color={color[row.tone]}>{row.glyph}</Text> <Text bold={row.isCurrent}>{row.id}</Text>{' '}
                     <Text dimColor={row.tone === 'muted' && !row.isCurrent}>{row.title}</Text>
@@ -1570,7 +1578,7 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
           <Text bold>Days per task</Text>
           {perTask.map(x => (
             <Text key={`d-${x.id}`} wrap="truncate-end">
-              {`${x.id} ${x.title}`.slice(0, nameW).padEnd(nameW)}{' '}
+              {fitTo(`${x.id} ${x.title}`, nameW)}{' '}
               <Text color={x.isRunning ? 'warning' : 'success'}>{'█'.repeat(Math.max(1, Math.round((x.days / maxDays) * Math.max(6, Math.min(30, body - nameW - 14)))))}</Text>
               <Text dimColor>
                 {' '}

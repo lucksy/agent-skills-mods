@@ -4,6 +4,7 @@
 import { daily } from './chart'
 import { shortDay, type Forecast, type Snapshot } from './forecast'
 import type { PlanDoc, Spec, TaskList } from './parse'
+import { shortItem } from './timeline'
 import { forecastText, specApproval } from './view'
 
 export type ProgressInput = {
@@ -39,7 +40,14 @@ export function decisions(p: ProgressInput): string[] {
   const out: string[] = []
   for (const t of p.list?.tasks ?? []) {
     const cp = t.checkpoint
-    if (cp && t.status === 'done' && !(cp.items.length > 0 && cp.items.every(b => b.isDone))) out.push(`checkpoint ${cp.title}`)
+    if (cp && t.status === 'done' && !(cp.items.length > 0 && cp.items.every(b => b.isDone))) {
+      // Numbered as on the timeline, with what is open in a few words: its heading is often "After Tasks 1-3".
+      // By position: the list may be a copy, so the checkpoint is not the same object as in list.checkpoints.
+      const tasks = p.list?.tasks ?? []
+      const n = tasks.slice(0, tasks.indexOf(t) + 1).filter(x => x.checkpoint).length
+      const open = cp.items.filter(b => !b.isDone).map(b => shortItem(b.text)).filter((x): x is string => !!x)
+      out.push(`checkpoint ${n}, after ${t.id}${open.length ? `: ${open.join(' · ')}` : ''}`)
+    }
   }
   for (const q of p.plan?.openQuestions ?? []) out.push(q)
   if (p.spec && specApproval(p.spec, !!p.list) !== 'approved') {
@@ -238,7 +246,7 @@ export function headline(p: ProgressInput): Figure[] {
     fc?.kind === 'range'
       ? { label: 'Forecast', value: `≈ ${shortDay(fc.median)}`, sub: `range ${shortDay(fc.optimistic)}–${shortDay(fc.slow)}` }
       : { label: 'Forecast', value: fc?.kind === 'done' ? 'done' : '—', sub: fc?.kind === 'not-enough' ? 'needs 3 tasks done' : fc?.kind === 'done' ? 'all tasks done' : 'no history yet' },
-    { label: 'Scope change', value: `${added > 0 ? '+' : ''}${added}`, unit: 'tasks', sub: first ? `since ${shortDay(first.day)}` : 'since today' },
+    { label: 'Scope change', value: `${added > 0 ? '+' : ''}${added}`, unit: Math.abs(added) === 1 ? 'task' : 'tasks', sub: first ? `since ${shortDay(first.day)}` : 'since today' },
     { label: 'Needs a decision', value: String(needs.length), sub: needs[0] ?? 'nothing waiting' },
   ]
 }

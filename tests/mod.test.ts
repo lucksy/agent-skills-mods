@@ -345,7 +345,8 @@ test('with planSpinner on, the spinner says the step and task; a failed test run
 
   const board = await mountBoard($)
   expect(await board.find({ text: /^× T2 Prisma schema for keys$/ })).toBeDefined()
-  expect(await board.find({ text: /^tests failed$/ })).toBeDefined()
+  // The current task is open, so its right column carries the ▾ marker.
+  expect(await board.find({ text: /^▾ tests failed$/ })).toBeDefined()
   await $.tool.call({ tool: 'Bash', command: 'pnpm test keys' } as never)
   expect(await board.find({ text: /× T2/ })).toBeUndefined()
 
@@ -1157,12 +1158,12 @@ test('the band warns, one line each, when a task runs long or scope grows', asyn
   expect(await band.find({ text: /^! scope grew from 3 to 4 tasks \(\+33%\) since 29 Sep$/ })).toBeDefined()
 })
 
-test('the board: click a task to open its boxes, tick one there, click again to close', async ($, on) => {
+test('the board: the current task is open, its boxes tick with a click; another task opens and closes', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   const seen = world(on, files)
   await $.command.run(run(''))
   const board = await mountBoard($)
-  await board.press({ key: 'task-T2' })
+  // T2 is the current task: open without a click.
   expect(await board.find({ text: /^☑ Key table with hashed secret$/ })).toBeDefined()
   expect(await board.find({ type: 'Button', key: 'box-T2-1' })).toBeDefined()
   await board.press({ key: 'box-T2-1' })
@@ -1170,10 +1171,15 @@ test('the board: click a task to open its boxes, tick one there, click again to 
   await board.press({ key: 'box-T2-2' })
   expect(seen.toasts.at(-1)).toMatch(/^♦ Checkpoint reached: After Tasks 1-2/)
   expect(files[`${CWD}/tasks/todo.md`]).toMatch(/## Task 2: Prisma schema for keys\n\*\*Status:\*\* done/)
-  // Opening another task closes the first; pressing it again closes it.
-  await board.press({ key: 'task-T3' })
+  // T3 is current now and open; a click closes it, another opens it again.
   expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeDefined()
   await board.press({ key: 'task-T3' })
+  expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeUndefined()
+  await board.press({ key: 'task-T3' })
+  expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeDefined()
+  // Opening another task closes the current one.
+  await board.press({ key: 'task-T4' })
+  expect(await board.find({ type: 'Button', key: 'box-T4-0' })).toBeDefined()
   expect(await board.find({ type: 'Button', key: 'box-T3-0' })).toBeUndefined()
 })
 
