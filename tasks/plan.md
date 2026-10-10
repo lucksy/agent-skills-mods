@@ -89,10 +89,10 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] This repo's own modules show: core and dashboard done, format-v2 under way
 
 ### Phase 5: Finish
-- [ ] Task 13: Format docs and rules, README, version 0.38.0, final checks
+- [x] Task 13: Format docs and rules, README, version 0.38.0, final checks
 
 ### Checkpoint: Complete
-- [ ] Every success criterion in SPEC-format-v2.md met; released
+- [x] Every success criterion in SPEC-format-v2.md met; released
 
 ## Risks and Mitigations
 

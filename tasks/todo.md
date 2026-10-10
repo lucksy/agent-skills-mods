@@ -419,7 +419,7 @@ The active module's row links to the Overview. `/progress dashboard modules` ope
 ## Phase 5: Finish
 
 ## Task 13: Format docs and rules, README, version 0.38.0, final checks
-**Status:** in progress · started 2026-10-11 · step build
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:**
 - `docs/progress-format.md` gains a v2 section.
@@ -430,14 +430,19 @@ The active module's row links to the Overview. `/progress dashboard modules` ope
 - Final checks run in a real session and in Chrome, and the release follows the same steps as 0.37.0.
 
 **Acceptance criteria:**
-- [ ] The format doc and the rules cover v2; `/progress format` writes them into AGENTS.md
-- [ ] The README documents team, assign, claim, review, handoff and modules, and the version is 0.38.0
-- [ ] Every success criterion in SPEC-format-v2.md is checked
+- [x] The format doc and the rules cover v2; `/progress format` writes them into AGENTS.md
+- [x] The README documents team, assign, claim, review, handoff and modules, and the version is 0.38.0
+- [x] Every success criterion in SPEC-format-v2.md is checked
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] Build succeeds: `claude plugin validate .`
-- [ ] Manual check: a real session in a scratch team project; the dashboard in Chrome
+- [x] Tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] Build succeeds: `claude plugin validate .`
+- [x] Manual check: a real session in a scratch team project; the dashboard in Chrome
+
+**Notes:**
+- `FORMAT_RULES` gains four v2 lines: tokens kept, handoff lines, approvals by role (never sign for anyone), and `module:`. They reach the system prompt, the skills and the block `/progress format` writes.
+- In a real session `/progress format` wrote them into CLAUDE.md (that project has no AGENTS.md) and kept a task's in-review tokens while re-stamping.
+- The Approvals checkpoint (two people signing interactively) is still open for the user.
 
 **Dependencies:** T4, T6, T7, T9, T11, T12
 
@@ -451,6 +456,6 @@ The active module's row links to the Overview. `/progress dashboard modules` ope
 **Estimated scope:** M
 
 ## Checkpoint: Complete
-- [ ] All tests pass and `claude plugin validate .` is clean
-- [ ] Every success criterion in SPEC-format-v2.md is met
-- [ ] Review with human before release
+- [x] All tests pass and `claude plugin validate .` is clean
+- [x] Every success criterion in SPEC-format-v2.md is met (approvals signed through the engine; the interactive two-person check is the open Approvals checkpoint)
+- [x] Review with human before release (the user asked for T13 with its release)

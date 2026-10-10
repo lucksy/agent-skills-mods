@@ -389,6 +389,10 @@ export const FORMAT_RULES = [
   '- Task numbers are stable ids (T<N>): never renumber; new tasks take the next free number. Write dependencies as `**Dependencies:** T1, T2` (or None).',
   '- Open questions in tasks/plan.md are numbered and name the tasks they block: `- Q2 (T6): Upstash Redis or self-hosted for the sliding window?`.',
   '- When you start a task, set it to in progress with today as started; when you tick its last box, set it to done with today\'s date. The plugin also updates Status lines itself (from your edits, test runs and commits), so re-read tasks/todo.md before editing it.',
+  '- Teams (v2): a Status line may also carry an owner and, for a task in review, its PR and reviewer: `**Status:** in review · @sara · started YYYY-MM-DD · PR #42 · reviewer @bob`. Keep every token when you rewrite the line. Who owns or reviews a task is set by people (`/progress assign`, `claim`, `review`, `handoff`); change it only when asked.',
+  '- A task may have `**Handoff:** YYYY-MM-DD @from → @to: note` lines under its Status line: read them before working on the task, and never remove them.',
+  '- When tasks/team.md has `approvals: <roles>`, a spec is approved only once every listed role has signed in its front matter `approvals:` (`role @handle YYYY-MM-DD`, comma-separated); `status: approved` comes with the last signature. Record a signature only for the person who approved, by their own role, and never sign for anyone.',
+  '- A task list may name the module of SPEC.md\'s capability map it builds: `module: <id>` in its front matter.',
 ].join('\n')
 
 // ------------------------------------------------------------------ the person's own changes

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { addHandoff, parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
+import { FORMAT_RULES, addHandoff, parseStatusLine, setOwner, setReview, stampTodo, statusLine, taskStates, tickTask } from '../packages/core/format'
 import { nowCounts } from '../packages/core/report'
 import { parseTasks } from '../packages/core/parse'
 import { bandText, boardRows, progressBrief, taskDetail, timelineRows } from '../packages/core/view'
@@ -166,5 +166,16 @@ describe('handoffs (T7)', () => {
     expect(html).toMatch(/data-task="T2"[\s\S]*?<p class="c-note">↪ @sara → @bob: migration done, tests left<\/p>/)
     const brief = progressBrief({ spec: null, specFile: null, list, listFile: 'tasks/todo.md', plan: null, forecast: null })!
     expect(brief).toContain('- handoff to @bob on 2026-10-09 from @sara: migration done, tests left')
+  })
+})
+
+describe('the rules Claude is told, v2 (T13)', () => {
+  test('owners, in review, handoffs, approvals by role and module: are in the rules', () => {
+    expect(FORMAT_RULES).toContain('in review · @sara · started YYYY-MM-DD · PR #42 · reviewer @bob')
+    expect(FORMAT_RULES).toMatch(/keep every token/i)
+    expect(FORMAT_RULES).toContain('**Handoff:** YYYY-MM-DD @from → @to: note')
+    expect(FORMAT_RULES).toMatch(/approvals:.*role @handle YYYY-MM-DD/)
+    expect(FORMAT_RULES).toMatch(/never sign for anyone/i)
+    expect(FORMAT_RULES).toContain('module: <id>')
   })
 })

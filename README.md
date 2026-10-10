@@ -55,6 +55,12 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Digest** | Four lines for Slack, copied to the clipboard: progress and the current task, the ETA, this week's sparkline with tasks done and added, and what needs a decision (checkpoints reached, open questions, a spec waiting for approval). | `/progress digest` |
 | `/progress standup` | Done since the last working day, today's task with its step and boxes left, what is blocked and why, what needs a decision, and progress with the ETA. Copied to the clipboard. |
 | **Dashboard** | One page in five tabs, for managers, leads, designers and anyone without Claude Code. **Overview:** health (on track, or at risk with each reason), the four headline figures with how far the ETA moved this week, tasks by state, what needs you, and the task under way. **Board:** to do, waiting, in progress, blocked and done, a card per task (its open boxes, days running, what it waits on or the question blocking it), checkpoints after their task, filters for phase and state and lanes by phase. **Roadmap:** the run timeline, the dependency tree and the critical path. **Flow:** burn-up with the forecast cone, cumulative flow, cycle time, aging work in progress and ETA drift, drawn by [Nivo](https://nivo.rocks) with tooltips in words. **Spec:** every spec file with its approval, six areas, boundaries, open questions and success criteria. Tabs and filters live in the address (`#board?state=blocked`), so a view can be linked to. It is one file that makes no outside requests (a Content-Security-Policy forbids them); without JavaScript every view still shows, stacked, and each chart its one-line summary. Light and dark; works on a phone. | `/progress dashboard [view]` writes `tasks/progress-dashboard.html` and opens it |
+| **A team** | `tasks/team.md` lists each person's handle, role and git email; the plugin knows you by `git config user.email`. Roles are shown, never enforced. `/progress team init` drafts the file from the git authors, and `/progress team` shows who is on it, what a spec needs and who you are. | `/progress team [init]` |
+| **Owners** | Anyone can assign a task (`/progress assign T4 @sara`, `claim T4`, `unassign T4`), and work you start on an unowned task claims it for you. The owner shows on the band, the board, the timeline, `/progress task`, the dashboard (with a person filter) and the CLI. | Status line: `in progress · @sara · …` |
+| **In review** | `/progress review T4 #42 @bob` puts a task in review with its PR and reviewer: an In review column on the dashboard's Board, `review #42 @bob` on the board pane, and the timeline. Ticking its last box still makes it done. | Status line: `in review · @sara · PR #42 · reviewer @bob` |
+| **Handoffs** | `/progress handoff T4 @bob "migration done, tests left"` gives the task to Bob and leaves a dated note under it. The note shows in `/progress task` and on the dashboard card, and the next person's agent reads it with the current task. | `**Handoff:** 2026-10-10 @sara → @bob: …` |
+| **Approvals by role** | With `approvals: product, design, eng` in `tasks/team.md`, the spec pane's `a` signs for your roles, with your name and the date, and the spec counts as approved only on the last signature. The pane and the dashboard's Spec tab show `2/3 approved · waiting on @sara (design)`. | Spec front matter: `approvals: design @sara 2026-10-09, …` |
+| **Modules** | Every module of `SPEC.md`'s capability map at a glance: its spec, its plans (archived ones included, so a finished module stays visible), progress and dates. `/progress modules <id>` prints one module's run timeline, from its archive if it is done. | `/progress modules [id]`, the dashboard's Modules tab |
 | **HTML report** | One self-contained page for people without Claude Code: done, ETA, pace and added scope as headline figures, a bar of tasks by state, both charts, days per task, and what needs a decision. No scripts and no external requests, so it opens offline and can be attached to an email. Light and dark. | `/progress report` writes `tasks/progress-report.html` and opens it in your default browser |
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
 | **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess, laid out as cards in a text block: a header naming its source (`Checkpoint 1 · 1 task left    from tasks/todo.md`), the task with its glyph and open boxes, a blocked task's dependency chain (`T6 ← T5 ← T4`) and the open question, then one sentence on what you can do. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
@@ -78,7 +84,12 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress charts` | Opens the plan pane on the charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
-| `/progress dashboard [view]` | Writes `tasks/progress-dashboard.html` and opens it, on `overview`, `board`, `roadmap`, `flow` or `spec`. Uses the plugin's own history, so its ETA matches the board |
+| `/progress dashboard [view]` | Writes `tasks/progress-dashboard.html` and opens it, on `overview`, `board`, `roadmap`, `flow`, `spec` or `modules`. Uses the plugin's own history, so its ETA matches the board |
+| `/progress team` · `team init [force]` | The team and who you are · a first `tasks/team.md` from the git authors |
+| `/progress assign T4 @sara` · `assign T4 me` · `claim T4` · `unassign T4` | Sets or clears a task's owner |
+| `/progress review T4 #42 @bob` | Puts a task in review, with its PR and reviewer (both optional) |
+| `/progress handoff T4 @bob "note"` | Gives a task to someone else, with a dated note |
+| `/progress modules [id]` | Every module of the capability map, or one module's run timeline |
 | `/progress format` | Applies the progress format to the files here and writes its rules into `AGENTS.md` or `CLAUDE.md` |
 | `/progress history` | Lists the history sources and what each added |
 | `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
@@ -179,6 +190,7 @@ node scripts/agent-skills-progress.mjs --brief        # one line: ✓spec ✓pla
 node scripts/agent-skills-progress.mjs --timeline     # the run timeline, as the plan pane draws it
 node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools (State v1)
 node scripts/agent-skills-progress.mjs --dashboard    # the dashboard page, to tasks/progress-dashboard.html (or --dashboard out.html)
+node scripts/agent-skills-progress.mjs --modules      # every module of the capability map (--modules <id>: one module's timeline)
 node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
 ```
 
@@ -192,7 +204,7 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 247 tests: parser, guard, forecast, state, the dashboard's views, and the mod on terminal and desktop
+claude plugin test .         # 310 tests: parser, guard, forecast, state, team and approvals, modules, the dashboard's views, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
@@ -223,6 +235,10 @@ packages/core/cli.ts       the summary agent-skills-progress prints
 packages/core/timeline.ts  the run timeline as rows of coloured segments
 packages/core/state.ts     State v1: what every surface reads, and the --json contract
 packages/core/health.ts    on track, or at risk with each reason
+packages/core/team.ts      tasks/team.md, and who you are from a git email
+packages/core/approvals.ts approvals by role: sign, status, who a spec waits on
+packages/core/modules.ts   the capability map's modules with their specs and plans
+packages/core/module-timeline.ts  one module's run timeline, from its archive
 packages/core/dashboard/   the dashboard page: shell and tabs, one module per view, the generated chart bundle
 packages/charts/           the chart bundle's source (React + Nivo, dev dependencies only) and its build
 hooks/ui/                  surface modules: the tabs, the animated bar, the turning task marker
@@ -237,7 +253,7 @@ History for the ETA is one snapshot per day, stored per project in the plugin's 
 
 The user stories, mockups and chart designs live in the proposal; every story in it is now built except the upstream one below.
 
-The next modules are mapped in [SPEC.md](SPEC.md): team fields in the progress format, a board across branches, Agile ceremonies, a team site, and a VS Code extension.
+The next modules are mapped in [SPEC.md](SPEC.md) (`/progress modules` shows where each stands): a board across branches, Agile ceremonies, a team site, and a VS Code extension. Teams (format-v2) shipped in 0.38.0; its format is in [docs/progress-format.md](docs/progress-format.md).
 
 Upstream, the plan is to propose the progress format to agent-skills (issue text and eval cases in [docs/upstream/](docs/upstream/)), so any tool, not only this plugin, can read progress reliably.
 

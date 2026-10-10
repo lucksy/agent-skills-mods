@@ -154,13 +154,13 @@ export function assignTask(todo: string, id: string, owner: string | null): { te
 
 ## Success Criteria
 
-- [ ] `tasks/team.md` parses; `/progress team` shows the team and who you are; `/progress team init` drafts it from git authors and never overwrites without asking.
-- [ ] `assign`, `claim`, `unassign`, `review` and `handoff` write exactly their line. Owners show on the board pane, the timeline, the band, the Board tab (with a person filter and an In review column) and in `--json`.
-- [ ] Starting an unowned task in a session claims it for you when `team.md` knows you; without `team.md`, nothing changes.
-- [ ] With `approvals:` set, `a` in the spec pane signs for your roles, and the spec flips to `status: approved` with the date only when every role has signed. The pane and the Spec tab show who signed and who it still waits on. Without `approvals:`, approval works exactly as before.
-- [ ] `/progress modules`, `--modules` and the Modules tab show one row per module in the capability map, with spec approval, done/total and dates, including archived plans. `/progress modules <id>` prints an archived module's run timeline.
-- [ ] `docs/progress-format.md` documents v2; the rules Claude is told include the new tokens; `/progress format` writes them into AGENTS.md.
-- [ ] All tests pass; the README documents the commands; checked in a real session and in Chrome.
+- [x] `tasks/team.md` parses; `/progress team` shows the team and who you are; `/progress team init` drafts it from git authors and never overwrites without asking.
+- [x] `assign`, `claim`, `unassign`, `review` and `handoff` write exactly their line. Owners show on the board pane, the timeline, the band, the Board tab (with a person filter and an In review column) and in `--json`.
+- [x] Starting an unowned task in a session claims it for you when `team.md` knows you; without `team.md`, nothing changes.
+- [x] With `approvals:` set, `a` in the spec pane signs for your roles, and the spec flips to `status: approved` with the date only when every role has signed. The pane and the Spec tab show who signed and who it still waits on. Without `approvals:`, approval works exactly as before. (Verified by pressing the pane's button through the test engine; a real signing by two people needs an interactive session, and is the Approvals checkpoint.)
+- [x] `/progress modules`, `--modules` and the Modules tab show one row per module in the capability map, with spec approval, done/total and dates, including archived plans. `/progress modules <id>` prints an archived module's run timeline.
+- [x] `docs/progress-format.md` documents v2; the rules Claude is told include the new tokens; `/progress format` writes them into AGENTS.md (or CLAUDE.md when there is no AGENTS.md; checked in a real session).
+- [x] All tests pass; the README documents the commands; checked in a real session and in Chrome.
 
 ## Open Questions
 
