@@ -125,10 +125,13 @@ export function sinceChanges(before: Seen, after: Seen, me: string | null): Sinc
     if (!was || was.title !== t.title) continue
     if (t.state === 'done' && was.state !== 'done' && notMe(t.owner)) out.push({ kind: 'done', text: `${id} done${by(t.owner)}` })
     if (t.owner && handle(t.owner) !== handle(was.owner)) {
-      const how = (to: string) => (t.handoffs > was.handoffs ? `${id} handed to ${to}${by(t.from)}` : `${id} assigned to ${to}`)
+      const handed = t.handoffs > was.handoffs
+      const how = (to: string) => (handed ? `${id} handed to ${to}${by(t.from)}` : `${id} assigned to ${to}`)
       // Yours and already under way or done: you took it yourself, so it is not news.
+      // A handoff keeps the state, so work under way handed to you by someone else is.
       const yours = !!you && handle(t.owner) === you
-      if (yours && (t.state === 'todo' || t.state === 'blocked')) out.push({ kind: 'you', text: how('you') })
+      const news = handed ? t.state !== 'done' && notMe(t.from) : t.state === 'todo' || t.state === 'blocked'
+      if (yours && news) out.push({ kind: 'you', text: how('you') })
       else if (!you) out.push({ kind: 'owner', text: how(t.owner) })
     }
   }

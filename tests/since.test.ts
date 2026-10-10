@@ -41,6 +41,9 @@ describe('each kind of change, with who made it', () => {
     expect(texts(assigned, null)).toEqual(['T3 assigned to @amila'])
     const handed = parts({ todo: TODO.replace('**Status:** todo · @sara\n', '**Status:** todo · @amila\n**Handoff:** 2026-10-10 @sara → @amila: schema drafted, review the indexes\n') })
     expect(texts(handed)).toEqual(['T2 handed to you by @sara'])
+    // A handoff keeps the task's state: work under way handed to you is news too.
+    const underWay = parts({ todo: TODO.replace('**Status:** in progress · @bob · started 2026-10-08\n', '**Status:** in progress · @amila · started 2026-10-08\n**Handoff:** 2026-10-10 @bob → @amila: migration done, tests left\n') })
+    expect(texts(underWay)).toEqual(['T1 handed to you by @bob'])
   })
 
   test('a question answered names who answered it', () => {
