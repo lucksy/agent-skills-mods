@@ -1,6 +1,8 @@
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+import { parsePlan, parseTasks } from '../packages/core/parse'
+import { parseSeen, seenOf, seenText } from '../packages/core/since'
 import { SPEC, GOOD_SPEC, TODO_TEMPLATE, TODO_T2_DONE, TODO_CP_DONE, TODO_T3_DONE, TODO_NONE_DONE, PLAN_INDEX, WEAK_SPEC, gitOutput, decodeCells } from './fixtures'
 
 const CWD = '/p'
@@ -18,7 +20,7 @@ function world(
   stored: Record<string, unknown> = {},
   surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
 ) {
-  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[] }
+  const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], logs: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[] }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
     return { value: { isCopied: true } }
@@ -83,6 +85,10 @@ function world(
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.log', (_$, e) => {
+    seen.logs.push(e.text)
     return { value: undefined }
   })
   on('ui.open', (_$, e) => {
@@ -1669,4 +1675,62 @@ test('done on another branch is no collision: the band stays quiet', async ($, o
   expect((await $.command.run(run('start T2'))).text).not.toContain('is also')
   const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never })
   expect(await band.find({ text: /is also/ })).toBeUndefined()
+})
+
+// team-view T9 (V4): since you last looked.
+const SEEN_JSON = `${CWD}/.git/agent-skills/seen.json`
+const sinceGit = (email: string) => ({ log: '', cat: '', answer: (argv: string[]) => (argv[1] === 'rev-parse' && argv.includes('--git-dir') ? '.git\n' : argv[1] === 'config' ? `${email}\n` : '') })
+const submit = ($: Parameters<TestBody>[0], text: string) => $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } } as never)
+
+test('since you last looked: once a session, one line naming who did what; /progress since lists it all', async ($, on) => {
+  const files: Record<string, string> = {
+    [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE
+      .replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · @amila · started 2026-10-07 · done 2026-10-08\n')
+      .replace('## Task 3: Issue and revoke keys\n', '## Task 3: Issue and revoke keys\n**Status:** todo · @sara\n'),
+    [`${CWD}/tasks/plan.md`]: PLAN_MD.replace('self-hosted?\n', 'self-hosted?\n  → A: Upstash · @amila 2026-10-08\n'),
+    [`${CWD}/tasks/team.md`]: TEAM_MD,
+    // The last look, two days ago.
+    [SEEN_JSON]: seenText(seenOf({ list: parseTasks(TODO_TEMPLATE), specs: [], plan: parsePlan(PLAN_MD), collisions: [] }, Date.parse('2026-10-07T17:00:00Z'))),
+  }
+  const seen = world(on, files, sinceGit('sara@example.com'))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await submit($, 'what next?')
+  expect(seen.logs).toEqual(['Since you last looked (2026-10-07): T3 assigned to you · Q2 answered by @amila · T2 done by @amila'])
+  // seen.json now holds what you saw.
+  expect(parseSeen(files[SEEN_JSON]!)?.tasks.T3?.owner).toBe('@sara')
+  await submit($, 'and then?')
+  expect(seen.logs).toHaveLength(1)
+  expect((await $.command.run(run('since'))).text).toBe('Since you last looked (2026-10-07), 3 changes:\n- T3 assigned to you\n- Q2 answered by @amila\n- T2 done by @amila')
+})
+
+test('the very first look says nothing and stores the snapshot; what you then see happen is not news later', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files, sinceGit('sara@example.com'))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await submit($, 'hello')
+  expect(seen.logs).toEqual([])
+  expect(parseSeen(files[SEEN_JSON]!)?.day).toBe('2026-10-09')
+  // The session's own work, kept in seen.json after the turn.
+  files[`${CWD}/tasks/todo.md`] = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · started 2026-10-09 · done 2026-10-09\n')
+  await $.turn.complete({ answer: 'done' } as never)
+  expect(parseSeen(files[SEEN_JSON]!)?.tasks.T2?.state).toBe('done')
+  expect((await $.command.run(run('since'))).text).toBe('Nothing changed since you last looked (2026-10-09).')
+})
+
+test('a corrupt seen.json is a first look: no line, no crash, and a good file in its place', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [SEEN_JSON]: '{"schema":1,"at":17' }
+  const seen = world(on, files, sinceGit('sara@example.com'))
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  await submit($, 'hello')
+  expect(seen.logs).toEqual([])
+  expect(parseSeen(files[SEEN_JSON]!)).not.toBeNull()
+})
+
+test('/progress since outside a git repository says why, and the first prompt stays quiet', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const seen = world(on, files)
+  await submit($, 'hello')
+  expect(seen.logs).toEqual([])
+  expect((await $.command.run(run('since'))).text).toBe('Not a git repository: "since you last looked" keeps its snapshot in the git folder.')
+  expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`])
 })

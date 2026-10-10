@@ -224,6 +224,17 @@ if (cls.has('allb') || ctl['board-owner'].value !== 'amila') fail('this branch d
 console.log('both kept')
 JS
 if out=$(node "$tmp/board-script.js" "$tmp/across.html" 2>&1); then echo "ok   dashboard-branches-script ($out)"; else echo "FAIL dashboard-branches-script: $out"; fail=1; fi
+# Since you last looked (team-view T9): the first look stores a snapshot quietly in the git folder, the next lists what changed with who did it.
+check since-first 'First look here: nothing to compare with yet' node "$script" "$repo" --since
+if [[ -f $repo/.git/agent-skills/seen.json ]] && grep -q '"schema": 1' "$repo/.git/agent-skills/seen.json"; then echo "ok   since-stored-in-git-dir"; else echo "FAIL since-stored-in-git-dir"; fail=1; fi
+printf -- '## Task 1: Scaffold\n**Status:** done · started 2026-10-01 · done 2026-10-02\n- [x] builds\n\n## Task 2: Rate limit\n**Status:** done · @amila · started 2026-10-10 · done 2026-10-11\n- [x] 429\n' > "$repo/tasks/todo.md"
+check since-json '"text": "T2 done by @amila"' node "$script" "$repo" --json
+check since-lists '), 1 change:'$'\n''- T2 done by @amila' node "$script" "$repo" --since
+check since-nothing 'Nothing changed since you last looked' node "$script" "$repo" --since
+echo '{"schema":1,"at":' > "$repo/.git/agent-skills/seen.json"
+check since-corrupt 'First look here' node "$script" "$repo" --since
+check since-no-repo 'Not a git repository' node "$script" "$tmp/build" --since
+if [[ -z $(git -C "$repo" status --porcelain -- .git) && $(git -C "$repo" ls-files) != *seen.json* ]]; then echo "ok   since-never-committed"; else echo "FAIL since-never-committed"; fail=1; fi
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

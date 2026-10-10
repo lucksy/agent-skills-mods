@@ -218,18 +218,18 @@ created: 2026-10-11
 ## Phase 4: Since you last looked
 
 ## Task 9: Since you last looked
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `packages/core/since.ts` compares a stored snapshot with now. The snapshot holds task states and owners, spec statuses, answers and collisions. The comparison lists what changed, each item with who did it: done, assigned or handed to you, answered, spec back to draft, a new collision. The snapshot lives in `<git dir>/agent-skills/seen.json`. The plugin shows the list once per session, on the first prompt (at most 6 items, then "and N more"), and updates the snapshot. `/progress since` and `--since` show the full list.
 
 **Acceptance criteria:**
-- [ ] Each kind of change is tested. Nothing changed shows nothing. The first run, with no snapshot, shows nothing and stores one.
-- [ ] The plugin shows it once per session, not on later prompts
-- [ ] The plugin and the CLI read and write the same `seen.json`
+- [x] Each kind of change is tested. Nothing changed shows nothing. The first run, with no snapshot, shows nothing and stores one.
+- [x] The plugin shows it once per session, not on later prompts
+- [x] The plugin and the CLI read and write the same `seen.json`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2, T4
 

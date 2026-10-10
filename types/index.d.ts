@@ -93,6 +93,13 @@ export type AsmBranchBoard = {
   }[]
 }
 
+/** team-view: what a look found since the last one (packages/core/since.ts, Since). */
+export type AsmSince = {
+  day: string | null
+  first: boolean
+  changes: { kind: 'you' | 'collision' | 'spec' | 'answered' | 'done' | 'owner'; text: string }[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'agent-skills-mods': {
@@ -113,6 +120,8 @@ declare module 'claude-code' {
       specDiff: { file: string; since: string; diff: string } | null
       /** team-view: the board across branches last read, for the band, the board pane and the dashboard. */
       branchBoard: AsmBranchBoard | null
+      /** team-view: the session's first "since you last looked", once it has looked. */
+      sinceLook: AsmSince | null
     }
   }
 }

@@ -14,6 +14,7 @@ import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
 import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
 import { readBranches, type BranchBoard } from './branches'
 import { collisions, type Collision } from './collisions'
+import { look, parseSeen, seenOf, type Since } from './since'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -28,6 +29,8 @@ export type ProjectIo = {
   dirs?: (rel: string) => Promise<string[]>
   /** When this clone last fetched (team-view: FETCH_HEAD's time), ms; absent or null, never. */
   fetchedAt?: () => Promise<number | null>
+  /** team-view (V4): `<git dir>/agent-skills/seen.json`'s text, the last look; absent or null, none. */
+  seen?: () => Promise<string | null>
   now: number
 }
 
@@ -61,6 +64,8 @@ export type StateParts = {
   branches?: BranchBoard | null
   /** team-view (V1): tasks under way on two branches or with two owners; null when branches were not read. */
   collisions?: Collision[] | null
+  /** team-view (V4): what changed since the last look (seen.json); null when not asked for. */
+  since?: Since | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -86,6 +91,7 @@ export function toState(p: StateParts): State {
     modules: p.modules ?? null,
     branches: p.branches ?? null,
     collisions: p.collisions ?? null,
+    since: p.since ?? null,
     spec,
     specFiles: p.specs.map(x => x.file),
     alerts: alerts({ list: p.list, snapshots: p.snapshots, today: p.today }),
@@ -95,9 +101,10 @@ export function toState(p: StateParts): State {
 
 /**
  * Reads the project through `io` the way the plugin does, with history from git
- * when there is a runner. `branches` also reads the board across branches (team-view).
+ * when there is a runner. `branches` also reads the board across branches, and
+ * `since` compares the last look with now (team-view); neither writes anything.
  */
-export async function buildState(io: ProjectIo, opts: { specFile?: string; branches?: boolean } = {}): Promise<State> {
+export async function buildState(io: ProjectIo, opts: { specFile?: string; branches?: boolean; since?: boolean } = {}): Promise<State> {
   const files = specFiles(await io.list(''), await io.list('specs'))
   const texts = await Promise.all(files.map(f => io.read(f)))
   const specs = files.flatMap((file, i) => (texts[i] === null ? [] : [{ file, spec: parseSpec(texts[i]!) }]))
@@ -121,6 +128,10 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
     const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
     parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
     parts.collisions = parts.branches ? collisions(parts.branches, io.now) : null
+  }
+  if (opts.since && io.seen) {
+    const prev = parseSeen(await io.seen().catch(() => null))
+    parts.since = look(prev, seenOf(parts, io.now), parts.me?.handle ?? null).since
   }
   if (!list || !listFile || list.total === 0) return toState(parts)
 
@@ -206,6 +217,8 @@ export type StateJson = {
   branches: BranchBoard | null
   /** team-view (V1): each colliding task with its refs, owners and ages; null unless branches were read. */
   collisions: Collision[] | null
+  /** team-view (V4): what changed since the last look, each change with who made it; null unless asked for (`--json` asks). */
+  since: Since | null
 }
 
 export function stateJson(s: State): StateJson {
@@ -256,5 +269,6 @@ export function stateJson(s: State): StateJson {
     modules: s.modules,
     branches: s.branches ?? null,
     collisions: s.collisions ?? null,
+    since: s.since ?? null,
   }
 }
