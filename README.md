@@ -175,17 +175,21 @@ Cursor, Gemini CLI, Codex or a CI job get the same summary from a script with no
 node scripts/agent-skills-progress.mjs [dir]          # the full summary, in colour on a terminal
 node scripts/agent-skills-progress.mjs --brief        # one line: ✓spec ✓plan ●build 1/4 ○review ○ship · T2 ...
 node scripts/agent-skills-progress.mjs --timeline     # the run timeline, as the plan pane draws it
-node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools
+node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools (State v1)
 node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
 ```
 
-Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_COLOR=1`), `--width <n>`. A braille spinner shows on stderr while it reads git. It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type stripping) and nothing else.
+Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_COLOR=1`), `--width <n>`. A braille spinner shows on stderr while it reads git.
+
+`--json` prints State v1, marked `"schema": 1`. It holds every spec file, the task list (each task with its Status line, its blocker and the checkpoint after it), the plan's status and open questions, the forecast, the daily snapshots, the band's alerts and what needs a person. Fields are only added within v1; a change to existing ones would come as `schema: 2`. The type is `StateJson` in `packages/core/state.ts`.
+
+It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type stripping) and nothing else.
 
 ## Development
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 154 tests: parser, guard, forecast, and the mod on terminal and desktop
+claude plugin test .         # 160 tests: parser, guard, forecast, state, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

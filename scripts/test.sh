@@ -35,6 +35,7 @@ check full-header '│ agent-skills · Keys' node "$script" "$tmp/build" --no-co
 check full-next '☐ migration' node "$script" "$tmp/build" --no-color --no-git
 check no-git-history 'history from today: not a git repository' node "$script" "$tmp/build" --no-color
 check json '"current": "T2"' node "$script" "$tmp/build" --json
+check json-schema '"schema": 1' node "$script" "$tmp/build" --json
 check colour $'\033[32m✓\033[0m T1' node "$script" "$tmp/build" --color --no-git
 check no-color-env 'T1 Scaffold' env NO_COLOR=1 node "$script" "$tmp/build" --no-git
 check timeline-tree '├─ ✓ T1 Scaffold                ▬▬▬ done' node "$script" "$tmp/build" --timeline --no-color --no-git

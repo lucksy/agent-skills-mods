@@ -3,81 +3,17 @@
 // job). The same parser, history and forecast as the mod; drawn as ANSI text.
 // Pure: the script hands it file reads and a command runner.
 
-import { forecast, dayOf, shortDay, snapshotOf, type Forecast, type Snapshot } from './forecast'
-import { combine, earliestDays, gitSources, type Runner } from './history'
-import { parsePlan, parseSpec, parseTasks, withBlockers, type PlanDoc, type Spec, type TaskList } from './parse'
 import { decisions } from './report'
-import { forecastText, specApproval, specFiles, taskDates, timelineRows, type TaskDate } from './view'
+import { buildState, stateJson, type ProjectIo, type State } from './state'
+import { forecastText, specApproval, timelineRows } from './view'
 import { timeline, type SegTone } from './timeline'
 
-export type CliState = {
-  cwd: string
-  spec: Spec | null
-  specFile: string | null
-  specFiles: string[]
-  list: TaskList | null
-  listFile: string | null
-  plan: PlanDoc | null
-  forecast: Forecast | null
-  snapshots: Snapshot[]
-  dates: Record<string, TaskDate>
-  /** Where the history came from, in a few words. */
-  history: string | null
-  /** Commits since the plan began, when git could say. */
-  commits?: number
-}
-
-export type CliIo = {
-  cwd: string
-  /** A file's text relative to the project, or null when there is none. */
-  read: (rel: string) => Promise<string | null>
-  /** The file names in a folder relative to the project; empty when it is missing. */
-  list: (rel: string) => Promise<string[]>
-  /** Runs git; absent, history starts today. */
-  run?: Runner
-  now: number
-}
+/** What the CLI draws: State v1 (J2). */
+export type CliState = State
+export type CliIo = ProjectIo
 
 /** Reads the project the way the mod does, with history from git when there is a runner. */
-export async function gather(io: CliIo, opts: { specFile?: string } = {}): Promise<CliState> {
-  const files = specFiles(await io.list(''), await io.list('specs'))
-  const specFile = opts.specFile && files.includes(opts.specFile) ? opts.specFile : (files[0] ?? null)
-  const [specText, todoText, planText] = await Promise.all([specFile ? io.read(specFile) : null, io.read('tasks/todo.md'), io.read('tasks/plan.md')])
-  const spec = specText === null ? null : parseSpec(specText)
-  const plan = planText === null ? null : parsePlan(planText)
-  const listSource = todoText ?? planText
-  const questions = [
-    ...(plan?.openQuestions ?? []).map(text => ({ file: 'tasks/plan.md', text })),
-    ...(spec?.openQuestions ?? []).map(text => ({ file: specFile ?? 'SPEC.md', text })),
-  ]
-  const list = listSource === null ? null : withBlockers(parseTasks(listSource), questions)
-  const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
-  const state: CliState = { cwd: io.cwd, spec, specFile, specFiles: files, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null }
-  if (!list || !listFile || list.total === 0) return state
-
-  const today = dayOf(io.now)
-  const src = io.run ? await gitSources(io.run, listFile, list) : null
-  const empty = { snaps: [], doneDays: {} }
-  const combined = combine([snapshotOf(today, list)], [src?.git ?? empty], src?.messages ?? empty)
-  state.snapshots = combined.snaps
-  state.forecast = forecast(combined.snaps, io.now)
-  state.dates = taskDates(list, earliestDays(src?.git.doneDays ?? {}, src?.messages.doneDays ?? {}), state.forecast, today)
-  const since = combined.snaps[0]?.day ?? today
-  const gitDays = (combined.added.files[0] ?? 0) + combined.added.messages
-  if (io.run) {
-    // The earliest known day: front matter added late says the day it came in.
-    const began = [list.meta?.created, plan?.created, since].filter((d): d is string => !!d).sort()[0]!
-    const out = await io.run(['git', 'rev-list', '--count', `--since=${began}T00:00:00`, 'HEAD']).catch(() => null)
-    const n = out && out.exitCode === 0 ? Number(out.stdout.trim()) : NaN
-    if (Number.isFinite(n)) state.commits = n
-  }
-  state.history = src?.gitNote
-    ? `history from today: ${src.gitNote}`
-    : !src
-      ? 'history from today (no git)'
-      : `history since ${shortDay(since)}: ${gitDays} day${gitDays === 1 ? '' : 's'} from git`
-  return state
-}
+export const gather = (io: CliIo, opts: { specFile?: string } = {}): Promise<CliState> => buildState(io, opts)
 
 // ------------------------------------------------------------------ drawing
 
@@ -229,33 +165,9 @@ export function renderBrief(s: CliState, o: Pick<CliOptions, 'color'>): string {
   return `${stageStrip(s, p)}${t ? ` ${p('·', 'grey')} ${p(t.id, 'bold')} ${t.title}` : ''}`
 }
 
-/** The parsed state as JSON for other tools: counts, tasks, spec areas, forecast. */
+/** The parsed state as JSON for other tools (J3): State v1, see state.ts. */
 export function renderJson(s: CliState): string {
-  const list = s.list
-  return JSON.stringify(
-    {
-      cwd: s.cwd,
-      spec: s.spec && {
-        file: s.specFile,
-        title: s.spec.title,
-        approval: specApproval(s.spec, !!list),
-        areas: Object.fromEntries(s.spec.areas.map(a => [a.key, { state: a.state, hint: a.hint }])),
-        openQuestions: s.spec.openQuestions,
-      },
-      tasks: list && {
-        file: s.listFile,
-        done: list.done,
-        total: list.total,
-        current: list.current?.id ?? null,
-        items: list.tasks.map(t => ({ id: t.id, title: t.title, phase: t.phase, status: t.status, deps: t.deps, open: t.boxes.filter(b => !b.isDone).map(b => b.text), date: s.dates[t.id] ?? null })),
-      },
-      forecast: s.forecast,
-      needsYou: decisions({ spec: s.spec, list: s.list, plan: s.plan, forecast: s.forecast, snapshots: s.snapshots, specFile: s.specFile }),
-      history: s.history,
-    },
-    null,
-    2,
-  )
+  return JSON.stringify(stateJson(s), null, 2)
 }
 
 /** The run timeline (mockup 11) for a terminal: the same rows the plan pane draws, in ANSI colour. */

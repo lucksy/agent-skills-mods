@@ -87,7 +87,7 @@ export async function buildState(io: CliIo, opts: { specFile?: string } = {}): P
 - [x] `hooks/lib/` no longer exists; `packages/core/` holds the library; nothing imports from `hooks/lib`.
 - [x] `claude plugin validate .` passes; `claude plugin test .`, `bash scripts/test.sh` and `bash statusline/test.sh` all pass.
 - [ ] The plugin loads with `claude --plugin-dir .` and from a marketplace install; `/progress` shows the same board as before on this repo. (`--plugin-dir` checked in T2; the marketplace install is still to check, before release in T13.)
-- [ ] `buildState` returns State v1; `agent-skills-progress --json` prints it, with `schema: 1` and every field it printed before.
+- [x] `buildState` returns State v1; `agent-skills-progress --json` prints it, with `schema: 1` and every field it printed before.
 - [x] The purity-guard test passes.
 - [x] The Development section of the README shows the new layout.
 

@@ -58,7 +58,7 @@ created: 2026-10-10
 **Estimated scope:** M (mechanical, many files)
 
 ## Task 3: State v1: toState, buildState and --json
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** Add `packages/core/state.ts`, holding:
 - the State v1 type: `schema: 1`, `today`, every spec file with its parsed spec, the list, the plan, the forecast, snapshots, dates, alerts, `needsYou`, the history note and commits;
@@ -68,13 +68,13 @@ created: 2026-10-10
 `renderJson` prints State v1 and keeps every field it printed before.
 
 **Acceptance criteria:**
-- [ ] `buildState` on the fixtures returns `schema: 1` and the documented fields
-- [ ] `agent-skills-progress --json` keeps all fields printed before, adds the new ones, and parses back to the same object
-- [ ] `toState` called with the same parts the CLI used gives the same State (the plugin and CLI paths agree)
+- [x] `buildState` on the fixtures returns `schema: 1` and the documented fields
+- [x] `agent-skills-progress --json` keeps all fields printed before, adds the new ones, and parses back to the same object
+- [x] `toState` called with the same parts the CLI used gives the same State (the plugin and CLI paths agree)
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (new `tests/state.test.ts`)
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .` (new `tests/state.test.ts`)
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2
 
