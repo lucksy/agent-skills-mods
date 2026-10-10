@@ -10,7 +10,7 @@
 // page without charts carries no bundle. Pure.
 
 import { daily, throughput } from '../chart'
-import { shortDay, type Snapshot } from '../forecast'
+import { forecastHistory, shortDay, type Forecast, type Snapshot } from '../forecast'
 import { taskDays, type ReportInput } from '../report'
 import type { State } from '../state'
 // chartMount lives in html.ts, not page.ts: page.ts imports this view, so a
@@ -33,7 +33,7 @@ export type FlowSpec = ChartSpec & {
 }
 
 export type FlowChart = {
-  key: 'burnup' | 'cfd' | 'cycle' | 'aging'
+  key: 'burnup' | 'cfd' | 'cycle' | 'aging' | 'drift'
   title: string
   /** What the bundle draws; null when there is too little to draw. */
   spec: FlowSpec | null
@@ -284,11 +284,76 @@ export function agingWipChart(s: State): FlowChart {
   }
 }
 
+// ------------------------------------------------------------------ ETA drift
+
+type Range = Extract<Forecast, { kind: 'range' }>
+
+/**
+ * How the finish date moved (T10): for each day that had a range forecast, the
+ * likely date, with the fast-to-slow range as a cone around it. Dates up the
+ * side, days along the bottom: a line climbing means the finish keeps slipping.
+ */
+export function etaDriftChart(s: State): FlowChart {
+  const legend = [
+    { glyph: '━', token: '--doing', label: 'likely finish' },
+    { glyph: '┅', token: '--ink3', label: 'fast to slow' },
+  ]
+  const base = { key: 'drift' as const, title: 'ETA drift', legend }
+  const ranges = forecastHistory(s.snapshots).filter((p): p is { day: string; forecast: Range } => p.forecast.kind === 'range')
+  if (ranges.length < 2) {
+    const so = ranges[0] ? `the first was on ${shortDay(ranges[0].day)}` : 'there is none yet, as a forecast needs 3 tasks done'
+    return { ...base, spec: null, summary: `ETA drift needs a forecast on 2 days; ${so}.` }
+  }
+  // Dates up the side as milliseconds on a linear scale, which runs upward (a time
+  // scale on y runs down): a finish that slips climbs. The bundle labels them as days.
+  const ms = (day: string) => Date.parse(`${day}T00:00:00Z`)
+  const tip = (p: (typeof ranges)[number]) => `${shortDay(p.day)} · likely ${shortDay(p.forecast.median)}, range ${shortDay(p.forecast.optimistic)}–${shortDay(p.forecast.slow)}`
+  const data = [
+    { id: 'likely', data: ranges.map(p => ({ x: p.day, y: ms(p.forecast.median), tip: tip(p) })) },
+    { id: 'fast', data: ranges.map(p => ({ x: p.day, y: ms(p.forecast.optimistic), tip: `${shortDay(p.day)} · fast case ${shortDay(p.forecast.optimistic)}` })) },
+    { id: 'slow', data: ranges.map(p => ({ x: p.day, y: ms(p.forecast.slow), tip: `${shortDay(p.day)} · slow case ${shortDay(p.forecast.slow)}` })) },
+  ]
+  // About four ticks on whole days, a whole number of days apart, with a step's room above and below.
+  const lo = Math.min(...ranges.map(p => ms(p.forecast.optimistic)))
+  const hi = Math.max(...ranges.map(p => ms(p.forecast.slow)))
+  const step = Math.max(1, Math.ceil((hi - lo) / DAY / 4)) * DAY
+  const tickValues: number[] = []
+  for (let t = lo; t <= hi + step / 2; t += step) tickValues.push(t)
+  const first = ranges[0]!
+  const last = ranges.at(-1)!
+  const moved = days(first.forecast.median, last.forecast.median) - days(last.forecast.median, first.forecast.median)
+  const summary =
+    moved === 0
+      ? `The likely finish has held at ${shortDay(last.forecast.median)} since ${shortDay(first.day)}.`
+      : `The likely finish moved ${moved > 0 ? `${moved} d later` : `${-moved} d sooner`} since ${shortDay(first.day)}: from ${shortDay(first.forecast.median)} to ${shortDay(last.forecast.median)}.`
+  const spec: FlowSpec = {
+    kind: 'line',
+    data,
+    colors: ['--doing', '--ink3', '--ink3'],
+    format: { x: 'day', y: 'day' },
+    dashed: ['fast', 'slow'],
+    cone: ['fast', 'slow'],
+    props: {
+      margin: { ...MARGIN, left: 56 },
+      xScale: TIME_X,
+      yScale: { type: 'linear', min: lo - step / 2, max: Math.max(hi, tickValues.at(-1)!) + step / 2 },
+      ...AXES,
+      axisLeft: { ...AXES.axisLeft, tickValues },
+      enablePoints: true,
+      pointSize: 6,
+      useMesh: true,
+      enableGridX: false,
+      lineWidth: 2,
+    },
+  }
+  return { ...base, spec, summary }
+}
+
 // ------------------------------------------------------------------ the view
 
-/** The four charts, in the order the view shows them. */
+/** The five charts, in the order the view shows them. */
 export function flowCharts(s: State): FlowChart[] {
-  return [burnupChart(s), cumulativeFlowChart(s), cycleTimeChart(s), agingWipChart(s)]
+  return [burnupChart(s), cumulativeFlowChart(s), cycleTimeChart(s), agingWipChart(s), etaDriftChart(s)]
 }
 
 export function flowHtml(s: State): string {

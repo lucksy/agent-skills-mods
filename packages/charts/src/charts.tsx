@@ -40,9 +40,9 @@ const css = () => getComputedStyle(document.documentElement)
 const token = (name: string) => css().getPropertyValue(name).trim() || name
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-/** `5 Oct` for a Date (the time scale's ticks, in UTC) or a YYYY-MM-DD day. */
+/** `5 Oct` for a Date (the time scale's ticks, in UTC), milliseconds (a date on a linear scale) or a YYYY-MM-DD day. */
 const day = (v: unknown) => {
-  const d = v instanceof Date ? v : new Date(`${String(v)}T00:00:00Z`)
+  const d = v instanceof Date ? v : typeof v === 'number' ? new Date(v) : new Date(`${String(v)}T00:00:00Z`)
   return Number.isNaN(d.getTime()) ? String(v) : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
 }
 const FORMATS: Record<Format, (v: unknown) => string> = {

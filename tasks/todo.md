@@ -315,18 +315,23 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 **Estimated scope:** M
 
 ## Task 10: Flow view: ETA drift chart (Nivo)
-**Status:** in progress · started 2026-10-10 · step build
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** An ETA drift chart: for each past day from `forecastHistory`, the median ETA with its fast–slow range. It is drawn with `@nivo/line` plus a custom layer for the range band, and goes in the Flow view under the other charts.
 
 **Acceptance criteria:**
-- [ ] One point and range for each day with a range forecast, with days without one left out
-- [ ] The text summary says how far the median moved since the first range forecast
-- [ ] Below 2 range forecasts it shows its "needs" message
+- [x] One point and range for each day with a range forecast, with days without one left out
+- [x] The text summary says how far the median moved since the first range forecast
+- [x] Below 2 range forecasts it shows its "needs" message
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check in Chrome: the chart draws, with a tooltip on hover
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check in Chrome: the chart draws, with a tooltip on hover
+
+**Notes:**
+- Dates go up the side as milliseconds on a linear scale. Nivo's time scale on y runs downward, which drew a slipping finish as a falling line. Ticks are whole days, evenly spaced, and the bundle's `day` format now labels numbers.
+- The summary compares the first range forecast with today's: "moved N d later/sooner since <day>: from X to Y", or "has held at X since <day>".
+- Checked in Chrome on a project with git history: the line climbs as the finish slips, the cone and tooltips work, no console messages.
 
 **Dependencies:** T6, T9
 
@@ -379,7 +384,7 @@ With too little history, a chart shows "needs N days" instead. Without JS, the s
 ## Phase 4: Finish
 
 ## Task 12: Empty states, accessibility and the size and speed budget
-**Status:** todo
+**Status:** in progress · started 2026-10-10 · step build
 
 **Description:** Go through every view for an empty or partial project: no spec, no list, no history, all done, one task. Finish the keyboard tabs (`role="tablist"` and arrow keys), the chart text alternatives and the layout at 360 px. Add a generated fixture with 60 tasks and 90 days of history, and test the budget against it.
 

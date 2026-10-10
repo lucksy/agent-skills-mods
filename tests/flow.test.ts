@@ -2,10 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { chartMount, dashboardHtml } from '../packages/core/dashboard/page'
 import { chartMount as htmlChartMount } from '../packages/core/dashboard/html'
-import { agingWipChart, burnupChart, cumulativeFlowChart, cycleTimeChart, flowCharts, flowHtml, usualDays } from '../packages/core/dashboard/flow'
+import { agingWipChart, burnupChart, cumulativeFlowChart, cycleTimeChart, etaDriftChart, flowCharts, flowHtml, usualDays } from '../packages/core/dashboard/flow'
 import { CHARTS_JS } from '../packages/core/dashboard/charts-bundle'
 import { chartLegends, daily, throughput } from '../packages/core/chart'
-import { shortDay } from '../packages/core/forecast'
+import { forecastHistory, shortDay } from '../packages/core/forecast'
 import { taskDays } from '../packages/core/report'
 import { buildState, type ProjectIo, type State } from '../packages/core/state'
 import { SPEC, TODO_NONE_DONE, TODO_T2_DONE, TODO_T3_DONE, gitOutput } from './fixtures'
@@ -43,16 +43,16 @@ const series = (spec: { data: unknown[] }, id: string) => (spec.data as Series[]
 const reportInput = (s: State) => ({ spec: s.spec, list: s.list, plan: s.plan, forecast: s.forecast, snapshots: s.snapshots, specFile: s.specFile, dates: s.dates, today: s.today, charts: { burnup: null, flow: null } })
 
 describe('Flow view (K4): with history', () => {
-  test('four charts, each a heading, a mount and a summary; the page carries the bundle', async () => {
+  test('five charts, each a heading, a mount and a summary; the page carries the bundle', async () => {
     const s = await project()
     const html = section(dashboardHtml(s), 'flow')
-    expect([...html.matchAll(/<h3 [^>]*>([^<]+)<\/h3>/g)].map(m => m[1])).toEqual(['Burn-up', 'Cumulative flow', 'Cycle time', 'Aging work in progress'])
+    expect([...html.matchAll(/<h3 [^>]*>([^<]+)<\/h3>/g)].map(m => m[1])).toEqual(['Burn-up', 'Cumulative flow', 'Cycle time', 'Aging work in progress', 'ETA drift'])
     // The fixture has no task with a Status line under way: aging WIP says so, without a mount.
-    expect(mounts(html).map(m => m.kind)).toEqual(['line', 'line', 'scatter'])
+    expect(mounts(html).map(m => m.kind)).toEqual(['line', 'line', 'scatter', 'line'])
     expect(mounts(section(dashboardHtml(await wip()), 'flow')).map(m => m.kind)).toEqual(['line', 'line', 'scatter', 'bar'])
     expect(dashboardHtml(s)).toContain(`<script>${CHARTS_JS}</script>`)
     // Every chart has its one-line text alternative.
-    expect((html.match(/<p class="chart-text">/g) ?? []).length).toBe(3)
+    expect((html.match(/<p class="chart-text">/g) ?? []).length).toBe(4)
   })
 
   test('it leads with the pace and the forecast, the numbers /progress charts shows', async () => {
@@ -187,7 +187,8 @@ describe('Flow view (K4): too little history', () => {
     expect(s.snapshots.length).toBe(1)
     for (const c of flowCharts(s)) {
       expect(c.spec).toBeNull()
-      expect(c.summary).toMatch(/needs 2 days of history/)
+      // ETA drift needs forecasts on two days, which needs history too; the others, the history itself.
+      expect(c.summary).toMatch(c.key === 'drift' ? /^ETA drift needs a forecast on 2 days/ : /needs 2 days of history/)
     }
     const html = dashboardHtml(s)
     expect(section(html, 'flow')).not.toContain('data-chart=')
@@ -227,7 +228,7 @@ describe('Flow view (K4): safety', () => {
   test("each chart is mounted with the page's one chartMount", async () => {
     // One function, shared through html.ts, so the two can never drift.
     expect(chartMount).toBe(htmlChartMount)
-    for (const c of flowCharts(await wip())) expect(flowHtml(await wip())).toContain(chartMount(c.spec!, c.summary))
+    for (const c of flowCharts(await wip())) if (c.spec) expect(flowHtml(await wip())).toContain(chartMount(c.spec, c.summary))
   })
 
   test('the same state gives the same bytes', async () => {
@@ -242,5 +243,71 @@ describe('Flow view (K4): safety', () => {
     expect(legends[1]).toBe('✓ done ● in progress ■ blocked ○ to do')
     const wipLegends = [...flowHtml(await wip()).matchAll(/<ul class="flow-legend"[^>]*>([\s\S]*?)<\/ul>/g)].map(m => text(m[1]!).trim())
     expect(wipLegends).toContainEqual(expect.stringMatching(/^● in progress ▲ over twice the usual/))
+  })
+})
+
+describe('ETA drift (K4, T10)', () => {
+  test('a point per day that had a range forecast: the likely date, with the fast-to-slow range around it', async () => {
+    const s = await project()
+    const ranges = forecastHistory(s.snapshots).filter(p => p.forecast.kind === 'range')
+    expect(ranges.length).toBe(2)
+    const c = etaDriftChart(s)
+    expect(c.spec).not.toBeNull()
+    // Dates up the side as numbers on a linear scale, which runs upward: a slipping finish climbs.
+    const ms = (day: string) => Date.parse(`${day}T00:00:00Z`)
+    const likely = series(c.spec!, 'likely')
+    expect(likely.data.map(d => [d.x, d.y])).toEqual(ranges.map(p => [p.day, ms((p.forecast as { median: string }).median)]))
+    expect(series(c.spec!, 'fast').data.map(d => d.y)).toEqual(ranges.map(p => ms((p.forecast as { optimistic: string }).optimistic)))
+    expect(series(c.spec!, 'slow').data.map(d => d.y)).toEqual(ranges.map(p => ms((p.forecast as { slow: string }).slow)))
+    expect(c.spec).toMatchObject({ kind: 'line', cone: ['fast', 'slow'], dashed: ['fast', 'slow'], format: { x: 'day', y: 'day' } })
+    const props = c.spec!.props as { yScale: { type: string; min: number; max: number }; axisLeft: { tickValues: number[] } }
+    expect(props.yScale.type).toBe('linear')
+    // Ticks fall on whole days, evenly spaced, inside the scale.
+    const ticks = props.axisLeft.tickValues
+    expect(ticks.length).toBeGreaterThan(2)
+    for (const t of ticks) expect(t % 86_400_000).toBe(0)
+    expect(new Set(ticks.slice(1).map((t, i) => t - ticks[i]!)).size).toBe(1)
+    expect(ticks[0]! >= props.yScale.min && ticks.at(-1)! <= props.yScale.max).toBe(true)
+    // Days before the forecast had three tasks to go on are left out.
+    expect(likely.data.map(d => d.x)).not.toContain('2026-09-29')
+    // Tooltips in words.
+    const last = ranges.at(-1)!.forecast as { median: string; optimistic: string; slow: string }
+    expect(likely.data.at(-1)!.tip).toBe(`${shortDay(ranges.at(-1)!.day)} · likely ${shortDay(last.median)}, range ${shortDay(last.optimistic)}–${shortDay(last.slow)}`)
+  })
+
+  test('the summary says how far the likely date moved since the first forecast', async () => {
+    const s = await project()
+    const ranges = forecastHistory(s.snapshots).filter(p => p.forecast.kind === 'range')
+    const [a, b] = [ranges[0]!, ranges.at(-1)!].map(p => (p.forecast as { median: string }).median)
+    const moved = Math.round((Date.parse(b!) - Date.parse(a!)) / 86_400_000)
+    expect(moved).not.toBe(0)
+    const c = etaDriftChart(s)
+    expect(c.summary).toBe(`The likely finish moved ${moved > 0 ? `${moved} d later` : `${-moved} d sooner`} since ${shortDay(ranges[0]!.day)}: from ${shortDay(a!)} to ${shortDay(b!)}.`)
+    expect(c.legend.map(l => `${l.glyph} ${l.label}`)).toEqual(['━ likely finish', '┅ fast to slow'])
+  })
+
+  test('the same likely date both days reads as no change', async () => {
+    // 3 done in 3 days, then 4 in 4: one a day both times, 3 then 2 to go, so both forecasts land on 7 Oct.
+    const steady = [
+      { day: '2026-10-01', done: 0, total: 6 },
+      { day: '2026-10-04', done: 3, total: 6 },
+      { day: '2026-10-05', done: 4, total: 6 },
+    ]
+    const medians = forecastHistory(steady).filter(p => p.forecast.kind === 'range').map(p => (p.forecast as { median: string }).median)
+    expect(medians).toEqual(['2026-10-07', '2026-10-07'])
+    expect(etaDriftChart({ ...(await project()), snapshots: steady }).summary).toBe('The likely finish has held at 7 Oct since 4 Oct.')
+  })
+
+  test('under two range forecasts it says what it needs, with no mount', async () => {
+    const s = await wip()
+    expect(forecastHistory(s.snapshots).filter(p => p.forecast.kind === 'range').length).toBeLessThan(2)
+    const c = etaDriftChart(s)
+    expect(c.spec).toBeNull()
+    expect(c.summary).toMatch(/^ETA drift needs a forecast on 2 days; /)
+    expect(text(section(dashboardHtml(s), 'flow'))).toContain(c.summary)
+  })
+
+  test('flowCharts ends with it', async () => {
+    expect(flowCharts(await project()).map(c => c.key)).toEqual(['burnup', 'cfd', 'cycle', 'aging', 'drift'])
   })
 })
