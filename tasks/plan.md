@@ -58,7 +58,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation
 - [x] Task 1: Status line v2 round trip
-- [ ] Task 2: tasks/team.md and who you are
+- [x] Task 2: tasks/team.md and who you are
 
 ### Checkpoint: Foundation
 - [ ] Tests pass; v1 files read as before

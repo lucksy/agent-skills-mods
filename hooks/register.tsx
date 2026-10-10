@@ -23,6 +23,7 @@ import { TABS, type Tab } from './ui/tabs'
 import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { toState } from '../packages/core/state'
+import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
 import { dashboardHtml, VIEW_IDS, type ViewId } from '../packages/core/dashboard/page'
 import { burnupPixels, cachedPixels, CELL_PX, dateRow, drawsPixels, flowPixels, type PixelChart } from '../packages/core/pixels'
 import { spinnerWord, stepOf, testCounts, type Step } from '../packages/core/steps'
@@ -595,6 +596,45 @@ async function writeReport($: $, p: AsmProject): Promise<string> {
     : `Wrote ${REPORT_FILE} (${size}): one self-contained page that opens offline. Open ${path} in a browser or attach it to an email.`
 }
 
+/** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
+async function gitEmail($: $): Promise<string | null> {
+  const r = await $.process.run(['git', 'config', 'user.email'], { timeoutMs: 10_000 }).catch(() => null)
+  return r && r.exitCode === 0 ? r.stdout.trim() || null : null
+}
+
+/** tasks/team.md, parsed; null when there is none. */
+async function readTeam($: $, cwd: string): Promise<Team | null> {
+  const text = await readText($, `${cwd}/${TEAM_FILE}`)
+  return text === null ? null : parseTeam(text)
+}
+
+/**
+ * `/progress team` (F1): the team, what a spec needs and who you are.
+ * `/progress team init [force]`: a first tasks/team.md drafted from the git
+ * authors, never over an existing one without `force`.
+ */
+async function teamCommand($: $, arg: string): Promise<string> {
+  const cwd = await $.session.cwd()
+  const words = arg.split(/\s+/).slice(1)
+  if (words[0] !== 'init') return teamText(await readTeam($, cwd), await gitEmail($))
+  const path = `${cwd}/${TEAM_FILE}`
+  if ((await readText($, path)) !== null && words[1] !== 'force') {
+    return `${TEAM_FILE} is already here, so nothing was written. /progress team shows it; /progress team init force replaces it with a fresh draft.`
+  }
+  const log = await $.process.run(['git', 'log', '--format=%an%x09%ae'], { timeoutMs: 15_000 }).catch(() => null)
+  const authors = (log && log.exitCode === 0 ? log.stdout : '')
+    .split('\n')
+    .map(l => l.split('\t'))
+    .filter(p => p.length === 2 && p[1]!.trim())
+    .map(([name, email]) => ({ name: name!.trim(), email: email!.trim() }))
+  const draft = draftTeam(authors)
+  await $.fs.write(path, draft)
+  const n = parseTeam(draft).members.length
+  return n
+    ? `Wrote ${TEAM_FILE} with ${n} ${n === 1 ? 'person' : 'people'} from the git authors: fill in their roles, and in approvals: the roles that must sign a spec.`
+    : `Wrote ${TEAM_FILE} with an empty table: git shows no authors yet. Add a row per person (handle, role, git email).`
+}
+
 /**
  * `/progress dashboard [view]` (K6): the dashboard page from the same project the
  * board shows (the plugin's own history included), opened on `view`. Written even
@@ -624,6 +664,10 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
     snapshots: p.snapshots,
     dates: p.dates,
     history: p.history ? historyNote(p.history, p.listFile) : null,
+    ...(await (async () => {
+      const team = await readTeam($, p.cwd)
+      return { team, me: team ? whoIs(team, await gitEmail($)) : null }
+    })()),
   })
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`
@@ -945,7 +989,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'progress',
       description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | dashboard | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view]|history|format|allow-overwrite|refresh]',
+      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view]|team [init]|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -1042,11 +1086,12 @@ export const register: Register = (on, options) => {
       return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
     }
     if (arg === 'report') return reply(await writeReport($, p))
+    if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|dashboard [view]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|digest|standup|report|dashboard [view]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

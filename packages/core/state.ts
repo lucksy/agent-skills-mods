@@ -10,6 +10,7 @@ import { combine, earliestDays, gitSources, type Runner } from './history'
 import { parsePlan, parseSpec, parseTasks, withBlockers, type PlanDoc, type Spec, type Task, type TaskList } from './parse'
 import { decisions } from './report'
 import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './view'
+import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -44,6 +45,9 @@ export type StateParts = {
   history: string | null
   /** Commits since the plan began, when git could say. */
   commits?: number
+  /** format-v2: tasks/team.md, and who is looking (from `git config user.email`). */
+  team?: Team | null
+  me?: Member | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -64,6 +68,8 @@ export function toState(p: StateParts): State {
   return {
     schema: 1,
     ...p,
+    team: p.team ?? null,
+    me: p.me ?? null,
     spec,
     specFiles: p.specs.map(x => x.file),
     alerts: alerts({ list: p.list, snapshots: p.snapshots, today: p.today }),
@@ -88,7 +94,10 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string } = {}
   const list = listSource === null ? null : withBlockers(parseTasks(listSource), questions)
   const listFile = todoText !== null ? 'tasks/todo.md' : planText !== null ? 'tasks/plan.md' : null
   const today = dayOf(io.now)
-  const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null }
+  const teamText = await io.read(TEAM_FILE)
+  const team = teamText === null ? null : parseTeam(teamText)
+  const email = team && io.run ? await io.run(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null), () => null) : null
+  const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email) }
   if (!list || !listFile || list.total === 0) return toState(parts)
 
   const src = io.run ? await gitSources(io.run, listFile, list) : null
@@ -150,6 +159,9 @@ export type StateJson = {
   needsYou: string[]
   history: string | null
   commits: number | null
+  /** format-v2: handles and roles only; emails stay in tasks/team.md, out of shared pages. */
+  team: { members: { handle: string; roles: string[] }[]; approvals: string[] } | null
+  me: string | null
 }
 
 export function stateJson(s: State): StateJson {
@@ -194,5 +206,7 @@ export function stateJson(s: State): StateJson {
     needsYou: s.needsYou,
     history: s.history,
     commits: s.commits ?? null,
+    team: s.team ? { members: s.team.members.map(m => ({ handle: m.handle, roles: m.roles })), approvals: s.team.approvals } : null,
+    me: s.me?.handle ?? null,
   }
 }

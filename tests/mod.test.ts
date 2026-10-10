@@ -1291,3 +1291,26 @@ test('owners, PRs and reviewers survive /progress start, done, block and a Write
   expect(line('3')).toMatch(/· @sara ·/)
   expect(line('4')).toBe('**Status:** blocked · @bob · PR #7 · reviewer @amila')
 })
+
+// format-v2 T2 (F1): set a team up, and see who you are.
+const TEAM_MD = '---\napprovals: design, eng\n---\n# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @amila | lead, eng | amila@example.com |\n| @sara | design | sara@example.com |\n'
+const asPerson = (email: string, authors = '') => ({ log: authors, cat: '', answer: (argv: string[]) => (argv[1] === 'config' ? `${email}\n` : '') })
+
+test('/progress team names the team and you; without the file it says how to start', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }, asPerson('sara@example.com'))
+  const out = await $.command.run(run('team'))
+  expect(out.text).toMatch(/@sara +design +← you/)
+  expect(out.text).toMatch(/A spec needs approval from: design, eng\./)
+})
+
+test('/progress team init drafts tasks/team.md from the git authors, and never overwrites it without force', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files, asPerson('amila@example.com', 'Amila Perera\tamila@example.com\nSara K\tsara@example.com\nAmila Perera\tamila@example.com\n'))
+  expect((await $.command.run(run('team init'))).text).toMatch(/Wrote tasks\/team\.md with 2 people .*fill in their roles/)
+  expect(files[`${CWD}/tasks/team.md`]).toMatch(/\| @amila-perera \| {2}\| amila@example\.com \|\n\| @sara-k \| {2}\| sara@example\.com \|/)
+  files[`${CWD}/tasks/team.md`] = TEAM_MD
+  expect((await $.command.run(run('team init'))).text).toMatch(/tasks\/team\.md is already here.*\/progress team init force/)
+  expect(files[`${CWD}/tasks/team.md`]).toBe(TEAM_MD)
+  await $.command.run(run('team init force'))
+  expect(files[`${CWD}/tasks/team.md`]).toMatch(/@amila-perera/)
+})

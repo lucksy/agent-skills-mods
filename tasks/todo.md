@@ -42,7 +42,7 @@ created: 2026-10-10
 **Estimated scope:** M
 
 ## Task 2: tasks/team.md and who you are
-**Status:** todo
+**Status:** done · started 2026-10-10 · done 2026-10-10
 
 **Description:** `packages/core/team.ts` parses `tasks/team.md`: its front matter `approvals:` and the Handle | Role | Email table. Roles are a comma list. It also answers who an email is.
 - The plugin and the CLI read `git config user.email`.
@@ -51,13 +51,18 @@ created: 2026-10-10
 - `/progress team init` drafts the file from the git authors (`git log --format=%an <%ae>`), with roles left to fill in. If the file exists, it refuses unless given `force`.
 
 **Acceptance criteria:**
-- [ ] `team.md` parses, including bad rows (skipped and named), a duplicate email (the first wins, named), no table, and no file
-- [ ] `/progress team` names you when your git email is in the file, and otherwise says how to add yourself
-- [ ] `/progress team init` writes a draft from the git authors and never overwrites an existing file without `force`
+- [x] `team.md` parses, including bad rows (skipped and named), a duplicate email (the first wins, named), no table, and no file
+- [x] `/progress team` names you when your git email is in the file, and otherwise says how to add yourself
+- [x] `/progress team init` writes a draft from the git authors and never overwrites an existing file without `force`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (new `tests/team.test.ts` and mod cases)
-- [ ] Manual check: `claude -p --plugin-dir . "/progress team init"` in a scratch git project
+- [x] Tests pass: `claude plugin test .` (new `tests/team.test.ts` and mod cases)
+- [x] Manual check: `claude -p --plugin-dir . "/progress team init"` in a scratch git project
+
+**Notes:**
+- Emails stay in `tasks/team.md`: the State JSON, and so the shareable dashboard, carry only handles and roles.
+- `team init` skips bots and the agent's own `noreply@anthropic.com` co-author, keeps one row per email (case-insensitive), and numbers handles that clash (`@sara-k`, `@sara-k-2`).
+- Checked in a real session on a scratch git project: `team init` wrote the draft, `team` marked "← you", and a second `init` refused to overwrite.
 
 **Dependencies:** T1
 
