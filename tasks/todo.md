@@ -135,17 +135,17 @@ created: 2026-10-11
 **Estimated scope:** Small
 
 ## Task 6: The Team tab
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A new dashboard tab, `team`, has one row per person in `team.md`, plus "unowned". Each row shows the person's current task and step, their WIP count, their reviews waiting (with ages), handoffs to them and their collisions. A "Waiting on someone" list shows open questions and unsigned approvals by person. It shows no ranking, speed or totals per person. `/progress dashboard team` opens it.
 
 **Acceptance criteria:**
-- [ ] One row per team member, plus unowned. Rows are sorted by handle, not by any figure.
-- [ ] The review queue shows each PR's age, and handoffs and collisions link to their tasks
-- [ ] Without `team.md`, the tab shows owners found in the task list and says how to set up the team
+- [x] One row per team member, plus unowned. Rows are sorted by handle, not by any figure.
+- [x] The review queue shows each PR's age, and handoffs and collisions link to their tasks
+- [x] Without `team.md`, the tab shows owners found in the task list and says how to set up the team
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
+- [x] Tests pass: `claude plugin test .`
 - [ ] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4

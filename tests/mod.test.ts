@@ -1554,6 +1554,20 @@ test('/progress dashboard puts the other branches on the Board: furthest states,
   expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
 })
 
+// team-view T6 (V6): the Team tab.
+test('/progress dashboard team opens on the Team tab: a row per person in tasks/team.md, plus unowned', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @sara · started 2026-10-06 · PR #42 · reviewer @amila\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  const seen = world(on, files, asPerson('sara@example.com'))
+  const out = await $.command.run(run('dashboard team'))
+  expect(out.text).toMatch(/opened it in your browser on team/)
+  expect(seen.launched).toEqual([`${CWD}/tasks/progress-dashboard.html`])
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toContain('data-view="team"')
+  expect([...html.matchAll(/data-person="([^"]*)"/g)].map(m => m[1])).toEqual(['amila', 'sara', '-'])
+  expect(html).toMatch(/<a href="#card-T2">T2<\/a>[^<]*Prisma schema for keys · PR #42/)
+})
+
 test('done on another branch is no collision: the band stays quiet', async ($, on) => {
   const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** done · @bob · started 2026-10-01 · done 2026-10-03\n')
   const answer = (argv: string[], stdin = '') => {

@@ -9,6 +9,7 @@ import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 import { branchRows } from '../packages/core/branches'
 import { collisions } from '../packages/core/collisions'
 import { parseTasks } from '../packages/core/parse'
+import { teamView } from '../packages/core/dashboard/team'
 import { GOOD_SPEC, SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
 
 // The dashboard (K1–K6): one self-contained page built from State v1.
@@ -244,7 +245,7 @@ describe('Board (K2)', () => {
 
   test('a tab of its own, after the Overview, in the order of the spec', async () => {
     const html = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })))
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'roadmap', 'flow', 'spec'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'roadmap', 'flow', 'spec'])
     expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })), { view: 'board' })).toContain('data-view="board"')
   })
 
@@ -406,5 +407,119 @@ describe('Board across branches (team-view T5)', () => {
     expect(DASHBOARD_SCRIPT).toMatch(/q\.set\('branches'/)
     expect(DASHBOARD_SCRIPT).toMatch(/q\.set\('owner'/)
     expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+  })
+})
+
+describe('Team (team-view T6)', () => {
+  // tasks/team.md lists @sara, @zed, @amila and @pm, out of order; approvals need product and eng.
+  // Here (main): T1 done by @amila; T2 in progress by @amila since 7 Oct, step test; T3 in review by @sara
+  // since 5 Oct, PR #42, reviewer @amila; T4 handed from @sara to @pm. On origin/feat/rate-limit, @bob
+  // (not in team.md) also has T2 in progress: a collision. Q1 asks @pm about T4; Q2 names nobody.
+  const TEAM = `---\napprovals: product, eng\n---\n# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @sara | eng, design | sara@example.com |\n| @zed | qa | zed@example.com |\n| @amila | eng | amila@example.com |\n| @pm | product | pm@example.com |\n`
+  const own = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n**Status:** ${line}\n`)
+  const here = own(
+    own(
+      own(own(TODO_TEMPLATE, '1', 'Monorepo scaffold', 'done · @amila · started 2026-09-29 · done 2026-10-01'), '2', 'Prisma schema for keys', 'in progress · @amila · started 2026-10-07 · step test'),
+      '3',
+      'Issue and revoke keys',
+      'in review · @sara · started 2026-10-05 · PR #42 · reviewer @amila',
+    ),
+    '4',
+    'Rate limit per key',
+    'todo · @pm\n**Handoff:** 2026-10-08 @sara → @pm: limits agreed, tests left',
+  )
+  const theirs = own(TODO_TEMPLATE, '2', 'Prisma schema for keys', 'in progress · @bob · started 2026-10-08')
+  const plan = '# Plan\n\n## Open Questions\n- Q1 (T4): @pm, Upstash or self-hosted?\n- Q2: Which region first?\n'
+  const DAY = 86_400_000
+  const ref = (name: string, sha: string, remote = false) => ({ ref: `refs/${remote ? 'remotes' : 'heads'}/${name}`, name, sha, ms: NOW - DAY, remote })
+  const state = async (files: Record<string, string> = { 'SPEC.md': SPEC, 'tasks/todo.md': here, 'tasks/plan.md': plan, 'tasks/team.md': TEAM }) => {
+    const s = await buildState(io(files))
+    const b = branchRows({ name: 'main', list: parseTasks(files['tasks/todo.md']!) }, [{ ref: ref('origin/feat/rate-limit', 'a1', true), text: theirs }], NOW - DAY)
+    return { ...s, branches: b, collisions: collisions(b, NOW) }
+  }
+  const tab = async (files?: Record<string, string>) => section(dashboardHtml(await state(files)), 'team')
+  const person = (html: string, key: string) => html.match(new RegExp(`<li class="person[^"]*" data-person="${key}"[\\s\\S]*?</li>\\s*<!-- /person -->`))?.[0] ?? ''
+
+  test('a Team tab after the Board, and /progress dashboard team opens on it', async () => {
+    const html = dashboardHtml(await state(), { view: 'team' })
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'roadmap', 'flow', 'spec'])
+    expect(html).toContain('data-view="team"')
+  })
+
+  test('one row per team member, plus anyone else who owns a task, plus unowned; sorted by handle, never by a figure', async () => {
+    const html = await tab()
+    expect([...html.matchAll(/data-person="([^"]*)"/g)].map(m => m[1])).toEqual(['amila', 'bob', 'pm', 'sara', 'zed', '-'])
+    expect(teamView(await state()).people.map(p => p.handle)).toEqual(['@amila', '@bob', '@pm', '@sara', '@zed', null])
+    expect(text(person(html, 'bob'))).toContain('not in tasks/team.md')
+    expect(text(person(html, 'sara'))).toContain('eng, design')
+    expect(text(person(html, '-'))).toMatch(/Unowned/)
+  })
+
+  test("each row: the current task and step, WIP, reviews waiting with ages, handoffs and collisions", async () => {
+    const amila = text(person(await tab(), 'amila'))
+    expect(amila).toMatch(/Now T2 Prisma schema for keys · step test/)
+    expect(amila).toMatch(/Work in progress 1 · T2 Reviews/)
+    expect(amila).toMatch(/Reviews waiting T3 Issue and revoke keys · PR #42 · 4 d/)
+    expect(amila).toContain('T2 is also in progress on origin/feat/rate-limit by @bob (1d)')
+    const pm = text(person(await tab(), 'pm'))
+    expect(pm).toMatch(/Handoffs T4 Rate limit per key · from @sara 8 Oct: limits agreed, tests left/)
+    const bob = text(person(await tab(), 'bob'))
+    expect(bob).toMatch(/Now T2 Prisma schema for keys on origin\/feat\/rate-limit/)
+    expect(bob).toContain('T2 is also in progress on origin/feat/rate-limit by @bob (1d)')
+    const zed = text(person(await tab(), 'zed'))
+    expect(zed).toMatch(/Now nothing in progress/)
+    expect(zed).toMatch(/Work in progress 0 Reviews/)
+  })
+
+  test('no ranking, speed or totals per person: nothing done is counted', async () => {
+    const amila = person(await tab(), 'amila')
+    expect(amila).not.toContain('T1')
+    expect(text(await tab())).not.toMatch(/\bdone\b|per day|velocity|rank/i)
+  })
+
+  test('the review queue shows each PR with its age; handoffs and collisions link to their tasks', async () => {
+    const html = await tab()
+    const queue = html.match(/<div class="card queue"[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(text(queue)).toMatch(/Review queue T3 Issue and revoke keys · PR #42 · @sara → reviewer @amila · 4 d/)
+    expect(text(queue)).toContain('Age counts from the day the task started')
+    expect(queue).toContain('<a href="#card-T3">T3</a>')
+    expect(person(html, 'pm')).toContain('<a href="#card-T4">T4</a>')
+    expect(person(html, 'amila')).toMatch(/<p class="p-clash"><a href="#card-T2">/)
+  })
+
+  test("the Board's cards are the link targets: one id each, on this branch's columns only", async () => {
+    const board = section(dashboardHtml(await state()), 'board')
+    expect(board.match(/id="card-T2"/g)).toHaveLength(1)
+    expect(board.split('<div class="swim')[0]).toContain('id="card-T2"')
+    expect(DASHBOARD_SCRIPT).toContain("'card-'")
+    expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+  })
+
+  test('waiting on someone: open questions by the person they name, unsigned approvals by who holds the role', async () => {
+    const view = teamView(await state())
+    expect(view.waiting.map(w => [w.who, w.items.map(i => i.text)])).toEqual([
+      ['@amila', ['sign SPEC.md as eng']],
+      ['@pm', ['Q1 (T4): @pm, Upstash or self-hosted?', 'sign SPEC.md as product']],
+      ['@sara', ['sign SPEC.md as eng']],
+      // SPEC.md's own open question names nobody either.
+      [null, ['Q2: Which region first?', 'Should keys expire by default?']],
+    ])
+    const t = text((await tab()).match(/<div class="card waiting"[\s\S]*?<!-- \/waiting -->/)?.[0] ?? '')
+    expect(t).toMatch(/Waiting on someone @amila sign SPEC\.md as eng/)
+    expect(t).toMatch(/Q1 \(T4\): @pm, Upstash or self-hosted\? · holds up T4/)
+    expect(t).toMatch(/Not addressed to anyone Q2: Which region first\?/)
+  })
+
+  test('without tasks/team.md: the owners found in the task list, and how to set up the team', async () => {
+    const html = await tab({ 'tasks/todo.md': here, 'tasks/plan.md': plan })
+    expect([...html.matchAll(/data-person="([^"]*)"/g)].map(m => m[1])).toEqual(['amila', 'bob', 'pm', 'sara', '-'])
+    expect(text(html)).toContain('No tasks/team.md yet: these are the people named in the task list. /progress team init drafts one from the git authors.')
+    expect(html).not.toContain('not in tasks/team.md')
+  })
+
+  test('a project with nobody named still gets a tab that says how to start', async () => {
+    const t = text(section(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE }))), 'team'))
+    expect(t).toContain('/progress team init')
+    expect(t).toMatch(/Unowned/)
   })
 })

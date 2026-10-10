@@ -95,6 +95,8 @@ check collisions-ref '"ref": "feat/rate-limit"' node "$script" "$repo" --json
 # The dashboard's Board across branches (team-view T5): the switch, the furthest states and the collision.
 check dashboard-branches 'Wrote' node "$script" "$repo" --dashboard "$tmp/across.html"
 if grep -q 'id="board-branches"' "$tmp/across.html" && grep -q 'T2 is also in progress on feat/rate-limit by @bob' "$tmp/across.html"; then echo "ok   dashboard-branches-board"; else echo "FAIL dashboard-branches-board"; fail=1; fi
+# The Team tab (team-view T6): a card per person the task lists name, the collision linked to its Board card.
+if grep -q 'id="view-team"' "$tmp/across.html" && grep -q 'data-person="bob"' "$tmp/across.html" && grep -q '<p class="p-clash"><a href="#card-T2">T2</a>' "$tmp/across.html"; then echo "ok   dashboard-team-tab"; else echo "FAIL dashboard-team-tab"; fail=1; fi
 # The page's script against a stand-in DOM: #board?branches=all&owner=… keeps both, and each control writes both back.
 cat > "$tmp/board-script.js" <<'JS'
 const html = require('fs').readFileSync(process.argv[2], 'utf8')

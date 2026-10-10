@@ -25,7 +25,7 @@ export type Collision = {
 const UNDER_WAY = new Set<TaskStatusWord>(['in progress', 'in review'])
 
 /** The branch a ref stands for: `origin/feat/x` is the same branch as `feat/x`. */
-const branchOf = (r: Pick<RefState, 'ref' | 'remote'>) => (r.remote ? r.ref.replace(/^[^/]+\//, '') : r.ref)
+export const branchOf = (r: Pick<RefState, 'ref' | 'remote'>) => (r.remote ? r.ref.replace(/^[^/]+\//, '') : r.ref)
 
 /** Days since the task started on this ref, or since the ref's newest commit. */
 function ageOf(r: RefState, now: number): string | null {

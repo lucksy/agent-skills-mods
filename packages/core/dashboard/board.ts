@@ -53,7 +53,7 @@ export function boardHtml(s: State): string {
   const cards = (col: Col, only?: string) =>
     list.tasks
       .filter(t => columnOf(s, t) === col && (only === undefined || phaseNo(t) === only))
-      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0))
+      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0, only === undefined))
       .join('')
   const column = (c: { key: Col; label: string }, body: string, inLane: boolean, idPrefix = 'col') => {
     const n = (body.match(/ data-task="/g) ?? []).length
@@ -139,7 +139,8 @@ function noteHtml(t: Task): string {
 /** An owner as the filter and the hash name them: `@Sara-K` → `sara-k`; '' when there is none. */
 const ownerKey = (owner: string | undefined) => (owner ?? '').replace(/^@/, '').toLowerCase()
 
-function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean): string {
+/** A card; `anchor` gives it the id other tabs link to (`#card-T4`), on this branch's plain columns only. */
+function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean, anchor: boolean): string {
   const open = t.boxes.filter(b => !b.isDone).length
   const n = t.boxes.length
   const boxes = n === 0 ? 'no boxes' : open === 0 ? (n === 1 ? '1 box done' : `all ${n} done`) : `${open} of ${n} open`
@@ -157,7 +158,7 @@ function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean
   } else meta = boxes === 'no boxes' ? boxes : plural(n, 'box', 'boxes')
   const phaseTag = showPhase && phase ? `<span class="c-phase">Phase ${phase}</span>` : ''
   const k = clashHtml(s, t.id)
-  const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}">
+  const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${anchor ? ` id="card-${esc(t.id)}"` : ''}>
 <p class="c-title">${k.flag}<span class="id">${esc(t.id)}</span> ${inline(t.title)}</p>
 <p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}
 </li>`

@@ -12,17 +12,20 @@ import { overviewHtml } from './overview'
 import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
 import { SPEC_STYLE, specHtml } from './spec'
 import { MODULES_STYLE, modulesHtml } from './modules'
+import { TEAM_STYLE, teamHtml } from './team'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
 
 export { chartMount, type ChartSpec }
 
-export type ViewId = 'overview' | 'board' | 'roadmap' | 'flow' | 'spec' | 'modules'
+export type ViewId = 'overview' | 'board' | 'team' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State) => string }[] = [
   { id: 'overview', label: 'Overview', render: overviewHtml },
   { id: 'board', label: 'Board', render: boardHtml },
+  // team-view (V6): who is on what, and what waits on whom.
+  { id: 'team', label: 'Team', render: teamHtml },
   { id: 'roadmap', label: 'Roadmap', render: roadmapHtml },
   { id: 'flow', label: 'Flow', render: flowHtml },
   { id: 'spec', label: 'Spec', render: specHtml },
@@ -122,8 +125,8 @@ ${chartsScript(panels)}
 }
 
 /**
- * Tabs over the views: the hash names the view (`#overview`, `#board?phase=2&branches=all`),
- * so a link opens it and Back returns; arrow keys, Home and End move between tabs.
+ * Tabs over the views: the hash names the view (`#overview`, `#board?phase=2&branches=all`)
+ * or a card on the Board (`#card-T4`), so a link opens it and Back returns; arrow keys, Home and End move between tabs.
  */
 export const DASHBOARD_SCRIPT = `(() => {
   const d = document, b = d.body, $ = id => d.getElementById(id)
@@ -164,6 +167,9 @@ export const DASHBOARD_SCRIPT = `(() => {
     // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
     const pick = id.startsWith('spec-') ? id : ''
     if (pick) id = 'spec'
+    // #card-<task> is a card on the Board (the Team tab links to them): open the Board there.
+    const card = id.startsWith('card-') ? id : ''
+    if (card) id = 'board'
     for (const a of d.querySelectorAll('.spec-pick a[href^="#spec-"]'))
       a.getAttribute('href') === '#' + pick ? a.setAttribute('aria-current', 'true') : a.removeAttribute('aria-current')
     if (!ids.includes(id)) id = ids.includes(b.dataset.view) ? b.dataset.view : ids[0]
@@ -175,6 +181,7 @@ export const DASHBOARD_SCRIPT = `(() => {
     for (const v of ids) $('view-' + v).hidden = v !== id
     b.dataset.view = id
     board(id === 'board' ? q : new URLSearchParams())
+    if (card && $(card)) $(card).scrollIntoView({ block: 'center' })
   }
   addEventListener('hashchange', () => show(location.hash))
   tabs.forEach((t, i) => t.addEventListener('keydown', e => {
@@ -237,6 +244,7 @@ ${ROADMAP_STYLE}
 ${FLOW_STYLE}
 ${SPEC_STYLE}
 ${MODULES_STYLE}
+${TEAM_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {
