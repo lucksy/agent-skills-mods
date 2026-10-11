@@ -176,18 +176,18 @@ created: 2026-10-11
 **Estimated scope:** Small
 
 ## Task 8: Past sprints and the sprint review
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `pastSprints` finds every `sprint:` value in `todo.md`'s history, and in archived plans' `history.json` where it is recorded. `sprintReview(sprint)` gives committed against done, scope added, what carries over, and a demo checklist. The checklist holds the done tasks' acceptance boxes and the checkpoints signed off between the start and end dates. `/progress report sprint` prints the current or last ended sprint and copies it to the clipboard; `report sprint 2026-10-13` picks a past one. `--sprint` gains the review once the sprint has ended.
 
 **Acceptance criteria:**
-- [ ] Two past sprints are rebuilt from a fixture history, with nothing new committed
-- [ ] Committed vs done, added and carry over match hand-checked numbers
-- [ ] The demo checklist lists exactly the done tasks' acceptance boxes and the checkpoints signed off in the sprint
+- [x] Two past sprints are rebuilt from a fixture history, with nothing new committed
+- [x] Committed vs done, added and carry over match hand-checked numbers
+- [x] The demo checklist lists exactly the done tasks' acceptance boxes and the checkpoints signed off in the sprint
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T6
 

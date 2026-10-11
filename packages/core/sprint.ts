@@ -62,7 +62,11 @@ export type SprintNow = Sprint & {
  */
 export function sprintNow(list: TaskList, versions: TodoVersion[], today: string): SprintNow | null {
   const sprint = list.meta?.sprint
-  if (!sprint) return null
+  return sprint ? sprintOn(sprint, list, versions, today) : null
+}
+
+/** Sprint `sprint` as `list` shows it, on `today`: the work behind sprintNow and sprintReview. Pure. */
+function sprintOn(sprint: Sprint, list: TaskList, versions: TodoVersion[], today: string): SprintNow {
   const byId = new Map(list.tasks.map(t => [t.id, t]))
   const isDone = (id: string) => byId.get(id)?.status === 'done'
   const committed = sprint.commit.filter(id => byId.has(id))
@@ -100,13 +104,17 @@ function mark(t: Task): string {
   return t.state?.status === 'in progress' || t.state?.status === 'in review' ? '◐' : '○'
 }
 
-/** What `/progress sprint` and `--sprint` print: dates and days left, committed against done, scope added; without a sprint, how to start one. Pure. */
-export function sprintText(s: SprintNow | null, list: TaskList | null, today: string): string {
+/**
+ * What `/progress sprint` and `--sprint` print: dates and days left, committed
+ * against done, scope added. Once it has ended, its review (T8) when given, and
+ * how to start the next; without a sprint, how to start one. Pure.
+ */
+export function sprintText(s: SprintNow | null, list: TaskList | null, today: string, review: SprintReview | null = null): string {
   if (!list || list.total === 0) return 'No task list yet, so there is no sprint.'
-  if (!s) {
-    const open = list.tasks.filter(t => t.status !== 'done' && /^T\d+$/.test(t.id)).slice(0, 3).map(t => t.id)
-    return `No sprint running. To start one that ends in two weeks: /progress sprint start ${endAfter(today, 10)} ${open.join(' ') || 'T4 T5'}`
-  }
+  const open = list.tasks.filter(t => t.status !== 'done' && /^T\d+$/.test(t.id)).slice(0, 3).map(t => t.id)
+  const next = `/progress sprint start ${endAfter(today, 10)} ${open.join(' ') || 'T4 T5'}`
+  if (!s) return `No sprint running. To start one that ends in two weeks: ${next}`
+  if (s.phase === 'ended' && review) return `${sprintReviewText(review)}\n\nThe sprint has ended. To start the next, for two weeks: ${next}`
   const byId = new Map(list.tasks.map(t => [t.id, t]))
   const when =
     s.phase === 'ended'
@@ -139,4 +147,93 @@ export function endAfter(day: string, n: number): string {
     if (wd !== 0 && wd !== 6 && --left === 0) return dayOf(t)
     t += DAY_MS
   }
+}
+
+// ------------------------------------------------------------ past sprints and the review (T8, C5)
+
+/**
+ * Every sprint tasks/todo.md has held, oldest first: each distinct `sprint:` in
+ * its committed copies, then the list's own. Rebuilt from history, so nothing
+ * is ever committed for a past sprint. Pure.
+ */
+export function pastSprints(versions: TodoVersion[], current: TaskList | null): Sprint[] {
+  const byStart = new Map<string, Sprint>()
+  const all = [...versions].sort((a, b) => a.day.localeCompare(b.day)).map(v => v.list.meta?.sprint)
+  // The newest copy of a sprint says what it committed to last.
+  for (const s of [...all, current?.meta?.sprint]) if (s) byStart.set(s.start, s)
+  return [...byStart.values()].sort((a, b) => a.start.localeCompare(b.start))
+}
+
+/**
+ * `/progress report sprint [day]`: the sprint with `day` in it, else the
+ * running one, else the last that ended; null when there is none. Pure.
+ */
+export function pickSprint(versions: TodoVersion[], current: TaskList | null, day: string | null, today: string): Sprint | null {
+  const all = pastSprints(versions, current)
+  if (day) return all.find(s => s.start <= day && day <= s.end) ?? null
+  return all.find(s => s.start <= today && today <= s.end) ?? all.filter(s => s.end < today).at(-1) ?? null
+}
+
+export type SprintReview = SprintNow & {
+  /** Committed and not done on its end date; while it runs, still open. */
+  carryOver: string[]
+  /** The done tasks (committed, then added) with their acceptance boxes. */
+  demo: { id: string; title: string; boxes: string[] }[]
+  /** Checkpoints signed off between its first and last day. */
+  checkpoints: { title: string; day: string }[]
+  /** Each task's title and size, by id, for the text. */
+  tasks: Record<string, { title: string; size?: Task['size'] }>
+}
+
+/**
+ * The sprint review (C5): committed against done, scope added, what carries
+ * over and the demo checklist, as the plan stood on the sprint's end date (its
+ * last committed copy by then); while it runs, as the plan stands now. Pure.
+ */
+export function sprintReview(sprint: Sprint, current: TaskList, versions: TodoVersion[], today: string): SprintReview {
+  const atEnd = today <= sprint.end ? null : [...versions].sort((a, b) => a.day.localeCompare(b.day)).filter(v => v.day <= sprint.end).at(-1)?.list
+  const list = atEnd ?? current
+  const now = sprintOn(sprint, list, versions, today)
+  const byId = new Map(list.tasks.map(t => [t.id, t]))
+  const shown = [...now.committed.done, ...now.added.done].map(id => byId.get(id)!)
+  return {
+    ...now,
+    carryOver: now.committed.ids.filter(id => !now.committed.done.includes(id)),
+    demo: shown.map(t => ({ id: t.id, title: t.title, boxes: t.boxes.filter((_, i) => (t.kinds?.[i] ?? 'criteria') === 'criteria').map(b => b.text) })),
+    checkpoints: list.checkpoints.flatMap(c => (c.signedOff && c.signedOff.day >= sprint.start && c.signedOff.day <= sprint.end ? [{ title: c.title, day: c.signedOff.day }] : [])),
+    tasks: Object.fromEntries(list.tasks.map(t => [t.id, { title: t.title, ...(t.size ? { size: t.size } : {}) }])),
+  }
+}
+
+/** What `/progress report sprint` copies, and `--sprint` adds once the sprint has ended. Pure. */
+export function sprintReviewText(r: SprintReview): string {
+  const ended = r.phase === 'ended'
+  const name = (id: string) => `${id} ${r.tasks[id]?.title ?? ''}${r.tasks[id]?.size ? ` (${r.tasks[id]!.size})` : ''}`.trim()
+  const when = ended ? `ended ${shortDay(r.end)}` : `${r.daysLeft} of ${r.days} working day${r.days === 1 ? '' : 's'} left`
+  const open = r.carryOver.length
+  const lines = [
+    `Sprint review${ended ? '' : ' so far'} · ${shortDay(r.start)} – ${shortDay(r.end)} · ${when}`,
+    `${r.committed.done.length} of ${r.committed.ids.length} committed done (${num(r.committed.donePoints)} of ${pointsText(r.committed.points)}) · +${r.added.ids.length} added · ${open} ${ended ? (open === 1 ? 'carries over' : 'carry over') : 'still open'}`,
+  ]
+  const done = [...r.committed.done.map(id => `  ✓ ${name(id)}`), ...r.added.done.map(id => `  ✓ ${name(id)} (added)`)]
+  if (done.length) lines.push('Done', ...done)
+  if (open) lines.push(ended ? (open === 1 ? 'Carries over' : 'Carry over') : 'Still open', ...r.carryOver.map(id => `  ○ ${name(id)}`))
+  const addedOpen = r.added.ids.filter(id => !r.added.done.includes(id))
+  if (addedOpen.length) lines.push('Added, not done', ...addedOpen.map(id => `  ○ ${name(id)}`))
+  if (r.gone.length) lines.push(`Deferred to the backlog: ${r.gone.join(', ')}`)
+  const demo = [...r.demo.flatMap(d => d.boxes.map(b => `  - [ ] ${d.id} ${d.title}: ${b}`)), ...r.checkpoints.map(c => `  - [ ] Checkpoint "${c.title}" (signed off ${shortDay(c.day)})`)]
+  if (demo.length) lines.push('Demo checklist', ...demo)
+  return lines.join('\n')
+}
+
+/**
+ * `/progress report sprint [day]` (C5): the review of the sprint with `day` in
+ * it, else the running one, else the last that ended; or why there is none. Pure.
+ */
+export function sprintReportText(versions: TodoVersion[], current: TaskList, day: string | null, today: string): string {
+  const s = pickSprint(versions, current, day, today)
+  if (s) return sprintReviewText(sprintReview(s, current, versions, today))
+  const all = pastSprints(versions, current).map(x => `${shortDay(x.start)} – ${shortDay(x.end)}`)
+  if (!all.length) return 'No sprint to review: tasks/todo.md has never had a sprint. /progress sprint start <end> T4 T5 starts one.'
+  return `${day ? `No sprint ran on ${day}.` : 'No sprint has started yet.'} Sprints: ${all.join(', ')}.`
 }

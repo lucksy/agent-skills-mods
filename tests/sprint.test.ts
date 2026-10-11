@@ -5,7 +5,7 @@ import { parseSprint, setSprint } from '../packages/core/format'
 import { readCopiesSince, type Runner } from '../packages/core/history'
 import { parseTasks } from '../packages/core/parse'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
-import { endAfter, sprintBase, sprintLine, sprintNow, sprintText, versionsOf, workingDays } from '../packages/core/sprint'
+import { endAfter, pastSprints, pickSprint, sprintBase, sprintLine, sprintNow, sprintReportText, sprintReview, sprintReviewText, sprintText, versionsOf, workingDays } from '../packages/core/sprint'
 import { bandText } from '../packages/core/view'
 import { gitOutput, TODO_TEMPLATE } from './fixtures'
 
@@ -209,5 +209,136 @@ describe('the sprint in State v1 (T6)', () => {
     expect(json.sprint?.added.ids).toEqual(['T7', 'T9'])
     expect(json.sprint?.committed).toEqual({ ids: ['T2', 'T3', 'T4'], done: ['T2', 'T3'], points: 3.5, donePoints: 2.5 })
     expect('sprint' in stateJson(await buildState(io({ 'tasks/todo.md': V_FRI }, fakeGit())))).toBe(false)
+  })
+})
+
+// ceremonies T8 (C5): past sprints from tasks/todo.md's history, and the sprint review.
+
+type Row = { n: number; title: string; done?: string; size?: 'S' | 'M' | 'L' }
+/** A plan as committed: its sprint lines, its tasks (done ones ticked, with a verification box) and a checkpoint after T2. */
+function plan(sprint: string | null, rows: Row[], signed: string | null = null): string {
+  const tasks = rows.map(r => {
+    const x = r.done ? 'x' : ' '
+    const section = `## Task ${r.n}: ${r.title}\n**Status:** ${r.done ? `done · done ${r.done}` : 'todo'}\n${r.size ? `**Size:** ${r.size}\n` : ''}\n**Acceptance criteria:**\n- [${x}] ${r.title} works\n\n**Verification:**\n- [${x}] Tests pass\n`
+    return r.n === 2 ? `${section}\n## Checkpoint: After T2\n${signed ? `**Signed off:** @amila ${signed}\n` : ''}- [${signed ? 'x' : ' '}] Review with human\n` : section
+  })
+  return `---\nplan: gateway\n${sprint ?? ''}---\n# Tasks: gateway\n\n${tasks.join('\n')}`
+}
+const A = 'sprint: 2026-09-28..2026-10-09\ncommit: T1, T2, T3\n'
+const B = 'sprint: 2026-10-12..2026-10-23\ncommit: T3, T4, T6\n'
+const R4: Row[] = [{ n: 1, title: 'Scaffold', size: 'S' }, { n: 2, title: 'Schema', size: 'L' }, { n: 3, title: 'Keys' }, { n: 4, title: 'Rate limit' }]
+const done = (rows: Row[], ids: Record<number, string>) => rows.map(r => (ids[r.n] ? { ...r, done: ids[r.n] } : r))
+const TWO_SPRINTS: [string, string][] = [
+  ['2026-10-23', plan(B, [...done(R4, { 1: '2026-10-02', 2: '2026-10-07', 3: '2026-10-16', 4: '2026-10-23' }), { n: 5, title: 'Docs', done: '2026-10-09' }, { n: 6, title: 'Metrics' }, { n: 7, title: 'Alerts', done: '2026-10-23' }], '2026-10-07')],
+  ['2026-10-16', plan(B, [...done(R4, { 1: '2026-10-02', 2: '2026-10-07', 3: '2026-10-16' }), { n: 5, title: 'Docs', done: '2026-10-09' }, { n: 6, title: 'Metrics' }], '2026-10-07')],
+  ['2026-10-12', plan(B, [...done(R4, { 1: '2026-10-02', 2: '2026-10-07' }), { n: 5, title: 'Docs', done: '2026-10-09' }, { n: 6, title: 'Metrics' }], '2026-10-07')],
+  ['2026-10-09', plan(A, [...done(R4, { 1: '2026-10-02', 2: '2026-10-07' }), { n: 5, title: 'Docs', done: '2026-10-09' }], '2026-10-07')],
+  ['2026-10-07', plan(A, [...done(R4, { 1: '2026-10-02', 2: '2026-10-07' }), { n: 5, title: 'Docs' }], '2026-10-07')],
+  ['2026-10-02', plan(A, [...done(R4, { 1: '2026-10-02' }), { n: 5, title: 'Docs' }])],
+  ['2026-09-28', plan(A, R4)],
+  ['2026-09-25', plan(null, R4)],
+]
+const PAST = gitOutput(TWO_SPRINTS)
+const pastGit: Runner = async (argv, opts) => ({ exitCode: 0, stdout: argv[1] === 'log' ? PAST.log : PAST.answer(argv, opts?.stdin ?? ''), stderr: '' })
+const LATER = '2026-10-26'
+
+describe('past sprints and the review (T8)', () => {
+  const read = async () => versionsOf(await readCopiesSince(pastGit, 'tasks/todo.md'))
+  const current = parseTasks(TWO_SPRINTS[0]![1])
+
+  test('both sprints are rebuilt from the history, oldest first, with nothing written', async () => {
+    const calls: { argv: string[]; stdin: string }[] = []
+    const versions = versionsOf(await readCopiesSince(async (argv, opts) => (calls.push({ argv, stdin: opts?.stdin ?? '' }), pastGit(argv, opts)), 'tasks/todo.md'))
+    expect(pastSprints(versions, current)).toEqual([
+      { start: '2026-09-28', end: '2026-10-09', commit: ['T1', 'T2', 'T3'] },
+      { start: '2026-10-12', end: '2026-10-23', commit: ['T3', 'T4', 'T6'] },
+    ])
+    // Only reads: one log, then cat-file.
+    expect(calls.map(c => c.argv.slice(0, 2).join(' '))).toEqual(['git log', 'git cat-file', 'git cat-file'])
+  })
+
+  test('the first sprint: committed against done on its end date, added, carry over and the demo checklist', async () => {
+    const r = sprintReview(pastSprints(await read(), current)[0]!, current, await read(), LATER)
+    expect([r.phase, r.committed.ids, r.committed.done, r.committed.points, r.committed.donePoints]).toEqual(['ended', ['T1', 'T2', 'T3'], ['T1', 'T2'], 3.5, 2.5])
+    expect(r.added).toEqual({ ids: ['T5'], done: ['T5'] })
+    expect(r.carryOver).toEqual(['T3'])
+    expect(r.demo).toEqual([
+      { id: 'T1', title: 'Scaffold', boxes: ['Scaffold works'] },
+      { id: 'T2', title: 'Schema', boxes: ['Schema works'] },
+      { id: 'T5', title: 'Docs', boxes: ['Docs works'] },
+    ])
+    expect(r.checkpoints).toEqual([{ title: 'After T2', day: '2026-10-07' }])
+  })
+
+  test('the second sprint: a task added at its start is not scope added; one added later is; the checkpoint was signed before it', async () => {
+    const r = sprintReview(pastSprints(await read(), current)[1]!, current, await read(), LATER)
+    expect([r.committed.done, r.added.ids, r.added.done, r.carryOver, r.checkpoints]).toEqual([['T3', 'T4'], ['T7'], ['T7'], ['T6'], []])
+    expect(r.demo.map(d => d.id)).toEqual(['T3', 'T4', 'T7'])
+    expect(sprintReviewText(r).split('\n')).toEqual([
+      'Sprint review · 12 Oct – 23 Oct · ended 23 Oct',
+      '2 of 3 committed done (2 of 3 points) · +1 added · 1 carries over',
+      'Done',
+      '  ✓ T3 Keys',
+      '  ✓ T4 Rate limit',
+      '  ✓ T7 Alerts (added)',
+      'Carries over',
+      '  ○ T6 Metrics',
+      'Demo checklist',
+      '  - [ ] T3 Keys: Keys works',
+      '  - [ ] T4 Rate limit: Rate limit works',
+      '  - [ ] T7 Alerts: Alerts works',
+    ])
+  })
+
+  test('a running sprint reviews so far: what is open is not carried over yet', async () => {
+    const versions = await read()
+    const r = sprintReview(current.meta!.sprint!, current, versions, '2026-10-20')
+    // A running sprint is read from the plan as it is now.
+    expect([r.phase, r.carryOver, r.committed.done]).toEqual(['running', ['T6'], ['T3', 'T4']])
+    expect(sprintReviewText(r).split('\n').slice(0, 2)).toEqual(['Sprint review so far · 12 Oct – 23 Oct · 4 of 10 working days left', '2 of 3 committed done (2 of 3 points) · +1 added · 1 still open'])
+  })
+
+  test('picking a sprint by a day in it; the last ended one by default', async () => {
+    const versions = await read()
+    expect(pickSprint(versions, current, '2026-10-01', LATER)?.start).toBe('2026-09-28')
+    expect(pickSprint(versions, current, '2026-10-12', LATER)?.start).toBe('2026-10-12')
+    expect(pickSprint(versions, current, null, LATER)?.start).toBe('2026-10-12')
+    expect(pickSprint(versions, current, '2026-11-02', LATER)).toBeNull()
+    expect(pickSprint([], parseTasks(TODO_TEMPLATE), null, LATER)).toBeNull()
+  })
+})
+
+describe('the review in replies (T8)', () => {
+  const read = async () => versionsOf(await readCopiesSince(pastGit, 'tasks/todo.md'))
+  const current = parseTasks(TWO_SPRINTS[0]![1])
+
+  test('/progress report sprint: the last ended sprint, one picked by a day, or why there is none', async () => {
+    const versions = await read()
+    expect(sprintReportText(versions, current, null, LATER).split('\n')[0]).toBe('Sprint review · 12 Oct – 23 Oct · ended 23 Oct')
+    expect(sprintReportText(versions, current, '2026-10-01', LATER).split('\n')).toEqual([
+      'Sprint review · 28 Sep – 9 Oct · ended 9 Oct',
+      '2 of 3 committed done (2½ of 3½ points) · +1 added · 1 carries over',
+      'Done',
+      '  ✓ T1 Scaffold (S)',
+      '  ✓ T2 Schema (L)',
+      '  ✓ T5 Docs (added)',
+      'Carries over',
+      '  ○ T3 Keys',
+      'Demo checklist',
+      '  - [ ] T1 Scaffold: Scaffold works',
+      '  - [ ] T2 Schema: Schema works',
+      '  - [ ] T5 Docs: Docs works',
+      '  - [ ] Checkpoint "After T2" (signed off 7 Oct)',
+    ])
+    expect(sprintReportText(versions, current, '2026-11-02', LATER)).toBe('No sprint ran on 2026-11-02. Sprints: 28 Sep – 9 Oct, 12 Oct – 23 Oct.')
+    expect(sprintReportText([], parseTasks(TODO_TEMPLATE), null, LATER)).toBe('No sprint to review: tasks/todo.md has never had a sprint. /progress sprint start <end> T4 T5 starts one.')
+  })
+
+  test('once the sprint has ended, /progress sprint and --sprint show its review and how to start the next', async () => {
+    const versions = await read()
+    const r = sprintReview(current.meta!.sprint!, current, versions, LATER)
+    const text = sprintText(sprintNow(current, versions, LATER), current, LATER, r)
+    expect(text.startsWith('Sprint review · 12 Oct – 23 Oct · ended 23 Oct\n')).toBe(true)
+    expect(text.endsWith('\n\nThe sprint has ended. To start the next, for two weeks: /progress sprint start 2026-11-06 T6')).toBe(true)
   })
 })

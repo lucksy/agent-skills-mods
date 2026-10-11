@@ -329,6 +329,15 @@ check sprint-no-git 'Added since the start: nothing' node "$script" "$repo" --sp
 check sprint-none 'No sprint running. To start one that ends in two weeks: /progress sprint start' node "$script" "$tmp/build" --sprint --no-git
 if [[ -z $(git -C "$repo" status --porcelain) ]]; then echo "ok   sprint-untouched"; else echo "FAIL sprint-untouched: the repository changed"; fail=1; fi
 
+# The sprint review (ceremonies T8): a sprint that ended in January, reviewed from its history.
+printf -- '\n## Task 4: Metrics\n- [ ] counted\n' >> "$repo/tasks/todo.md"
+sed -i.bak 's/sprint: 2026-01-05..2099-12-31/sprint: 2026-01-05..2026-01-09/; s/- \[ \] builds/- [x] builds/' "$repo/tasks/todo.md"; rm -f "$repo/tasks/todo.md.bak"
+at 2026-01-09 'T1 done, T4 added'
+check sprint-review 'Sprint review · 5 Jan – 9 Jan · ended 9 Jan'$'\n''1 of 2 committed done (2 of 3 points) · +2 added · 1 carries over' node "$script" "$repo" --sprint
+check sprint-review-demo 'Demo checklist'$'\n''  - [ ] T1 Scaffold: builds' node "$script" "$repo" --sprint
+check sprint-review-next 'The sprint has ended. To start the next, for two weeks: /progress sprint start' node "$script" "$repo" --sprint
+if [[ -z $(git -C "$repo" status --porcelain) ]]; then echo "ok   sprint-review-untouched"; else echo "FAIL sprint-review-untouched: the repository changed"; fail=1; fi
+
 # The decisions inbox (ceremonies T11): what waits on you, on a handle or on anyone, and in --json.
 check inbox-me 'Inbox · everything waiting (no tasks/team.md, so nothing is filtered) · 1 waiting' node "$script" "$tmp/build" --inbox --no-git
 check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all --no-git

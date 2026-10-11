@@ -55,7 +55,8 @@ Usage: agent-skills-progress [dir] [options]
   --since         what changed since you last looked, with who did it; then
                   remembers this look (in the git folder, shared with the plugin)
   --sprint        the sprint now: days left, committed against done (tasks and
-                  points) and the scope added since it began
+                  points) and the scope added since it began; once it has
+                  ended, its review: carry over and the demo checklist
   --standup-team  the team standup: a line per person with what was done since the
                   last working day (on any branch, or named by their commits), today
                   and blocked, then what nobody owns
@@ -239,8 +240,14 @@ async function main() {
   }
   if (o.mode === 'sprint') {
     // ceremonies C5: the same lines as /progress sprint, scope added from tasks/todo.md's copies since the start.
-    const { sprintText } = await import('../packages/core/sprint.ts')
-    return console.log(sprintText(state.sprint ?? null, state.list, state.today))
+    const { sprintReview, sprintText, versionsOf } = await import('../packages/core/sprint.ts')
+    // Once it has ended, its review (ceremonies T8): the plan as it stood on its end date.
+    let review = null
+    if (state.sprint?.phase === 'ended' && state.list && io.run) {
+      const { readCopiesSince } = await import('../packages/core/history.ts')
+      review = sprintReview(state.sprint, state.list, versionsOf(await readCopiesSince(io.run, 'tasks/todo.md', { since: state.sprint.start })), state.today)
+    }
+    return console.log(sprintText(state.sprint ?? null, state.list, state.today, review))
   }
   if (o.mode === 'standup-team') {
     // ceremonies C3: the same lines /progress standup team copies, from the board and one log since the last working day.
