@@ -57,40 +57,40 @@ T1, T3, T6, T10 and T11 can start in parallel. After the foundation, the sprint 
 Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation
-- [ ] Task 1: Task size
-- [ ] Task 2: The ETA in points
-- [ ] Task 3: The backlog file
-- [ ] Task 4: Pull and defer
+- [x] Task 1: Task size
+- [x] Task 2: The ETA in points
+- [x] Task 3: The backlog file
+- [x] Task 4: Pull and defer
 
 ### Checkpoint: Foundation
-- [ ] Tests pass; with no sizes and no backlog, every output is byte-identical to 0.39.0
+- [x] Tests pass; with no sizes and no backlog, every output is byte-identical to 0.39.0
 
 ### Phase 2: Sprints
-- [ ] Task 5: Readiness and /progress ready
-- [ ] Task 6: Starting a sprint, and the sprint now
-- [ ] Task 7: Sprint planning against pace
-- [ ] Task 8: Past sprints and the sprint review
-- [ ] Task 9: The retro
+- [x] Task 5: Readiness and /progress ready
+- [x] Task 6: Starting a sprint, and the sprint now
+- [x] Task 7: Sprint planning against pace
+- [x] Task 8: Past sprints and the sprint review
+- [x] Task 9: The retro
 
 ### Checkpoint: Sprints
-- [ ] In a real git repo with two weeks of history, plan, start, review and retro agree
+- [x] In a real git repo with two weeks of history, plan, start, review and retro agree
 
 ### Phase 3: Team
-- [ ] Task 10: The team standup
-- [ ] Task 11: The decisions inbox
+- [x] Task 10: The team standup
+- [x] Task 11: The decisions inbox
 
 ### Phase 4: Dashboard
-- [ ] Task 12: The Sprint tab
-- [ ] Task 13: The Inbox tab
+- [x] Task 12: The Sprint tab
+- [x] Task 13: The Inbox tab
 
 ### Checkpoint: Dashboard
-- [ ] In Chrome, Pull, Size, Answer and Sign change the markdown and the page reloads
+- [x] In Chrome, Pull, Size, Answer and Sign change the markdown and the page reloads
 
 ### Phase 5: Close
-- [ ] Task 14: Docs, rules, README, 0.40.0 and final checks
+- [x] Task 14: Docs, rules, README, 0.40.0 and final checks
 
 ### Checkpoint: Complete
-- [ ] Every success criterion in the spec is met; review with human
+- [x] Every success criterion in the spec is met; review with human
 
 ## Risks and Mitigations
 

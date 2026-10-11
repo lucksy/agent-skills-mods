@@ -205,7 +205,7 @@ export function deferTask(todo: string, backlog: string | null, id: string, by: 
 - [x] `/progress retro` shows the slowest tasks against their size, the longest blocks, scope added and ETA drift, with no per-person figure.
 - [x] `/progress inbox` and the Inbox tab show what waits on you by handle and role. On the live page each item's button works, and a stale page gets a 409.
 - [x] `docs/progress-format.md` documents Size, sprints and the backlog. The rules Claude is told include them. The README documents the commands.
-- [ ] All tests pass. Checked in a real session and in Chrome.
+- [x] All tests pass. Checked in a real session and in Chrome.
 
 ## Open Questions
 
