@@ -228,6 +228,6 @@ export const TEAM_STYLE = `
 .p-clash{margin:0;color:var(--blocked)}.p-clash a{color:inherit}
 .t-groups{list-style:none;margin:0;padding:0}
 .t-groups>li+li{margin-top:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
-.t-groups h4{font-size:13px;margin:0 0 var(--s1)}
+.t-groups h4{font-size:13px;margin:0 0 var(--s1);text-transform:none;letter-spacing:normal}
 .card:target{outline:2px solid var(--focus);outline-offset:2px}
 `
