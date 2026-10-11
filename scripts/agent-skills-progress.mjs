@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --sprint | --retro | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --sprint | --sprint-plan [days] | --retro | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -60,6 +60,10 @@ Usage: agent-skills-progress [dir] [options]
   --retro         the retro of the running or last sprint (else the whole plan):
                   tasks slow against their size, the longest blocks, scope added
                   and the ETA's drift; about the work, never about people
+  --sprint-plan [days]
+                  what fits the next [days] working days (default 10) at the pace of
+                  the last 10: ready tasks in dependency order, the not-ready ones and
+                  why, and the /progress sprint start line to run. Writes nothing
   --standup-team  the team standup: a line per person with what was done since the
                   last working day (on any branch, or named by their commits), today
                   and blocked, then what nobody owns
@@ -100,6 +104,12 @@ function parseArgs(argv) {
     else if (a === '--ready') o.mode = 'ready'
     else if (a === '--sprint') o.mode = 'sprint'
     else if (a === '--retro') o.mode = 'retro'
+    else if (a === '--sprint-plan') {
+      o.mode = 'sprint-plan'
+      // A number of working days, not a folder.
+      if (/^\d+$/.test(argv[i + 1] ?? '')) o.days = Number(argv[++i])
+      if (o.days !== undefined && !(o.days >= 1 && o.days <= 60)) throw new Error('--sprint-plan takes a number of working days from 1 to 60')
+    }
     else if (a === '--inbox') {
       o.mode = 'inbox'
       // A handle, all or me: not a folder.
@@ -261,6 +271,11 @@ async function main() {
     if (!state.list || state.list.total === 0 || state.listFile !== 'tasks/todo.md') return console.log('No tasks/todo.md here, so there is nothing to look back on.')
     const { gatherRetro, retro, retroText } = await import('../packages/core/retro.ts')
     return console.log(retroText(retro(await gatherRetro(io, state.list, state.snapshots, state.today))))
+  }
+  if (o.mode === 'sprint-plan') {
+    // ceremonies C1: the same lines as /progress sprint plan, against the pace in the git history.
+    const { sprintPlan, sprintPlanText } = await import('../packages/core/sprint.ts')
+    return console.log(sprintPlanText(sprintPlan(state, o.days ?? 10), state.list, state.sprint ?? null))
   }
   if (o.mode === 'standup-team') {
     // ceremonies C3: the same lines /progress standup team copies, from the board and one log since the last working day.

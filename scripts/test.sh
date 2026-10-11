@@ -343,6 +343,29 @@ check retro-head 'Retro · sprint 5 Jan – 9 Jan' node "$script" "$repo" --retr
 check retro-scope 'Scope: +2 added after the start: T3 Alerts, T4 Metrics' node "$script" "$repo" --retro
 check retro-no-list 'nothing to look back on' node "$script" "$tmp/empty" --retro
 
+# Sprint planning (ceremonies T7): three weeks of commits with four tasks done, so a pace; T6 has no verification and T7 waits on it.
+repo="$tmp/plan"; mkdir -p "$repo/tasks"
+ago() { node -e 'console.log(new Date(Date.now() - process.argv[1] * 864e5).toISOString().slice(0, 10))' "$1"; }
+plan_todo() { # tasks/todo.md with the first $1 tasks done
+  local n box out='---\nplan: gateway\n---\n'
+  for n in 1 2 3 4 5; do
+    if (( n <= $1 )); then box=x; status=done; else box=' '; status=todo; fi
+    out+="## Task $n: Part $n\n**Status:** $status\n**Size:** M\n**Acceptance criteria:**\n- [$box] works\n**Verification:**\n- [$box] tests pass\n\n"
+  done
+  printf -- "${out}## Task 6: Audit\n**Acceptance criteria:**\n- [ ] logged\n\n## Task 7: Export\n**Acceptance criteria:**\n- [ ] csv\n**Verification:**\n- [ ] tests pass\n**Dependencies:** T6\n" > "$repo/tasks/todo.md"
+}
+sp init -b main
+plan_todo 0; sp add .; at "$(ago 20)" 'plan'
+plan_todo 2; at "$(ago 9)" 'T1, T2 done'
+plan_todo 4; at "$(ago 2)" 'T3, T4 done'
+check sprint-plan-capacity 'Sprint plan · 10 working days · capacity ≈ ' node "$script" "$repo" --sprint-plan
+check sprint-plan-row '  T5  Part 5  M  1  running 1' node "$script" "$repo" --sprint-plan
+check sprint-plan-not-ready 'Not ready:'$'\n''  ✗ T6  Audit   no verification'$'\n''  ✗ T7  Export  waits on T6' node "$script" "$repo" --sprint-plan
+check sprint-plan-days 'Sprint plan · 5 working days · ' node "$script" "$repo" --sprint-plan 5
+check sprint-plan-start 'To start it: /progress sprint start ' node "$script" "$repo" --sprint-plan 5
+check sprint-plan-no-git 'no pace yet' node "$script" "$repo" --sprint-plan --no-git
+if [[ -z $(git -C "$repo" status --porcelain) ]]; then echo "ok   sprint-plan-untouched"; else echo "FAIL sprint-plan-untouched: the repository changed"; fail=1; fi
+
 # The decisions inbox (ceremonies T11): what waits on you, on a handle or on anyone, and in --json.
 check inbox-me 'Inbox · everything waiting (no tasks/team.md, so nothing is filtered) · 1 waiting' node "$script" "$tmp/build" --inbox --no-git
 check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all --no-git
