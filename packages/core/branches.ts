@@ -88,8 +88,8 @@ export type BranchRow = {
 export type BranchBoard = {
   /** The branch checked out, read from the working tree; null outside a branch. */
   here: string | null
-  /** Each ref read, and whether it had the task list. */
-  refs: { name: string; remote: boolean; sha: string; hasFile: boolean }[]
+  /** Each ref read, whether it had the task list, and the plan it names when that isn't this one (its tasks are left out). */
+  refs: { name: string; remote: boolean; sha: string; hasFile: boolean; plan?: string }[]
   /** When this clone last fetched (FETCH_HEAD's time), ms; null when it never has. */
   fetchedAt: number | null
   rows: BranchRow[]
@@ -106,11 +106,23 @@ export function branchRows(
 ): BranchBoard {
   const lists: { name: string; remote: boolean; at: number | null; list: TaskList }[] = []
   if (here.list) lists.push({ name: here.name ?? 'HEAD', remote: false, at: null, list: here.list })
-  for (const c of copies) if (c.text !== null) lists.push({ name: c.ref.name, remote: c.ref.remote, at: c.ref.ms, list: parseTasks(c.text) })
+  // A branch whose list names another plan is other work under the same task ids: left out, and named.
+  const ours = here.list?.meta?.plan
+  const otherPlan = new Map<string, string>()
+  for (const c of copies) {
+    if (c.text === null) continue
+    const list = parseTasks(c.text)
+    const theirs = list.meta?.plan
+    if (ours && theirs && theirs !== ours) otherPlan.set(c.ref.name, theirs)
+    else lists.push({ name: c.ref.name, remote: c.ref.remote, at: c.ref.ms, list })
+  }
+  // Without plan names to go by, a task counts only under the title this branch gives it.
+  const titles = new Map((here.list?.tasks ?? []).map(t => [t.id, t.title]))
   const rows = new Map<string, BranchRow>()
   for (const { name, remote, at, list } of lists) {
     for (const t of list.tasks) {
       if (!/^T\d+$/.test(t.id)) continue
+      if (!(ours && list.meta?.plan) && titles.has(t.id) && titles.get(t.id) !== t.title) continue
       const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, at, pr: t.pr ?? null, reviewer: t.reviewer ?? null }
       const row = rows.get(t.id)
       if (!row) {
@@ -124,7 +136,10 @@ export function branchRows(
   }
   return {
     here: here.name,
-    refs: copies.map(c => ({ name: c.ref.name, remote: c.ref.remote, sha: c.ref.sha, hasFile: c.text !== null })),
+    refs: copies.map(c => {
+      const plan = otherPlan.get(c.ref.name)
+      return { name: c.ref.name, remote: c.ref.remote, sha: c.ref.sha, hasFile: c.text !== null, ...(plan ? { plan } : {}) }
+    }),
     fetchedAt,
     rows: [...rows.values()],
   }
@@ -143,7 +158,7 @@ const GLYPH: Record<TaskStatusWord, string> = { done: '✓', 'in review': '◐',
 
 /** What `/progress branches` and `--branches` print. */
 export function branchesText(b: BranchBoard, now: number, file = 'tasks/todo.md'): string {
-  const read = b.refs.filter(r => r.hasFile)
+  const read = b.refs.filter(r => r.hasFile && !r.plan)
   const age = fetchAge(b.fetchedAt, now)
   const head = `Board across branches · ${b.here ?? 'HEAD'} + ${read.length} ref${read.length === 1 ? '' : 's'} · ${age}`
   if (b.rows.length === 0) return `${head}\nNo tasks in ${file} on any branch.`
@@ -154,6 +169,8 @@ export function branchesText(b: BranchBoard, now: number, file = 'tasks/todo.md'
   }
   const without = b.refs.filter(r => !r.hasFile).map(r => r.name)
   if (without.length) out.push(`No ${file} on: ${without.join(', ')}.`)
+  const other = b.refs.filter(r => r.plan).map(r => `${r.name} (${r.plan})`)
+  if (other.length) out.push(`Another plan on: ${other.join(', ')}.`)
   return out.join('\n')
 }
 

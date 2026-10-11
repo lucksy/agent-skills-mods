@@ -108,7 +108,7 @@ function acrossColumn(r: BranchRow, t: Task | undefined, s: State): Col {
 /** Above the all-branches columns: how many branches, and how old the remote ones are. */
 function acrossHead(s: State): string {
   const b = s.branches!
-  const others = b.refs.filter(r => r.hasFile).length
+  const others = b.refs.filter(r => r.hasFile && !r.plan).length
   const at = b.fetchedAt
   const days = at === null ? 0 : daysBetween(dayOf(at), s.today)
   const fetched = at === null ? 'never fetched: remote branches are as of the last fetch' : `last fetched ${shortDay(dayOf(at))} (${days === 0 ? 'today' : `${days} d ago`})`

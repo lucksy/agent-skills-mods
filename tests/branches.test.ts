@@ -75,6 +75,24 @@ describe('the rows (furthest state per task)', () => {
     expect(b.refs.map(r => [r.name, r.hasFile])).toEqual([['origin/feat/keys', true], ['old', true], ['docs', false]])
   })
 
+  test('a branch on another plan is not this plan: its tasks are left out, and the board says which', () => {
+    const plan = (name: string, body: string) => `---\nplan: ${name}\n---\n${body}`
+    const done = todo(['done · started 2026-10-01 · done 2026-10-02', 'done · @bob · started 2026-10-01 · done 2026-10-02', 'done', 'done'])
+    const b = branchRows({ name: 'main', list: parseTasks(plan('team-view', HERE)) }, [{ ref: ref('origin/old', '9', true), text: plan('format-v2', done) }, { ref: ref('feat/x', '8'), text: plan('team-view', FEAT) }], null)
+    expect(b.rows.find(r => r.id === 'T2')).toMatchObject({ state: 'done', ref: 'feat/x' })
+    expect(b.rows.find(r => r.id === 'T4')).toMatchObject({ state: 'todo', ref: null })
+    expect(b.rows.flatMap(r => r.on.map(o => o.ref))).not.toContain('origin/old')
+    expect(b.refs.find(r => r.name === 'origin/old')).toMatchObject({ hasFile: true, plan: 'format-v2' })
+    const text = branchesText(b, NOW)
+    expect(text).toContain('main + 1 ref ·')
+    expect(text).toContain('Another plan on: origin/old (format-v2).')
+    // Lists that don't name a plan: a task counts only under the same title.
+    const renamed = todo(['done', 'done']).replace('## Task 2: Task 2', '## Task 2: Something else')
+    const c = branchRows({ name: 'main', list: parseTasks(HERE) }, [{ ref: ref('y', '7'), text: renamed }], null)
+    expect(c.rows.find(r => r.id === 'T1')).toMatchObject({ state: 'done' })
+    expect(c.rows.find(r => r.id === 'T2')).toMatchObject({ state: 'in progress', ref: 'main' })
+  })
+
   test('todo everywhere names no ref', () => {
     const b = branchRows({ name: 'main', list: parseTasks(todo([null])) }, [{ ref: ref('x', '1'), text: todo([null]) }], null)
     expect(b.rows[0]).toMatchObject({ state: 'todo', ref: null })
