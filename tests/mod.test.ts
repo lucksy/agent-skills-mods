@@ -1367,6 +1367,22 @@ test('/progress assign, claim and unassign write the owner and say so', async ($
   expect((await $.command.run(run('assign T3'))).text).toBe('Say who: /progress assign T3 @sara, or /progress claim T3 for yourself.')
 })
 
+// ceremonies T1: a task's size, written and cleared by /progress size, shown by /progress task.
+test('/progress size writes and clears the Size line and says so; a bad size or task is refused and writes nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('size T4 L'))).text).toBe('T4 Rate limit per key is size L (2 points).')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Size:** L\n'))
+  expect((await $.command.run(run('task T4'))).text.split('\n')[1]).toBe('to do · size L (2 points)')
+  expect((await $.command.run(run('size 4 s'))).text).toBe('T4 Rate limit per key is size S (½ point), was L.')
+  expect((await $.command.run(run('size T4 -'))).text).toBe('T4 Rate limit per key has no size now (was S): it counts as 1 point, like M.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  expect((await $.command.run(run('size T4 XL'))).text).toBe('"XL" is not a size. Use S, M or L, or - to clear it: /progress size T4 M.')
+  expect((await $.command.run(run('size T9 M'))).text).toMatch(/^No "## Task 9:" section in tasks\/todo\.md\./)
+  expect((await $.command.run(run('size T4'))).text).toBe('Say the size: /progress size T4 M (S, M or L; - clears it).')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+})
+
 test('claim needs to know who you are', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   world(on, files, asPerson('sara@example.com'))

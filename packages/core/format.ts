@@ -167,6 +167,41 @@ export function setOwner(text: string, id: string, owner: string | null): string
   return lines.join(eol)
 }
 
+/** A task's size (ceremonies, C1): `**Size:** M` on its own line under the Status line. */
+export type TaskSize = 'S' | 'M' | 'L'
+
+const SIZE_LINE = /^\s*\*\*Size:?\*\*:?\s*([SML])\s*$/i
+
+/** A `**Size:**` line's size, or null for another line. */
+export function parseSizeLine(line: string): TaskSize | null {
+  const m = SIZE_LINE.exec(line)
+  return m ? (m[1]!.toUpperCase() as TaskSize) : null
+}
+
+/**
+ * `/progress size T4 M` (ceremonies T1): task `id`'s Size line written in place,
+ * or under its Status line (under its heading when it has none), or removed with
+ * null. Every other byte is kept. The text unchanged when there is no such task.
+ */
+export function setSize(text: string, id: string, size: TaskSize | null): string {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const s = sections(lines).find(x => x.id === id)
+  if (!s) return text
+  let at = -1
+  let inFence = false
+  for (let i = s.heading + 1; i < s.end && at < 0; i++) {
+    if (/^\s*(```|~~~)/.test(lines[i]!)) inFence = !inFence
+    else if (!inFence && parseSizeLine(lines[i]!)) at = i
+  }
+  if (size === null) {
+    if (at < 0) return text
+    lines.splice(at, 1)
+  } else if (at >= 0) lines[at] = `**Size:** ${size}`
+  else lines.splice((s.status ?? s.heading) + 1, 0, `**Size:** ${size}`)
+  return lines.join(eol)
+}
+
 /** A handoff (format-v2, F6): `**Handoff:** 2026-10-10 @sara → @bob: migration done, tests left`. */
 export type Handoff = { day: string; from: string | null; to: string; note: string }
 
@@ -497,6 +532,7 @@ export const FORMAT_RULES = [
   '- A task list may name the module of SPEC.md\'s capability map it builds: `module: <id>` in its front matter.',
   '- An answered open question in tasks/plan.md has its answer on the line below it: `  → A: <answer> · @handle YYYY-MM-DD`. An answered question no longer blocks its task. Write an answer only when the person gives it (`/progress answer Q2 "…"`), in their name, and never answer for anyone.',
   '- A checkpoint the person has reviewed has `**Signed off:** @handle YYYY-MM-DD` on the line below its heading, and its review box ticked (`/progress signoff`). Never sign off for anyone.',
+  '- A task may have a size on its own line under its Status line: `**Size:** S`, `M` or `L` (S = ½ point, M = 1, L = 2; a task without one counts as 1). Sizes are set by people (`/progress size T4 M`); keep the line when you rewrite the section, and don\'t add or change one unless asked.',
 ].join('\n')
 
 // ------------------------------------------------------------------ the person's own changes

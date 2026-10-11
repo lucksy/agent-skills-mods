@@ -15,6 +15,7 @@ import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
 import { readBranches, type BranchBoard } from './branches'
 import { collisions, type Collision } from './collisions'
 import { look, parseSeen, seenOf, type Since } from './since'
+import type { TaskSize } from './format'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -189,6 +190,8 @@ export type TaskJson = {
   owner: string | null
   reviewer: string | null
   pr: string | null
+  /** ceremonies (C1): its `**Size:**` line; the key is left out for a task without one, so a plan with no sizes prints as before. */
+  size?: TaskSize
   /** The checkpoint after this task, with its items still open. */
   checkpoint: { title: string; open: string[] } | null
 }
@@ -255,6 +258,7 @@ export function stateJson(s: State): StateJson {
         owner: t.owner ?? null,
         reviewer: t.reviewer ?? null,
         pr: t.pr ?? null,
+        ...(t.size ? { size: t.size } : {}),
         checkpoint: t.checkpoint && { title: t.checkpoint.title, open: t.checkpoint.items.filter(b => !b.isDone).map(b => b.text) },
       })),
     },

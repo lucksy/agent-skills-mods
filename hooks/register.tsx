@@ -826,6 +826,11 @@ async function answerCommand($: $, rest: string): Promise<string> {
   return (await act($, await load($), 'answer', { q: m[1] ?? '', text: m[2] ?? '' })).reply
 }
 
+/** `/progress size T4 M` (ceremonies T1): the task's Size line set to S, M or L, or cleared with `-`. */
+async function sizeCommand($: $, words: string[]): Promise<string> {
+  return (await act($, await load($), 'size', { id: words[0] ?? '', size: words[1] })).reply
+}
+
 /** `/progress signoff` (team-view): sign off the checkpoint that is due, and tick its review box. */
 async function signoffCommand($: $): Promise<string> {
   return (await act($, await load($), 'signoff', {})).reply
@@ -1467,13 +1472,14 @@ export const register: Register = (on, options) => {
       if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'signoff' && !words.length) return reply(await signoffCommand($))
       if (verb === 'merge-driver') return reply(await mergeDriverCommand($, words))
+      if (verb === 'size') return reply(await sizeCommand($, words))
     }
     if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

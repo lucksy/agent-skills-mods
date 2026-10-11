@@ -1,7 +1,7 @@
 // Parsers for the files agent-skills writes: SPEC.md, tasks/plan.md and tasks/todo.md.
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
-import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseStatusLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskState } from './format'
+import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseSizeLine, parseStatusLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskSize, type TaskState } from './format'
 import { parseApprovals, type Signature } from './approvals'
 
 export type Box = { text: string; isDone: boolean }
@@ -33,6 +33,8 @@ export type Task = {
   reviewer?: string
   /** Its `**Handoff:**` notes, oldest first (format-v2, F6). */
   handoffs?: Handoff[]
+  /** Its `**Size:**` line (ceremonies, C1), when it has one. */
+  size?: TaskSize
   /** Which part of the section each box is in, parallel to `boxes`: acceptance criteria or verification. */
   kinds?: ('criteria' | 'verification')[]
   /**
@@ -165,6 +167,11 @@ export function parseTasks(text: string): TaskList {
         if (st.owner) section.task.owner = st.owner
         if (st.pr) section.task.pr = st.pr
         if (st.reviewer) section.task.reviewer = st.reviewer
+        continue
+      }
+      const size = section.task.size ? null : parseSizeLine(line)
+      if (size) {
+        section.task.size = size
         continue
       }
     }

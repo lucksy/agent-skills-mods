@@ -36,6 +36,10 @@ check full-next '☐ migration' node "$script" "$tmp/build" --no-color --no-git
 check no-git-history 'history from today: not a git repository' node "$script" "$tmp/build" --no-color
 check json '"current": "T2"' node "$script" "$tmp/build" --json
 check json-schema '"schema": 1' node "$script" "$tmp/build" --json
+# ceremonies T1: a sized task has its size in --json; an unsized one has no size key.
+mkdir -p "$tmp/sized/tasks"; printf -- '## Task 1: Scaffold\n**Status:** todo\n**Size:** L\n- [ ] builds\n' > "$tmp/sized/tasks/todo.md"
+check json-size '"size": "L"' node "$script" "$tmp/sized" --json --no-git
+if node "$script" "$tmp/build" --json --no-git | grep -q '"size"'; then echo "FAIL json-no-size: an unsized task has a size key"; fail=1; else echo "ok   json-no-size"; fi
 check colour $'\033[32m✓\033[0m T1' node "$script" "$tmp/build" --color --no-git
 check no-color-env 'T1 Scaffold' env NO_COLOR=1 node "$script" "$tmp/build" --no-git
 check timeline-tree '├─ ✓ T1 Scaffold                ▬▬▬ done' node "$script" "$tmp/build" --timeline --no-color --no-git

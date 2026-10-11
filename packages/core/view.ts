@@ -4,6 +4,7 @@
 import { taskKey, type Spec, type Task, type TaskList, type PlanDoc } from './parse'
 import { shortDay, type Forecast } from './forecast'
 import type { Backfill } from './history'
+import { pointsText, WEIGHT } from './size'
 
 export const GLYPH = { done: '✓', next: '●', todo: '○', waiting: '·', blocked: '■', needsYou: '♦', failed: '×' } as const
 
@@ -473,7 +474,8 @@ export function boardRows(list: TaskList, opts: { failed?: string | null } = {})
         const m = /^(?:tasks\/)?([\w./-]+\.md): (.*)$/.exec(t.blockedBy)
         under.push({ text: m ? `open question in ${m[1]}: ${m[2]}` : t.blockedBy, tone: 'muted' })
       }
-      rows.push({ kind: 'task', id: t.id, title: t.owner ? `${t.title} · ${t.owner}` : t.title, glyph, tone, right, rightTone, isCurrent, under })
+      const title = t.size ? `${t.title} (${t.size})` : t.title
+      rows.push({ kind: 'task', id: t.id, title: t.owner ? `${title} · ${t.owner}` : title, glyph, tone, right, rightTone, isCurrent, under })
       if (t.checkpoint) {
         checkpointNo++
         const items = t.checkpoint.items
@@ -581,6 +583,7 @@ export function taskDetail(list: TaskList, id: string, opts: { today: string; da
   if (t.owner) facts.push(t.owner)
   if (t.pr) facts.push(`PR ${t.pr}`)
   if (t.reviewer) facts.push(`reviewer ${t.reviewer}`)
+  if (t.size) facts.push(`size ${t.size} (${pointsText(WEIGHT[t.size])})`)
   if (st?.step && t.status !== 'done') facts.push(`step ${st.step}`)
   if (st?.started) {
     const end = st.done ?? opts.today

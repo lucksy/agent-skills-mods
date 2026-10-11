@@ -161,7 +161,7 @@ describe('bad requests', () => {
       [[1, 2], 'Send JSON: { action, args, rev }.'],
       [{ action: 'start', args: { id: 'T3' } }, 'Send the rev the page was loaded with.'],
       [{ action: 'start', args: 'T3', rev }, 'Send args as an object.'],
-      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer.'],
+      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size.'],
       [{ action: 'start', args: { id: 4 }, rev }, 'Say which task: /progress start T4.'],
       [{ action: 'start', args: { id: 'T9' }, rev }, 'No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.'],
       [{ action: 'tick', args: { id: 'T3', index: 7 }, rev }, 'No box 8 in T3.'],
@@ -184,8 +184,16 @@ describe('bad requests', () => {
 })
 
 describe('each action, through POST /action', () => {
-  test('the 13 actions are the table\'s', () => {
-    expect(ACTION_NAMES.length).toBe(13)
+  test('the 14 actions are the table\'s', () => {
+    expect(ACTION_NAMES.length).toBe(14)
+  })
+
+  test('size writes the task\'s Size line and nothing else (ceremonies T1)', async () => {
+    const p = project()
+    const r = await run(p, 'size', { id: 'T3', size: 'L' })
+    expect([r.status, r.json.reply]).toEqual([200, 'T3 Issue and revoke keys is size L (2 points).'])
+    expect(p.disk['tasks/todo.md']).toBe(TODO_TEMPLATE.replace('## Task 3: Issue and revoke keys\n', '## Task 3: Issue and revoke keys\n**Size:** L\n'))
+    expect((await run(p, 'size', { id: 'T3', size: 'XL' })).status).toBe(400)
   })
 
   test('start, done, block and unblock stamp the task; block adds its question to tasks/plan.md', async () => {

@@ -8,18 +8,18 @@ created: 2026-10-11
 ## Phase 1: Foundation
 
 ## Task 1: Task size
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A task can have an optional `**Size:** S|M|L` line under its Status line. `size.ts` holds the weights (S ½, M 1, L 2, none 1) and the points of a list. The parser exposes `task.size`. The `size` action writes, replaces or clears the line (`/progress size T4 M`, `size T4 -`), keeping every other byte. Size shows on the board pane, the dashboard's Board cards, `/progress task` and `size` in `--json`. `FORMAT_RULES` describes the line.
 
 **Acceptance criteria:**
-- [ ] The Size line round-trips, and files without it parse exactly as before
-- [ ] `/progress size` refuses an unknown task or a size other than S, M, L or `-`
-- [ ] Size shows on the board pane, the Board cards, `/progress task` and `--json`
+- [x] The Size line round-trips, and files without it parse exactly as before
+- [x] `/progress size` refuses an unknown task or a size other than S, M, L or `-`
+- [x] Size shows on the board pane, the Board cards, `/progress task` and `--json`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 
