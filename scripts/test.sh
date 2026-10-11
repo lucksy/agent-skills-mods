@@ -321,6 +321,11 @@ mkdir -p "$tmp/inbox/tasks"; cp "$tmp/build/SPEC.md" "$tmp/build/tasks/todo.md" 
 printf -- '---\napprovals: product, eng\n---\n# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @amila | eng | amila@example.com |\n| @pm | product | pm@example.com |\n' > "$tmp/inbox/tasks/team.md"
 printf -- '# Plan\n\n## Open Questions\n\n- Q1 (T3): @amila, Redis or in memory?\n- Q2: Which region first?\n' > "$tmp/inbox/tasks/plan.md"
 check inbox-dashboard 'Wrote' node "$script" "$tmp/inbox" --dashboard "$tmp/inbox.html" --no-git
+# Readiness (ceremonies T5): --ready prints what /progress ready does; Q1 names T3, and T2 isn't done.
+check ready-reasons '  ✗ T3  Rate limit  no verification, waits on Q1, T2 · no size' node "$script" "$tmp/inbox" --ready --no-git
+check ready-legend "✗ can't start yet · ○ can start; a size is recommended" node "$script" "$tmp/inbox" --ready --no-git
+mkdir -p "$tmp/ready/tasks"; printf -- '## Task 1: Scaffold\n**Size:** S\n**Acceptance criteria:**\n- [ ] builds\n**Verification:**\n- [ ] tests pass\n' > "$tmp/ready/tasks/todo.md"
+check ready-all '✓ every task is ready' node "$script" "$tmp/ready" --ready --no-git
 cat > "$tmp/inbox-script.js" <<'JS'
 const html = require('fs').readFileSync(process.argv[2], 'utf8')
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1]

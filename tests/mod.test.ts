@@ -1460,6 +1460,24 @@ test('/progress defer and pull move a task between the two files and say so; ref
   expect((await $.command.run(run('pull'))).text).toBe('Say which item: /progress pull B3.')
 })
 
+// ceremonies T5: what isn't ready to start, from the list, the plan's open questions and the backlog; nothing written.
+test('/progress ready lists each task not ready with its reasons, and writes nothing', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('**Dependencies:** 1\n', '**Dependencies:** 1, B2\n')
+  const plan = '# Plan\n\n## Open Questions\n\n- Q1: Does T3 need a flag?\n  → A: No · @lucksy 2026-10-11\n- Q2: Should T4 count bursts?\n'
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/plan.md`]: plan, [`${CWD}/tasks/backlog.md`]: '# Backlog\n\n## B2: Quotas\n- [ ] per tenant\n' }
+  world(on, files)
+  expect((await $.command.run(run('ready'))).text).toBe(
+    [
+      'Not ready · 2 of 2 tasks not yet started',
+      '  ✗ T3  Issue and revoke keys  no verification, waits on T2 · no size',
+      '  ✗ T4  Rate limit per key     no verification, waits on Q2, backlog B2 · no size',
+      "✗ can't start yet · ○ can start; a size is recommended",
+    ].join('\n'),
+  )
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(todo)
+  expect(files[`${CWD}/tasks/plan.md`]).toBe(plan)
+})
+
 test('/progress pull writes neither file when one changed while it ran', async ($, on) => {
   const backlog = '# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n'
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }

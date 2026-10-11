@@ -48,6 +48,7 @@ export function diagnose(input: {
     for (const t of list.tasks) {
       for (const d of t.deps) {
         if (d === t.id) add('error', file, `${t.id} depends on itself`)
+        else if (/^B\d+$/.test(d)) add('warn', file, `${t.id} depends on ${d} in the backlog: pull it before ${t.id} can start`)
         else if (!ids.has(d)) add('error', file, `${t.id} depends on ${d}, which is not in the list`)
       }
       if (list.kind === 'tasks' && t.boxes.length === 0) add('warn', file, `${t.id} has no checkboxes, so it can never count as done`)

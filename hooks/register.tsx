@@ -42,6 +42,7 @@ import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
 import { BACKLOG_FILE, backlogText } from '../packages/core/backlog'
+import { readyText } from '../packages/core/sprint'
 import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
@@ -878,6 +879,12 @@ async function sizeCommand($: $, words: string[]): Promise<string> {
   return (await act($, await load($), 'size', { id: words[0] ?? '', size: words[1] })).reply
 }
 
+/** `/progress ready` (ceremonies C4): every task not yet started that isn't ready, and why. Writes nothing. */
+async function readyCommand($: $, p: AsmProject): Promise<string> {
+  const text = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
+  return readyText(p.list, p.plan, text === null ? null : parseBacklog(text))
+}
+
 /**
  * `/progress backlog` (ceremonies T3): tasks/backlog.md's items with their sizes.
  * `/progress backlog add "title" [S|M|L]`: an item appended as the next B id.
@@ -1539,6 +1546,7 @@ export const register: Register = (on, options) => {
     }
     if (arg === 'standup team') return reply(await teamStandup($, p))
     if (arg === 'report') return reply(await writeReport($, p))
+    if (arg === 'ready') return reply(await readyCommand($, p))
     if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
     {
       const verb = rawWords[0]?.toLowerCase()
@@ -1562,7 +1570,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

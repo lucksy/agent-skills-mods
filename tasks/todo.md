@@ -109,18 +109,18 @@ created: 2026-10-11
 ## Phase 2: Sprints
 
 ## Task 5: Readiness and /progress ready
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `readiness(task, list, plan, backlog)` in `sprint.ts` returns why a task isn't ready to start. Blocking reasons are: no acceptance boxes, no verification boxes, an open question that names it, a dependency not done, and a dependency on a backlog item. Recommended reasons are no size and no owner. `/progress ready` lists every not-ready task with its reasons (`T11 no size, no verification · T12 waits on Q3`), or `✓ every task is ready`. `--ready` prints the same list.
 
 **Acceptance criteria:**
-- [ ] Each reason has a fixture, and blocking reasons are told apart from recommended ones
-- [ ] Done tasks and tasks in progress are never listed
-- [ ] `/progress ready` and `--ready` print the same list
+- [x] Each reason has a fixture, and blocking reasons are told apart from recommended ones
+- [x] Done tasks and tasks in progress are never listed
+- [x] `/progress ready` and `--ready` print the same list
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T1, T3
 

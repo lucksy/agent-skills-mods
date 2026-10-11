@@ -77,11 +77,11 @@ const DEPS = /^\s*\*\*Dependencies:?\*\*:?\s*(.*)$/i
 
 const stripMd = (s: string) => s.replace(/\*\*|__|`/g, '').trim()
 
-/** Task ids named on a Dependencies line: `Task 1, 2`, `T3`, `None`. */
+/** Ids named on a Dependencies line: `Task 1, 2`, `T3`, `None`, and backlog items as `B3` (ceremonies, C4). */
 export function parseDeps(text: string): string[] {
   if (/^\s*(none|n\/a|-|—)?\s*\.?\s*$/i.test(text)) return []
   const ids = new Set<string>()
-  for (const m of text.matchAll(/\b(?:T(?:ask)?\s*)?(\d+)\b/gi)) ids.add(`T${m[1] ?? ''}`)
+  for (const m of text.matchAll(/\b(?:(B)|T(?:ask)?\s*)?(\d+)\b/gi)) ids.add(`${m[1] ? 'B' : 'T'}${m[2] ?? ''}`)
   return [...ids]
 }
 
@@ -310,6 +310,9 @@ function finish(all: Task[], checkpoints: Checkpoint[], kind: TaskList['kind'], 
 /** `T6`, `Task 6`, `task #6` named in a question. */
 const TASK_REF = /\b(?:T(\d+)|[Tt]ask\s*#?(\d+))\b/g
 
+/** The task ids a question names (`T6`, `Task 6`, `task #6`), each once. */
+export const tasksNamed = (text: string): string[] => [...new Set([...text.matchAll(TASK_REF)].map(m => `T${m[1] ?? m[2]}`))]
+
 /**
  * The list with every open task an open question names marked blocked, and
  * the current task moved past them. A question that names no task blocks
@@ -317,7 +320,7 @@ const TASK_REF = /\b(?:T(\d+)|[Tt]ask\s*#?(\d+))\b/g
  */
 export function withBlockers(list: TaskList, questions: { file: string; text: string }[]): TaskList {
   const by = new Map<string, string>()
-  for (const q of questions) for (const m of q.text.matchAll(TASK_REF)) by.set(`T${m[1] ?? m[2]}`, `${q.file}: ${q.text}`)
+  for (const q of questions) for (const id of tasksNamed(q.text)) by.set(id, `${q.file}: ${q.text}`)
   if (![...by.keys()].some(id => list.tasks.some(t => t.id === id))) return list
   const tasks = list.tasks.map(t => ({ ...t, blockedBy: by.get(t.id) }))
   return { ...finish(tasks, list.checkpoints, list.kind), meta: list.meta }

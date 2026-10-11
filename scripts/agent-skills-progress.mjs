@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --standup-team | --inbox [@handle|all]] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -60,6 +60,8 @@ Usage: agent-skills-progress [dir] [options]
   --inbox [@handle|all]
                   what waits on you (your git email in tasks/team.md), on someone or
                   on anyone: checkpoints, questions, specs to sign, reviews, handoffs
+  --ready         every task not yet started that isn't ready, and why: ✗ what blocks it
+                  (boxes, open questions, dependencies), ○ only a size or owner missing
   --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
@@ -89,6 +91,7 @@ function parseArgs(argv) {
     else if (a === '--branches') o.mode = 'branches'
     else if (a === '--since') o.mode = 'since'
     else if (a === '--standup-team') o.mode = 'standup-team'
+    else if (a === '--ready') o.mode = 'ready'
     else if (a === '--inbox') {
       o.mode = 'inbox'
       // A handle, all or me: not a folder.
@@ -245,6 +248,11 @@ async function main() {
     const { inboxText } = await import('../packages/core/inbox.ts')
     const who = !o.who || /^me$/i.test(o.who) ? 'me' : /^all$/i.test(o.who) ? 'all' : o.who
     return console.log(inboxText(state, who))
+  }
+  if (o.mode === 'ready') {
+    // ceremonies C4: the same lines as /progress ready.
+    const { readyText } = await import('../packages/core/sprint.ts')
+    return console.log(readyText(state.list, state.plan, state.backlog ?? null))
   }
   if (o.mode === 'modules') {
     const { modulesText } = await import('../packages/core/modules.ts')
