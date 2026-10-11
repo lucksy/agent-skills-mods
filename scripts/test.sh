@@ -282,6 +282,35 @@ check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all
 check inbox-handle '✓ Nothing is waiting on @amila.' node "$script" "$repo" --inbox @amila
 check inbox-nothing '✓ Nothing is waiting on you.' node "$script" "$tmp/empty" --inbox
 check inbox-json '"text": "approve SPEC.md"' node "$script" "$tmp/build" --json --no-git
+# The Inbox tab (ceremonies T13): #inbox?who=pm shows what names @pm or nobody, and the picker writes the hash back.
+mkdir -p "$tmp/inbox/tasks"; cp "$tmp/build/SPEC.md" "$tmp/build/tasks/todo.md" "$tmp/inbox/" 2>/dev/null; mv "$tmp/inbox/todo.md" "$tmp/inbox/tasks/todo.md"
+printf -- '---\napprovals: product, eng\n---\n# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @amila | eng | amila@example.com |\n| @pm | product | pm@example.com |\n' > "$tmp/inbox/tasks/team.md"
+printf -- '# Plan\n\n## Open Questions\n\n- Q1 (T3): @amila, Redis or in memory?\n- Q2: Which region first?\n' > "$tmp/inbox/tasks/plan.md"
+check inbox-dashboard 'Wrote' node "$script" "$tmp/inbox" --dashboard "$tmp/inbox.html" --no-git
+cat > "$tmp/inbox-script.js" <<'JS'
+const html = require('fs').readFileSync(process.argv[2], 'utf8')
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1]
+const items = [...html.matchAll(/<li class="ib-item" data-who="([^"]*)"[\s\S]*?<p class="ib-text">([\s\S]*?)<\/p>/g)].map(m => ({ hidden: false, dataset: { who: m[1] }, text: m[2].replace(/<[^>]+>/g, '') }))
+const me = html.match(/<select id="inbox-who" data-me="(\w+)">/)[1]
+const iw = { value: '', dataset: { me } }
+const tabs = [...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => ({ getAttribute: () => '#' + m[1], setAttribute() {}, addEventListener() {} }))
+const views = Object.fromEntries(tabs.map(t => [t.getAttribute().slice(1), { hidden: false, querySelectorAll: q => (q === '[data-who]' ? items : []) }]))
+const document = { body: { dataset: { view: 'overview' }, classList: { add() {}, toggle() {} } }, getElementById: id => (id === 'inbox-who' ? iw : id.startsWith('board-') ? null : views[id.replace(/^view-/, '')]), querySelectorAll: q => (q === '[role=tab]' ? tabs : []) }
+let h = '#inbox?who=pm', on = {}
+const location = { get hash() { return h }, set hash(v) { h = v.replace(/^#?/, '#') } }
+require('vm').runInNewContext(script, { document, location, URLSearchParams, addEventListener: (t, f) => (on[t] = f) })
+const shown = () => items.filter(i => !i.hidden).map(i => i.text.split(':')[0])
+const fail = m => { console.log(m); process.exit(1) }
+if (iw.value !== 'pm' || shown().join() !== 'Q2,approve SPEC.md') fail('who=pm showed ' + shown())
+iw.value = 'amila'; iw.onchange()
+if (location.hash !== '#inbox?who=amila') fail('the picker wrote ' + location.hash)
+on.hashchange()
+if (shown().join() !== 'Q1 (T3),Q2,approve SPEC.md') fail('who=amila showed ' + shown())
+h = '#inbox?who=all'; on.hashchange()
+if (shown().length !== items.length) fail('all hid some')
+console.log('filtered')
+JS
+if out=$(node "$tmp/inbox-script.js" "$tmp/inbox.html" 2>&1); then echo "ok   inbox-tab-script ($out)"; else echo "FAIL inbox-tab-script: $out"; fail=1; fi
 
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi

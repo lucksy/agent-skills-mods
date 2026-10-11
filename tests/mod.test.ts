@@ -1364,6 +1364,17 @@ test('/progress inbox: what waits on you by your git email, on a handle, or on a
   expect(Object.keys(files)).toHaveLength(4)
 })
 
+test('/progress dashboard inbox opens the page on the Inbox tab (T13)', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/SPEC.md`]: SPEC, [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  const seen = world(on, files, asPerson('sara@example.com'))
+  expect((await $.command.run(run('dashboard inbox'))).text).toMatch(/on inbox\./)
+  const html = files[`${CWD}/tasks/progress-dashboard.html`]!
+  expect(html).toContain('<body data-view="inbox">')
+  expect(html).toContain('<select id="inbox-who" data-me="sara">')
+  expect(html).not.toContain('<button')
+  expect(seen.launched).toHaveLength(1)
+})
+
 test('/progress inbox with nothing waiting says so', async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   expect((await $.command.run(run('inbox'))).text).toBe('✓ Nothing is waiting on you.')

@@ -13,13 +13,14 @@ import { ROADMAP_STYLE, roadmapHtml } from './roadmap'
 import { SPEC_STYLE, specHtml } from './spec'
 import { MODULES_STYLE, modulesHtml } from './modules'
 import { TEAM_STYLE, teamHtml } from './team'
+import { INBOX_STYLE, inboxHtml } from './inbox'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
 import { LIVE_CSP, LIVE_SCRIPT, LIVE_STATUS, LIVE_STYLE } from './live'
 
 export { chartMount, type ChartSpec }
 
-export type ViewId = 'overview' | 'board' | 'team' | 'roadmap' | 'flow' | 'spec' | 'modules'
+export type ViewId = 'overview' | 'board' | 'team' | 'inbox' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State, live: boolean) => string }[] = [
@@ -27,6 +28,8 @@ const VIEWS: { id: ViewId; label: string; render: (s: State, live: boolean) => s
   { id: 'board', label: 'Board', render: boardHtml },
   // team-view (V6): who is on what, and what waits on whom.
   { id: 'team', label: 'Team', render: teamHtml },
+  // ceremonies (C7): what waits on a person, `#inbox?who=sara`.
+  { id: 'inbox', label: 'Inbox', render: inboxHtml },
   { id: 'roadmap', label: 'Roadmap', render: roadmapHtml },
   { id: 'flow', label: 'Flow', render: flowHtml },
   { id: 'spec', label: 'Spec', render: specHtml },
@@ -169,6 +172,9 @@ export const DASHBOARD_SCRIPT = `(() => {
     location.hash = 'board' + (String(q) ? '?' + q : '')
   }
   for (const c of [ph, st, gr, ow, br]) if (c) c.addEventListener('change', write)
+  // #inbox?who=: the items naming that person or nobody.
+  const iw = $('inbox-who')
+  if (iw) iw.onchange = () => location.hash = 'inbox?who=' + iw.value
   const show = h => {
     let [id, q] = parse(h)
     // #spec-<file> is a spec in the Spec view's picker: open that view, mark the spec chosen.
@@ -188,6 +194,7 @@ export const DASHBOARD_SCRIPT = `(() => {
     for (const v of ids) $('view-' + v).hidden = v !== id
     b.dataset.view = id
     board(id === 'board' ? q : new URLSearchParams())
+    if (iw && id == 'inbox') { const w = iw.value = q.get('who') || iw.dataset.me; for (const e of $('view-inbox').querySelectorAll('[data-who]')) e.hidden = w != 'all' && !!e.dataset.who && !e.dataset.who.split(' ').includes(w) }
     if (card && $(card)) $(card).scrollIntoView({ block: 'center' })
   }
   addEventListener('hashchange', () => show(location.hash))
@@ -252,6 +259,7 @@ ${FLOW_STYLE}
 ${SPEC_STYLE}
 ${MODULES_STYLE}
 ${TEAM_STYLE}
+${INBOX_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {

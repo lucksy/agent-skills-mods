@@ -325,18 +325,18 @@ With no sprint, the tab shows the backlog and the `sprint plan` proposal as text
 **Estimated scope:** Medium
 
 ## Task 13: The Inbox tab
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** An Inbox tab (`#inbox`, `?who=all` or `?who=sara`) lists T11's items grouped by kind, each with what it blocks and its age. On the live page each item gets the button it already has elsewhere: **Answer**, **Sign**, **Sign off**, or a link to the review's PR. `/progress dashboard inbox` opens it. The static page has no buttons.
 
 **Acceptance criteria:**
-- [ ] The tab renders for `me`, a named handle and `all`, and with nothing waiting
-- [ ] On the live page, Answer and Sign from the Inbox change the markdown; the static build has no write buttons
-- [ ] Light and dark at 360 px and desktop, keyboard reachable
+- [x] The tab renders for `me`, a named handle and `all`, and with nothing waiting
+- [x] On the live page, Answer and Sign from the Inbox change the markdown; the static build has no write buttons
+- [x] Light and dark at 360 px and desktop, keyboard reachable
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Manual check: in Chrome, static and live
+- [x] Tests pass: `claude plugin test .`
+- [x] Manual check: in Chrome, static and live
 
 **Dependencies:** T11
 

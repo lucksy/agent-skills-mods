@@ -137,7 +137,7 @@ describe('the dashboard Modules tab (T12)', () => {
 
   test('a tab of its own, last, when there is a capability map; none without one', async () => {
     const html = dashboardHtml(await buildState(io(files)))
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'roadmap', 'flow', 'spec', 'modules'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'inbox', 'roadmap', 'flow', 'spec', 'modules'])
     const none = dashboardHtml(await buildState(io({ 'tasks/todo.md': ACTIVE })))
     expect(none).not.toContain('id="tab-modules"')
     expect(VIEW_IDS).toContain('modules')

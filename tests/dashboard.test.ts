@@ -246,7 +246,7 @@ describe('Board (K2)', () => {
 
   test('a tab of its own, after the Overview, in the order of the spec', async () => {
     const html = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })))
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'roadmap', 'flow', 'spec'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
     expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })), { view: 'board' })).toContain('data-view="board"')
   })
 
@@ -462,7 +462,7 @@ describe('Team (team-view T6)', () => {
 
   test('a Team tab after the Board, and /progress dashboard team opens on it', async () => {
     const html = dashboardHtml(await state(), { view: 'team' })
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'roadmap', 'flow', 'spec'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
     expect(html).toContain('data-view="team"')
   })
 
@@ -675,6 +675,89 @@ describe('write buttons on the live dashboard (team-view T11)', () => {
       expect(b.attrs).toMatch(/type="(?:button|submit)"/)
       if (b.label !== 'Cancel') expect(b.name).toMatch(/T\d|Q\d|SPEC|checkpoint/)
     }
+  })
+})
+
+describe('the Inbox tab (ceremonies T13)', () => {
+  // @pm is named by Q1 and holds product; @amila reviews T3 and holds eng; T2 done 6 Oct with its checkpoint open; T4 handed to @pm.
+  const TEAM = `---\napprovals: product, eng\n---\n# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @amila | eng | amila@example.com |\n| @pm | product | pm@example.com |\n| @zed | qa | zed@example.com |\n`
+  const own = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n**Status:** ${line}\n`)
+  const todo = own(
+    own(own(TODO_T2_DONE, '2', 'Prisma schema for keys', 'done · @amila · started 2026-10-03 · done 2026-10-06'), '3', 'Issue and revoke keys', 'in review · @sara · started 2026-10-05 · PR https://github.com/acme/keys/pull/42 · reviewer @amila'),
+    '4',
+    'Rate limit per key',
+    'todo · @pm\n**Handoff:** 2026-10-08 @sara → @pm: limits agreed, tests left',
+  )
+  const plan = '# Plan\n\n## Open Questions\n\n- Q1 (T4): @pm, Upstash or self-hosted?\n'
+  const files = { 'SPEC.md': SPEC, 'tasks/todo.md': todo, 'tasks/plan.md': plan, 'tasks/team.md': TEAM }
+  const state = async (me: string | null = null) => {
+    const s = await buildState(io(files))
+    return { ...s, me: s.team?.members.find(m => m.handle === me) ?? null }
+  }
+  const tab = (html: string) => section(html, 'inbox')
+  const item = (html: string, needle: string) => [...html.matchAll(/<li class="ib-item"[\s\S]*?<\/li>/g)].map(m => m[0]).find(li => text(li).includes(needle)) ?? ''
+  const acts = (html: string) => [...html.matchAll(/<button[^>]*data-act="(\w+)" data-args="([^"]*)"[^>]*>/g)].map(m => [m[1], JSON.parse(m[2]!.replace(/&quot;/g, '"'))])
+
+  test('a tab after Team, and /progress dashboard inbox opens on it', async () => {
+    const html = dashboardHtml(await state(), { view: 'inbox' })
+    expect(html).toContain('<a role="tab" id="tab-inbox" href="#inbox" aria-controls="view-inbox">Inbox</a>')
+    expect(html).toContain('<body data-view="inbox">')
+  })
+
+  test('grouped by kind, each item with who it waits on, what it holds up and its age', async () => {
+    const html = tab(dashboardHtml(await state()))
+    expect([...html.matchAll(/<h3>([^<]+)<\/h3>/g)].map(m => m[1])).toEqual(['Checkpoints to sign off', 'Questions to answer', 'Specs to sign', 'Reviews', 'Handoffs'])
+    expect(text(item(html, 'checkpoint 1'))).toContain('checkpoint 1, after T2: tests · review with you anyone can sign it off · holds up T3 , T4 · 3 days')
+    expect(text(item(html, 'Q1'))).toContain('waits on @pm · holds up T4')
+    expect(text(item(html, 'approve SPEC.md'))).toContain('waits on @pm (product), @amila (eng)')
+    expect(text(item(html, 'Issue and revoke'))).toContain('T3 Issue and revoke keys reviewer @amila · PR #42 · by @sara · 4 days')
+    expect(text(item(html, 'Rate limit'))).toContain('to @pm from @sara: limits agreed, tests left · 1 day')
+    // Task ids open their cards on the Board.
+    expect(item(html, 'Issue and revoke')).toContain('<a href="#card-T3">T3</a>')
+  })
+
+  test('each item says whom it names, for #inbox?who=; nobody named is everyone', async () => {
+    const html = tab(dashboardHtml(await state()))
+    expect(item(html, 'checkpoint 1')).toContain('data-who=""')
+    expect(item(html, 'Q1')).toContain('data-who="pm"')
+    expect(item(html, 'approve SPEC.md')).toContain('data-who="pm amila"')
+    expect(item(html, 'Issue and revoke')).toContain('data-who="amila"')
+  })
+
+  test('the picker opens on me, a named handle, or everyone', async () => {
+    const mine = tab(dashboardHtml(await state('@pm')))
+    expect(mine).toContain('<select id="inbox-who" data-me="pm">')
+    expect(mine).toContain('<option value="pm">@pm (you)</option>')
+    expect(text(mine)).toContain('Opens on you (@pm).')
+    const anyone = tab(dashboardHtml(await state()))
+    expect(anyone).toContain('<select id="inbox-who" data-me="all">')
+    expect([...anyone.matchAll(/<option value="(\w+)">/g)].map(m => m[1])).toEqual(['all', 'amila', 'pm', 'zed'])
+    expect(DASHBOARD_SCRIPT).toContain("'inbox?who=' + iw.value")
+    // An item the picker hides stays hidden: its flex layout must not win over [hidden].
+    expect(dashboardHtml(await state())).toContain('.ib-item[hidden]{display:none}')
+    expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+  })
+
+  test('with nothing waiting it says so, with no picker', async () => {
+    const html = tab(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_T3_DONE.replace(/- \[ \]/g, '- [x]') }))))
+    expect(text(html)).toContain('✓ Nothing is waiting on anyone.')
+    expect(html).not.toContain('inbox-who')
+  })
+
+  test('the static tab has no buttons and no PR link; the live one has Sign off, Answer and Sign, and links the PR', async () => {
+    const s = await state()
+    const plain = tab(dashboardHtml(s))
+    expect(plain).not.toContain('<button')
+    expect(plain).not.toContain('href="https://')
+    const page = dashboardHtml(s, { live: { rev: 'r1' } })
+    const live = tab(page)
+    expect(acts(live)).toEqual([['signoff', {}], ['sign', { spec: 'SPEC.md' }]])
+    expect(live).toMatch(/<form class="act-form" id="f-i-answer-Q1" hidden data-act="answer" data-args="\{&quot;q&quot;:&quot;Q1&quot;\}"/)
+    expect(live).toContain('aria-label="Answer Q1"')
+    expect(live).toContain('<a href="https://github.com/acme/keys/pull/42" target="_blank" rel="noreferrer">PR #42</a>')
+    // Its forms don't share ids with the Overview's.
+    const ids = [...page.matchAll(/ id="(f-[^"]+)"/g)].map(m => m[1])
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
 

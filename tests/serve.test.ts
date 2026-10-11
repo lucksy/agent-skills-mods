@@ -4,6 +4,8 @@ import { ACTION_NAMES } from '../packages/core/actions'
 import { stampTodo } from '../packages/core/format'
 import { parsePlan, parseSpec, parseTasks } from '../packages/core/parse'
 import { handle, hashText, nodeTooOld, readRev, serveArgv, servedUrl, shellLine, type ServeIo, type ServeRequest } from '../packages/core/serve'
+import { buildState } from '../packages/core/state'
+import { dashboardHtml } from '../packages/core/dashboard/page'
 import { SPEC, TODO_T2_DONE, TODO_TEMPLATE } from './fixtures'
 
 // team-view T10: the live server's request handling, with no sockets. The token
@@ -300,6 +302,22 @@ describe('the live page\'s writes (T11)', () => {
 
 
 // team-view T12: /progress dashboard live starts the CLI's --serve as the session's child.
+// ceremonies T13: the Inbox tab's buttons post the same actions as the Overview's.
+test("the Inbox tab's Answer and Sign change the markdown; a stale page gets 409 and writes nothing", async () => {
+  const p = project()
+  const s = await buildState({ cwd: '/p', now: Date.parse('2026-10-11T10:00:00Z'), read: p.io.read, list: p.io.list })
+  const { rev } = await readRev(p.io)
+  const inbox = dashboardHtml(s, { live: { rev } }).match(/id="view-inbox"[\s\S]*?<!-- \/view-inbox -->/)![0]
+  const args = (act: string) => JSON.parse(new RegExp(`data-act="${act}" data-args="([^"]*)"`).exec(inbox)![1]!.replace(/&quot;/g, '"'))
+  const stale = await handle(post({ action: 'answer', args: { ...args('answer'), text: 'argon2id' }, rev: 'not-the-rev' }), p.io)
+  expect([stale.status, p.writes]).toEqual([409, []])
+  let r = await run(p, 'answer', { ...args('answer'), text: 'argon2id' })
+  expect([r.status, r.json.reply]).toEqual([200, 'Q1 answered: "argon2id" · @amila 2026-10-11.'])
+  r = await run(p, 'sign', args('sign'))
+  expect([r.status, r.json.reply]).toEqual([200, '✓ @amila signed SPEC.md for eng · waiting on @pm (product)'])
+  expect(p.writes).toEqual(['tasks/plan.md', 'SPEC.md'])
+})
+
 test('serveArgv runs --serve on a free port and unopened for the plugin, and as a person types it otherwise', () => {
   expect(serveArgv('/plug/scripts/agent-skills-progress.mjs', '/p', 'child')).toEqual([
     'node', '--experimental-strip-types', '/plug/scripts/agent-skills-progress.mjs', '/p', '--serve', '--port', '0', '--no-open',
