@@ -257,6 +257,25 @@ check since-corrupt 'First look here' node "$script" "$repo" --since
 check since-no-repo 'Not a git repository' node "$script" "$tmp/build" --since
 if [[ -z $(git -C "$repo" status --porcelain -- .git) && $(git -C "$repo" ls-files) != *seen.json* ]]; then echo "ok   since-never-committed"; else echo "FAIL since-never-committed"; fail=1; fi
 
+# The team standup (ceremonies T10): two branches, two authors, commits naming tasks; read without fetching.
+repo="$tmp/standup"; mkdir -p "$repo/tasks"; day=$(date -u +%F)
+s() { git -C "$repo" -c commit.gpgsign=false "$@" >/dev/null 2>&1; }
+s init -b main
+printf -- '# Team\n\n| Handle | Role | Email |\n|---|---|---|\n| @amila | eng | amila@example.com |\n| @bob | eng | bob@example.com |\n| @sara | design | sara@example.com |\n' > "$repo/tasks/team.md"
+printf -- '---\nplan: gateway\n---\n## Task 1: Scaffold\n**Status:** in progress · @amila · started %s · step test\n- [x] builds\n- [ ] lints\n\n## Task 2: Rate limit\n**Status:** todo\n- [ ] 429\n' "$day" > "$repo/tasks/todo.md"
+s add .; s -c user.name=Amila -c user.email=amila@example.com commit -m 'T1: scaffold'
+s checkout -b feat/rate-limit
+printf -- '---\nplan: gateway\n---\n## Task 1: Scaffold\n**Status:** in progress · @amila · started %s · step test\n- [x] builds\n- [ ] lints\n\n## Task 2: Rate limit\n**Status:** done · @bob · started %s · done %s\n- [x] 429\n' "$day" "$day" "$day" > "$repo/tasks/todo.md"
+s -c user.name=Bob -c user.email=bob@example.com commit -am 'T2: rate limit'
+s -c user.name=Bob -c user.email=bob@example.com commit --allow-empty -m 'IT1 not a task'
+s checkout main
+check standup-team-head 'Team standup · gateway · ' node "$script" "$repo" --standup-team
+check standup-team-amila '@amila: done T1 (commits) · today T1 (test, 1 box left) · blocked —' node "$script" "$repo" --standup-team
+check standup-team-other-branch '@bob: done T2 · today — · blocked —' node "$script" "$repo" --standup-team
+check standup-team-nothing '@sara: nothing under way' node "$script" "$repo" --standup-team
+check standup-team-no-git 'Unowned: nothing under way' node "$script" "$repo" --standup-team --no-git
+if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   standup-team-untouched"; else echo "FAIL standup-team-untouched: the repository changed"; fail=1; fi
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

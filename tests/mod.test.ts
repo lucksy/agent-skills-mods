@@ -1620,6 +1620,43 @@ test('/progress branches shows each task\'s furthest state across refs, with the
   expect(seen.git.filter(c => c === 'git cat-file')).toHaveLength(1)
 })
 
+// ceremonies T10 (C3): the team standup.
+test('/progress standup team: a line per person from the branches and the commits naming tasks; copied', async ($, on) => {
+  const here = TODO_TEMPLATE.replace('## Task 1: Monorepo scaffold\n', '## Task 1: Monorepo scaffold\n**Status:** done · done 2026-10-01\n').replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @amila · started 2026-10-07 · step test\n')
+  const theirs = here.replace('## Task 3: Issue and revoke keys\n', '## Task 3: Issue and revoke keys\n**Status:** done · @sara · started 2026-10-08 · done 2026-10-09\n').replace('- [ ] POST /keys returns the secret once', '- [x] POST /keys returns the secret once')
+  const answer = (argv: string[], stdin = '') => {
+    if (argv[1] === 'for-each-ref') return `refs/heads/feat/keys\t${'b'.repeat(40)}\t${Date.parse('2026-10-09T09:00:00Z') / 1000}\n`
+    if (argv[1] === 'rev-parse' && argv.includes('--abbrev-ref')) return `${'a'.repeat(40)}\nmain\n`
+    if (argv[1] === 'rev-parse') return '.git\n'
+    if (argv[1] === 'cat-file') return stdin.split('\n').filter(Boolean).map(() => `@@asm blob\n${theirs}\n`).join('')
+    return ''
+  }
+  const at = Date.parse('2026-10-08T15:00:00Z') / 1000
+  const log = `amila@example.com\t${at}\tT2: migration\nsara@example.com\t${at}\tIT4 not a task\n`
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: here, [`${CWD}/tasks/team.md`]: TEAM_MD }
+  const seen = world(on, files, { log, cat: '', answer })
+  const out = (await $.command.run(run('standup team'))).text!
+  const text = out.split('\n\n')[0]!
+  expect(text.split('\n')).toEqual([
+    'Team standup · Plan · Fri 9 Oct · done since Thu 8 Oct',
+    '@amila: done T2 (commits) · today T2 (test, 2 boxes left) · blocked —',
+    '@sara: done T3 · today — · blocked —',
+    'Unowned: nothing under way',
+  ])
+  expect(out.endsWith('\n\nCopied to the clipboard.')).toBe(true)
+  expect(seen.copied).toEqual([text])
+  // Git objects already here, nothing that fetches; nothing written.
+  expect(seen.git.every(c => /^git (for-each-ref|rev-parse|cat-file|log|rev-list|config)$/.test(c))).toBe(true)
+  expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`, `${CWD}/tasks/team.md`])
+})
+
+test('/progress standup team outside a git repository reads this branch only', async ($, on) => {
+  const here = TODO_TEMPLATE.replace('## Task 1: Monorepo scaffold\n', '## Task 1: Monorepo scaffold\n**Status:** done · done 2026-10-01\n').replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in progress · @sara · started 2026-10-07\n')
+  world(on, { [`${CWD}/tasks/todo.md`]: here, [`${CWD}/tasks/team.md`]: TEAM_MD })
+  const lines = (await $.command.run(run('standup team'))).text!.split('\n')
+  expect(lines.slice(1, 4)).toEqual(['@amila: nothing under way', '@sara: done — · today T2 (2 boxes left) · blocked —', 'Unowned: nothing under way'])
+})
+
 test('/progress branches outside a git repository says why there is no board', async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   expect((await $.command.run(run('branches'))).text).toBe('Not a git repository: the board across branches reads the other branches from git.')

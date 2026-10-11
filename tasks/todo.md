@@ -234,7 +234,7 @@ Rows are keyed by task, with no owner and no per-person figure. `/progress retro
 ## Phase 3: Team
 
 ## Task 10: The team standup
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `standupTeam(state, branches, commits, today)` in `standup.ts` builds one block per person in `team.md`, then one for unowned work. Each block has three parts:
 - done since the last working day (Friday on a Monday) on any branch the board across branches reads;
@@ -244,13 +244,13 @@ Rows are keyed by task, with no owner and no per-person figure. `/progress retro
 Commits count when their subject starts with a plan task id followed by `:` or a space, and their author email maps to that person in `team.md`. They are read with one `git log` over the same refs, since the last working day. `/progress standup team` prints the standup and copies it. `--standup-team` prints the same. `/progress standup` is unchanged.
 
 **Acceptance criteria:**
-- [ ] Monday reaches back to Friday; a task done on another branch counts; near-miss subjects (`IT4 fix`, `T44` with no T44) don't match
-- [ ] With no `team.md`, it groups by owner handle as written; people with nothing show `nothing under way`
-- [ ] `/progress standup` (just you) is byte-identical to before
+- [x] Monday reaches back to Friday; a task done on another branch counts; near-miss subjects (`IT4 fix`, `T44` with no T44) don't match
+- [x] With no `team.md`, it groups by owner handle as written; people with nothing show `nothing under way`
+- [x] `/progress standup` (just you) is byte-identical to before
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh` (two branches, two authors)
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh` (two branches, two authors)
 
 **Dependencies:** None
 

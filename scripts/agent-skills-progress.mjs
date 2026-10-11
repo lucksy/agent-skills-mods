@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --standup-team] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -54,6 +54,9 @@ Usage: agent-skills-progress [dir] [options]
                   local branch or fetched ref, and how long ago this clone fetched
   --since         what changed since you last looked, with who did it; then
                   remembers this look (in the git folder, shared with the plugin)
+  --standup-team  the team standup: a line per person with what was done since the
+                  last working day (on any branch, or named by their commits), today
+                  and blocked, then what nobody owns
   --modules [id]  every module of SPEC.md's capability map, archived plans included; with an id, its run timeline
   --dashboard [out.html]
                   write the dashboard page (default tasks/progress-dashboard.html)
@@ -82,6 +85,7 @@ function parseArgs(argv) {
     else if (a === '--json') o.mode = 'json'
     else if (a === '--branches') o.mode = 'branches'
     else if (a === '--since') o.mode = 'since'
+    else if (a === '--standup-team') o.mode = 'standup-team'
     else if (a === '--modules') {
       o.mode = 'modules'
       // A module id, not a folder: no slash, not . or ..
@@ -198,7 +202,7 @@ async function main() {
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
   // The dashboard's Board has an All branches switch (team-view T5).
   // --since reads the branches too, for new collisions; --json reports since without storing a look.
-  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard' || o.mode === 'since')
+  const branches = o.git && (o.mode === 'json' || o.mode === 'branches' || o.mode === 'dashboard' || o.mode === 'since' || o.mode === 'standup-team')
   const since = o.git && (o.mode === 'json' || o.mode === 'since')
   const state = await gather(io, { specFile, branches, since }).finally(stop)
 
@@ -221,6 +225,12 @@ async function main() {
     const prev = parseSeen(await readFile(path, 'utf8').catch(() => null))
     await mkdir(dirname(path), { recursive: true })
     return writeFile(path, seenText(nextSeen(prev, seenOf(state, io.now))))
+  }
+  if (o.mode === 'standup-team') {
+    // ceremonies C3: the same lines /progress standup team copies, from the board and one log since the last working day.
+    const { lastWorkingDay, readCommits, standupTeam, standupTeamText } = await import('../packages/core/standup.ts')
+    const commits = state.branches && io.run ? await readCommits(io.run, state.branches, lastWorkingDay(state.today)) : []
+    return console.log(standupTeamText(standupTeam(state, state.branches, commits, state.today), !!state.list && state.list.total > 0))
   }
   if (o.mode === 'modules') {
     const { modulesText } = await import('../packages/core/modules.ts')

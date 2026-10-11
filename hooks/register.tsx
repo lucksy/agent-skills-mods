@@ -27,6 +27,7 @@ import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
 import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
 import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
+import { lastWorkingDay, readCommits, standupTeam, standupTeamText } from '../packages/core/standup'
 import { look, mergeSince, nextSeen, parseSeen, SEEN_FILE, seenOf, seenText, sinceLine, sinceText, type Seen, type Since } from '../packages/core/since'
 import { approvalStatus, clearApprovals } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
@@ -596,6 +597,20 @@ async function specGate<R extends { context?: readonly string[] }>($: $, path: s
 /** `/progress digest` and the panes' Copy digest button (G2). */
 async function copyDigest($: $, p: AsmProject): Promise<string> {
   const text = digestText(p)
+  const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
+  return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
+}
+
+/**
+ * `/progress standup team` (ceremonies C3): a line per person, from the board
+ * across branches and the commits naming tasks since the last working day.
+ * Reads git objects already here: `for-each-ref`, `cat-file` and one `log`.
+ */
+async function teamStandup($: $, p: AsmProject): Promise<string> {
+  const today = dayOf(await $.clock.now())
+  const board = await readBoard($, p)
+  const commits = board ? await readCommits(argv => $.process.run(argv, { timeoutMs: 20_000 }), board, lastWorkingDay(today)) : []
+  const text = standupTeamText(standupTeam(p, board, commits, today), !!p.list && p.list.total > 0)
   const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
   return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
 }
@@ -1453,6 +1468,7 @@ export const register: Register = (on, options) => {
       const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
       return reply(`${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`)
     }
+    if (arg === 'standup team') return reply(await teamStandup($, p))
     if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
     {

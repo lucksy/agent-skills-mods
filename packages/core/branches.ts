@@ -67,10 +67,11 @@ const RANK: Record<TaskStatusWord, number> = { done: 4, 'in review': 3, 'in prog
 export const stateWord = (t: Task): TaskStatusWord => t.state?.status ?? (t.status === 'done' ? 'done' : 'todo')
 
 /**
- * A task as one ref has it: its state and owner, the day its Status line says
- * it started, and the ref's newest commit time (null for the working tree).
+ * A task as one ref has it: its state and owner, the days its Status line says
+ * it started and was done (ceremonies C3: the team standup), and the ref's
+ * newest commit time (null for the working tree).
  */
-export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null; started: string | null; at: number | null; pr: string | null; reviewer: string | null }
+export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null; started: string | null; done?: string | null; at: number | null; pr: string | null; reviewer: string | null }
 
 /** One task across the refs: its furthest state and where, plus every ref's own (for collisions, T4). */
 export type BranchRow = {
@@ -123,7 +124,7 @@ export function branchRows(
     for (const t of list.tasks) {
       if (!/^T\d+$/.test(t.id)) continue
       if (!(ours && list.meta?.plan) && titles.has(t.id) && titles.get(t.id) !== t.title) continue
-      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, at, pr: t.pr ?? null, reviewer: t.reviewer ?? null }
+      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, done: t.state?.done ?? null, at, pr: t.pr ?? null, reviewer: t.reviewer ?? null }
       const row = rows.get(t.id)
       if (!row) {
         const started = on.state !== 'todo'
