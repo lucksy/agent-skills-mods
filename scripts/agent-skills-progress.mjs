@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --sprint | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -54,6 +54,8 @@ Usage: agent-skills-progress [dir] [options]
                   local branch or fetched ref, and how long ago this clone fetched
   --since         what changed since you last looked, with who did it; then
                   remembers this look (in the git folder, shared with the plugin)
+  --sprint        the sprint now: days left, committed against done (tasks and
+                  points) and the scope added since it began
   --standup-team  the team standup: a line per person with what was done since the
                   last working day (on any branch, or named by their commits), today
                   and blocked, then what nobody owns
@@ -92,6 +94,7 @@ function parseArgs(argv) {
     else if (a === '--since') o.mode = 'since'
     else if (a === '--standup-team') o.mode = 'standup-team'
     else if (a === '--ready') o.mode = 'ready'
+    else if (a === '--sprint') o.mode = 'sprint'
     else if (a === '--inbox') {
       o.mode = 'inbox'
       // A handle, all or me: not a folder.
@@ -236,6 +239,11 @@ async function main() {
     const prev = parseSeen(await readFile(path, 'utf8').catch(() => null))
     await mkdir(dirname(path), { recursive: true })
     return writeFile(path, seenText(nextSeen(prev, seenOf(state, io.now))))
+  }
+  if (o.mode === 'sprint') {
+    // ceremonies C5: the same lines as /progress sprint, scope added from tasks/todo.md's copies since the start.
+    const { sprintText } = await import('../packages/core/sprint.ts')
+    return console.log(sprintText(state.sprint ?? null, state.list, state.today))
   }
   if (o.mode === 'standup-team') {
     // ceremonies C3: the same lines /progress standup team copies, from the board and one log since the last working day.

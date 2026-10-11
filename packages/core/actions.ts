@@ -3,15 +3,16 @@
 // POST /action both call it, so the dashboard and the commands can't drift apart.
 // Text in, `{ ok, reply, writes }` out; the caller reads, writes and replies. Pure.
 
-import { addHandoff, addQuestion, hasTaskSection, planName, setAnswer, setFrontMatter, setOwner, setReview, setSize, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskSize, type TaskState } from './format'
+import { addHandoff, addQuestion, hasTaskSection, planName, setAnswer, setFrontMatter, setOwner, setReview, setSize, setSprint, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskSize, type TaskState } from './format'
 import { parsePlan, parseSpec, parseTasks, type Task, type TaskList } from './parse'
 import { approvalStatus, signSpec } from './approvals'
-import { shortDay } from './forecast'
+import { dayOf, shortDay } from './forecast'
 import { TEAM_FILE, whoIs, type Team } from './team'
-import { pointsText, SIZES, WEIGHT } from './size'
+import { pointsOf, pointsText, SIZES, WEIGHT } from './size'
 import { addBacklogItem, BACKLOG_FILE, deferTask, pullItem } from './backlog'
+import { workingDays } from './sprint'
 
-export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add', 'pull', 'defer'] as const
+export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add', 'pull', 'defer', 'sprint-start'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 /** What an action reads: the files as they are on disk, and who runs it. */
@@ -422,6 +423,45 @@ function move(verb: 'pull' | 'defer'): Action {
   }
 }
 
+/** A real `YYYY-MM-DD` day: not `2026-02-30`. */
+const isDay = (v: string) => {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00Z`) : NaN
+  return !Number.isNaN(t) && dayOf(t) === v
+}
+
+/**
+ * sprint-start (ceremonies T6, C1): `sprint: <today>..<end>` and `commit: T4, T5`
+ * in tasks/todo.md's front matter, in place of a previous sprint; every other
+ * byte kept. Refuses an end before today, and a task that is unknown or done.
+ */
+const sprintStart: Action = {
+  todo: true,
+  check: args =>
+    isStr(args.end) && Array.isArray(args.ids) && args.ids.every(isStr) ? args : 'Say when it ends and what it commits to: /progress sprint start 2026-10-24 T4 T5 T7.',
+  edit: (args, input) => {
+    const end = (args.end as string).trim()
+    const { today } = input
+    if (!isDay(end)) return refuse(`"${end}" is not a date. Say when the sprint ends as YYYY-MM-DD: /progress sprint start ${today} T4 T5.`)
+    if (end < today) return refuse(`${end} is before today (${today}): a sprint starts today and ends on or after it.`)
+    const ids = [...new Set((args.ids as string[]).map(raw => taskId(raw.trim().replace(/,$/, ''))).filter(Boolean))]
+    if (!ids.length) return refuse(`Say which tasks it commits to: /progress sprint start ${end} T4 T5 T7.`)
+    for (const raw of ids) {
+      const found = findTask(raw, input)
+      if (typeof found === 'string') return refuse(found)
+      if (found.task.status === 'done') return refuse(`${found.id} ${found.task.title} is done already: a sprint commits to work still to do.`)
+    }
+    const tasks = ids.map(id => input.list!.tasks.find(t => t.id === id)!)
+    const was = parseTasks(input.todo!).meta?.sprint
+    const days = workingDays(today, end)
+    const replaced = was ? ` It replaces the sprint of ${shortDay(was.start)} – ${shortDay(was.end)}.` : ''
+    return {
+      ok: true,
+      reply: `Sprint started: ${shortDay(today)} – ${shortDay(end)}, ${days} working day${days === 1 ? '' : 's'}. Committed ${ids.join(', ')} (${pointsText(pointsOf(tasks))}).${replaced}`,
+      writes: [{ file: TODO, text: setSprint(input.todo!, { start: today, end, commit: ids }) }],
+    }
+  },
+}
+
 export const ACTIONS: Record<ActionName, Action> = {
   start: setTask('start'),
   done: setTask('done'),
@@ -440,6 +480,7 @@ export const ACTIONS: Record<ActionName, Action> = {
   'backlog-add': backlogAdd,
   pull: move('pull'),
   defer: move('defer'),
+  'sprint-start': sprintStart,
 }
 
 export const isActionName = (name: string): name is ActionName => (ACTION_NAMES as readonly string[]).includes(name)

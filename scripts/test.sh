@@ -310,6 +310,25 @@ check standup-team-nothing '@sara: nothing under way' node "$script" "$repo" --s
 check standup-team-no-git 'Unowned: nothing under way' node "$script" "$repo" --standup-team --no-git
 if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   standup-team-untouched"; else echo "FAIL standup-team-untouched: the repository changed"; fail=1; fi
 
+# The sprint now (ceremonies T6): commits before and after a start; T3 added after it is scope added.
+repo="$tmp/sprint"; mkdir -p "$repo/tasks"
+sp() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@" >/dev/null 2>&1; }
+at() { GIT_AUTHOR_DATE="$1T12:00:00Z" GIT_COMMITTER_DATE="$1T12:00:00Z" sp commit -qam "$2"; }
+sp init -b main
+tasks='## Task 1: Scaffold\n**Size:** L\n- [ ] builds\n\n## Task 2: Rate limit\n- [ ] 429\n'
+printf -- "---\nplan: gateway\n---\n$tasks" > "$repo/tasks/todo.md"
+sp add .; at 2026-01-02 'plan'
+printf -- "---\nplan: gateway\nsprint: 2026-01-05..2099-12-31\ncommit: T1, T2\n---\n$tasks" > "$repo/tasks/todo.md"
+at 2026-01-05 'sprint start'
+printf -- '\n## Task 3: Alerts\n- [ ] paged\n' >> "$repo/tasks/todo.md"
+at 2026-01-06 'T3 added'
+check sprint-committed 'Committed: 0 of 2 done · 0 of 3 points' node "$script" "$repo" --sprint
+check sprint-added 'Added since the start: +1, 0 done'$'\n''  ○ T3 Alerts' node "$script" "$repo" --sprint
+check sprint-json '"phase": "running"' node "$script" "$repo" --json
+check sprint-no-git 'Added since the start: nothing' node "$script" "$repo" --sprint --no-git
+check sprint-none 'No sprint running. To start one that ends in two weeks: /progress sprint start' node "$script" "$tmp/build" --sprint --no-git
+if [[ -z $(git -C "$repo" status --porcelain) ]]; then echo "ok   sprint-untouched"; else echo "FAIL sprint-untouched: the repository changed"; fail=1; fi
+
 # The decisions inbox (ceremonies T11): what waits on you, on a handle or on anyone, and in --json.
 check inbox-me 'Inbox · everything waiting (no tasks/team.md, so nothing is filtered) · 1 waiting' node "$script" "$tmp/build" --inbox --no-git
 check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all --no-git

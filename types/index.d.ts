@@ -22,7 +22,8 @@ export type AsmTaskList = {
   done: number
   total: number
   current: AsmTask | null
-  meta?: { plan?: string; created?: string }
+  /** Its front matter; `sprint` (ceremonies T6): `sprint:` and `commit:`, when a sprint was started. */
+  meta?: { plan?: string; created?: string; sprint?: { start: string; end: string; commit: string[] } }
 }
 export type AsmSpec = {
   title: string | null

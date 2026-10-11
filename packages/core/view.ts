@@ -5,6 +5,7 @@ import { taskKey, type Spec, type Task, type TaskList, type PlanDoc } from './pa
 import { shortDay, type Forecast } from './forecast'
 import type { Backfill } from './history'
 import { pointsText, WEIGHT } from './size'
+import { sprintLine, type SprintNow } from './sprint'
 
 export const GLYPH = { done: '✓', next: '●', todo: '○', waiting: '·', blocked: '■', needsYou: '♦', failed: '×' } as const
 
@@ -60,13 +61,14 @@ export function statusText(spec: Spec | null, list: TaskList | null): string | u
 
 const remaining = (t: Task) => t.boxes.filter(b => !b.isDone).length
 
-/** One line for the band above the prompt; undefined hides it. */
-export function bandText(list: TaskList | null): string | undefined {
+/** One line for the band above the prompt, with the sprint's line last while one runs (ceremonies T6); undefined hides it. */
+export function bandText(list: TaskList | null, sprint: SprintNow | null = null): string | undefined {
   const t = list?.current
-  if (!list || !t) return undefined
+  if (!list || !t) return sprint ? sprintLine(sprint) : undefined
   const left = remaining(t)
   const bits = [`${GLYPH.next} ${t.id} ${t.title}`, ...(t.owner ? [t.owner] : []), `${left} criteri${left === 1 ? 'on' : 'a'} left`, `${list.done}/${list.total} done`]
   if (t.checkpoint) bits.push(`checkpoint after this task`)
+  if (sprint) bits.push(sprintLine(sprint))
   return bits.join(' · ')
 }
 
