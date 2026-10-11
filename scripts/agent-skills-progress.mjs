@@ -258,9 +258,12 @@ async function mergeDriver(basePath, oursPath, theirsPath, path) {
   const [base, ours, theirs] = await Promise.all([basePath, oursPath, theirsPath].map(f => readFile(f, 'utf8')))
   // git runs the driver at the top of the work tree, where tasks/team.md names the roles a spec needs.
   const team = await readFile('tasks/team.md', 'utf8').then(parseTeam, () => null)
+  // A deferred task's old number (the backlog's Was: lines) is never given to a renumbered task (ceremonies T4).
+  const { parseBacklog } = await import('../packages/core/parse.ts')
+  const reserved = await readFile('tasks/backlog.md', 'utf8').then(t => parseBacklog(t).items.flatMap(i => (i.was ? [Number(i.was.id.slice(1))] : [])), () => [])
   let r
   try {
-    r = mergeByPath(path, base, ours, theirs, { lineMerge: gitMergeFile, required: team?.approvals })
+    r = mergeByPath(path, base, ours, theirs, { lineMerge: gitMergeFile, required: team?.approvals, reserved })
   } catch (err) {
     // Never leave <ours> alone as if it had won: the plain line merge, markers and all.
     const m = gitMergeFile(base, ours, theirs)

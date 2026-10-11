@@ -9,9 +9,9 @@ import { approvalStatus, signSpec } from './approvals'
 import { shortDay } from './forecast'
 import { TEAM_FILE, whoIs, type Team } from './team'
 import { pointsText, SIZES, WEIGHT } from './size'
-import { addBacklogItem, BACKLOG_FILE } from './backlog'
+import { addBacklogItem, BACKLOG_FILE, deferTask, pullItem } from './backlog'
 
-export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add'] as const
+export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add', 'pull', 'defer'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 /** What an action reads: the files as they are on disk, and who runs it. */
@@ -367,6 +367,9 @@ const size: Action = {
   },
 }
 
+/** The plan's short name, which a backlog made by an action is headed with. */
+const planOf = (input: ActionInput) => input.list?.meta?.plan ?? (input.todo === null ? undefined : planName(input.todo)) ?? 'plan'
+
 /**
  * backlog-add (ceremonies T3, C2): an item appended to tasks/backlog.md as the
  * next B id, with its size when given. The file is created when missing.
@@ -381,8 +384,7 @@ const backlogAdd: Action = {
     const size = raw ? (raw.toUpperCase() as TaskSize) : null
     if (size && !SIZES.includes(size)) return refuse(`"${raw}" is not a size. Use S, M or L: /progress backlog add "${title}" M.`)
     const had = input.backlog ?? null
-    const plan = input.list?.meta?.plan ?? (input.todo === null ? undefined : planName(input.todo)) ?? 'plan'
-    const r = addBacklogItem(had, title, size, plan)
+    const r = addBacklogItem(had, title, size, planOf(input))
     const what = `${r.id} ${title}${size ? ` (${size})` : ''}`
     return {
       ok: true,
@@ -390,6 +392,34 @@ const backlogAdd: Action = {
       writes: [{ file: BACKLOG_FILE, text: r.text }],
     }
   },
+}
+
+/**
+ * pull and defer (ceremonies T4, C2): a task between tasks/todo.md and
+ * tasks/backlog.md, both files written together (the caller checks neither
+ * changed since it read them). Boxes, size and notes go with it; a deferred
+ * task's number is kept on its `Was:` line and comes back with it.
+ */
+function move(verb: 'pull' | 'defer'): Action {
+  return {
+    todo: true,
+    check: args => (isStr(args.id) && args.id ? args : `Say which ${verb === 'pull' ? 'item' : 'task'}: /progress ${verb} ${verb === 'pull' ? 'B3' : 'T9'}.`),
+    edit: (args, input) => {
+      const id = (args.id as string).trim()
+      if (verb === 'pull' && (input.backlog ?? null) === null) return refuse(`No ${BACKLOG_FILE} here, so there is nothing to pull. /progress backlog add "title" starts one.`)
+      const r = verb === 'pull' ? pullItem(input.todo!, input.backlog!, id) : deferTask(input.todo!, input.backlog ?? null, id, sessionHandle(input), input.today, planOf(input))
+      if (!r.ok) return refuse(r.reason)
+      const writes = [
+        { file: TODO, text: r.todo },
+        { file: BACKLOG_FILE, text: r.backlog },
+      ]
+      const reply =
+        verb === 'pull'
+          ? `${r.from} ${r.title} is ${r.to} in tasks/todo.md now${r.wasKept ? ', its old number' : ''}, after the last task.`
+          : `${r.from} ${r.title} is deferred: it is ${r.to} in ${BACKLOG_FILE} now, and /progress pull ${r.to} brings it back as ${r.from}.`
+      return { ok: true, reply, writes }
+    },
+  }
 }
 
 export const ACTIONS: Record<ActionName, Action> = {
@@ -408,6 +438,8 @@ export const ACTIONS: Record<ActionName, Action> = {
   answer,
   size,
   'backlog-add': backlogAdd,
+  pull: move('pull'),
+  defer: move('defer'),
 }
 
 export const isActionName = (name: string): name is ActionName => (ACTION_NAMES as readonly string[]).includes(name)

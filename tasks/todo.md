@@ -77,19 +77,19 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 4: Pull and defer
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `pull B3` moves an item into `todo.md` as a task with `**Status:** todo`, at the end of the last phase. It takes its `Was:` number if it has one, or else the next free number, which counts every `Was:` id. `defer T9` moves an unstarted task to the backlog as the next B id with `**Was:** T9 · deferred <date> @me`. Both keep the task's boxes, size and notes. Both write two files, and both hashes are checked before either is written. The refusals follow the spec's Rules. The merge driver's next-free-number check also counts the `Was:` ids in the working tree's backlog. Per Q1, `/progress merge-driver install` also writes `tasks/backlog.md merge=agent-skills` into `.gitattributes`, and the driver merges the backlog item by item, renumbering a B id taken on both sides. `merge-driver` status says when an existing install lacks the backlog line, and suggests re-running `install`.
 
 **Acceptance criteria:**
-- [ ] Pull and defer round-trip a task with its boxes, size and notes intact. A deferred number is never given to another task, by pull or by `/plan`'s next free number.
-- [ ] Defer refuses a task that is started, in review or done, or that has dependents, and names the dependents. Pull refuses unknown dependencies.
-- [ ] A stale hash on either file writes neither, from the command and from `POST /action`
-- [ ] With the driver installed, a real `git merge` of two branches that each ran `backlog add` gives a clean `backlog.md` with both items and distinct B ids
+- [x] Pull and defer round-trip a task with its boxes, size and notes intact. A deferred number is never given to another task, by pull or by `/plan`'s next free number.
+- [x] Defer refuses a task that is started, in review or done, or that has dependents, and names the dependents. Pull refuses unknown dependencies.
+- [x] A stale hash on either file writes neither, from the command and from `POST /action`
+- [x] With the driver installed, a real `git merge` of two branches that each ran `backlog add` gives a clean `backlog.md` with both items and distinct B ids
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T3
 

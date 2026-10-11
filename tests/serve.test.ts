@@ -161,7 +161,7 @@ describe('bad requests', () => {
       [[1, 2], 'Send JSON: { action, args, rev }.'],
       [{ action: 'start', args: { id: 'T3' } }, 'Send the rev the page was loaded with.'],
       [{ action: 'start', args: 'T3', rev }, 'Send args as an object.'],
-      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add.'],
+      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add, pull, defer.'],
       [{ action: 'start', args: { id: 4 }, rev }, 'Say which task: /progress start T4.'],
       [{ action: 'start', args: { id: 'T9' }, rev }, 'No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.'],
       [{ action: 'tick', args: { id: 'T3', index: 7 }, rev }, 'No box 8 in T3.'],
@@ -184,8 +184,28 @@ describe('bad requests', () => {
 })
 
 describe('each action, through POST /action', () => {
-  test('the 15 actions are the table\'s', () => {
-    expect(ACTION_NAMES.length).toBe(15)
+  test('the 17 actions are the table\'s', () => {
+    expect(ACTION_NAMES.length).toBe(17)
+  })
+
+  test('pull and defer write both files; a page loaded before either changed gets a 409 and writes neither (ceremonies T4)', async () => {
+    const p = project({ 'tasks/backlog.md': '# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n' })
+    const r = await run(p, 'defer', { id: 'T4' })
+    expect([r.status, r.json.reply]).toEqual([200, 'T4 Rate limit per key is deferred: it is B2 in tasks/backlog.md now, and /progress pull B2 brings it back as T4.'])
+    expect(p.writes).toEqual(['tasks/todo.md', 'tasks/backlog.md'])
+    expect(p.disk['tasks/backlog.md']).toContain('## B2: Rate limit per key\n**Was:** T4 · deferred 2026-10-11 @amila\n')
+    const rev = (await readRev(p.io)).rev
+    for (const file of ['tasks/backlog.md', 'tasks/todo.md']) {
+      const q = project({ 'tasks/backlog.md': p.disk['tasks/backlog.md']!, 'tasks/todo.md': p.disk['tasks/todo.md']! })
+      expect((await readRev(q.io)).rev).toBe(rev)
+      q.disk[file] += '\n'
+      const stale = await handle(post({ action: 'pull', args: { id: 'B2' }, rev }), q.io)
+      expect(stale.status).toBe(409)
+      expect(q.writes).toEqual([])
+    }
+    const back = await run(p, 'pull', { id: 'B2' })
+    expect([back.status, back.json.reply]).toEqual([200, 'B2 Rate limit per key is T4 in tasks/todo.md now, its old number, after the last task.'])
+    expect(p.disk['tasks/backlog.md']).toBe('# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n')
   })
 
   test('backlog-add appends to tasks/backlog.md, which is part of the rev (ceremonies T3)', async () => {

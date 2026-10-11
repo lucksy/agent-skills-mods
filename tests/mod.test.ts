@@ -1403,6 +1403,32 @@ test('/progress backlog lists the items with sizes; backlog add appends the next
   expect((await $.command.run(run('doctor'))).text).toContain('tasks/backlog.md\n  × B2 is used by 2 items; give each item its own number')
 })
 
+// ceremonies T4: pull and defer from the command line, and a file changed under them writes neither.
+test('/progress defer and pull move a task between the two files and say so; refusals write nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('defer T2'))).text).toBe('T2 Prisma schema for keys is started: only a task not yet started goes back to the backlog.')
+  expect(`${CWD}/tasks/backlog.md` in files).toBe(false)
+  expect((await $.command.run(run('defer t4'))).text).toBe('T4 Rate limit per key is deferred: it is B1 in tasks/backlog.md now, and /progress pull B1 brings it back as T4.')
+  expect(files[`${CWD}/tasks/backlog.md`]).toContain('## B1: Rate limit per key\n**Was:** T4 · deferred 2026-10-09\n')
+  expect(files[`${CWD}/tasks/todo.md`]).not.toContain('Task 4')
+  expect((await $.command.run(run('pull B7'))).text).toBe('No B7 in tasks/backlog.md. Items: B1.')
+  expect((await $.command.run(run('pull b1'))).text).toBe('B1 Rate limit per key is T4 in tasks/todo.md now, its old number, after the last task.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Status:** todo\n'))
+  expect((await $.command.run(run('pull'))).text).toBe('Say which item: /progress pull B3.')
+})
+
+test('/progress pull writes neither file when one changed while it ran', async ($, on) => {
+  const backlog = '# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n'
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  // The backlog as the action reads it, then changed by someone else before the write.
+  let reads = 0
+  Object.defineProperty(files, `${CWD}/tasks/backlog.md`, { enumerable: true, configurable: true, get: () => (++reads > 1 ? `${backlog}\n## B2: Theirs\n` : backlog) })
+  world(on, files)
+  expect((await $.command.run(run('pull B1'))).text).toBe('tasks/backlog.md changed while this ran, so nothing was written. Run it again.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+})
+
 test('claim needs to know who you are', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   world(on, files, asPerson('sara@example.com'))
@@ -1588,10 +1614,10 @@ test('/progress merge-driver install asks first, writes exactly the spec\'s line
 
   expect((await $.command.run(run('merge-driver install yes'))).text).toMatch(/^Installed the merge driver/)
   expect(files[`${CWD}/.gitattributes`]).toBe(
-    `${ATTRS_BEFORE}tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n`,
+    `${ATTRS_BEFORE}tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\ntasks/backlog.md merge=agent-skills\n`,
   )
   expect(files[`${CWD}/.git/config`]).toBe(`${CONFIG_BEFORE}[merge "agent-skills"]\n    name = agent-skills task-aware merge\n    driver = node ${script} --merge %O %A %B %P\n`)
-  expect((await $.command.run(run('merge-driver status'))).text).toBe(`The merge driver is installed: git merges tasks/todo.md by task and specs' approvals by role. It runs ${script}.`)
+  expect((await $.command.run(run('merge-driver status'))).text).toBe(`The merge driver is installed: git merges tasks/todo.md by task, tasks/backlog.md by item and specs' approvals by role. It runs ${script}.`)
   expect((await $.command.run(run('merge-driver install'))).text).toBe(`The merge driver is already installed; it runs ${script}.`)
 
   // A broken path: the plugin moved.
@@ -1627,7 +1653,7 @@ test('/progress merge-driver outside a git repository writes nothing', async ($,
   expect((await $.command.run(run('merge-driver install yes'))).text).toBe('Not a git repository here, so there is no merge for the driver to run.')
   expect(Object.keys(files)).toEqual([])
 })
-const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n'
+const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\ntasks/backlog.md merge=agent-skills\n'
 // team-view T3 (V1): the board across branches.
 test('/progress branches shows each task\'s furthest state across refs, with the fetch age', async ($, on) => {
   const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @bob · started 2026-10-07\n')

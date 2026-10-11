@@ -6,6 +6,8 @@
 //                             (done date, then started); ours on a tie (Q3); Handoff lines combined by date
 //   a task on one side        kept
 //   the same number added     ours keeps it; theirs takes the next free one, Dependencies rewritten
+//                             (never a number tasks/backlog.md records as an item's old one, ceremonies T4)
+//   tasks/backlog.md          the same, item by item, with B ids (ceremonies T4)
 //   deleted vs edited         conflict markers around that task only
 //   approvals: (front matter) combined by role, the earlier signature wins; status worked out again
 //   anything else             the handed-in line merge (git merge-file in the CLI)
@@ -26,6 +28,10 @@ export type MergeOpts = {
   lineMerge?: LineMerge
   /** The roles tasks/team.md requires (mergeFrontMatter): `status: approved` is worked out again from them. */
   required?: string[]
+  /** mergeTodo (ceremonies T4): `backlog` merges tasks/backlog.md's `## B<n>:` items instead of tasks. */
+  items?: 'tasks' | 'backlog'
+  /** mergeTodo (ceremonies T4): task numbers a renumbered task must not take, the backlog's `Was:` ones. */
+  reserved?: number[]
 }
 
 export type MergeResult = { text: string; conflicts: string[] }
@@ -159,6 +165,7 @@ function combine(ours: Signature[], theirs: Signature[]): Signature[] {
 // ------------------------------------------------------------------ task lists
 
 const TASK_HEADING = /^(#{1,6}\s+(?:\*\*)?Task\s+)(\d+)(\s*[:.\-–—]\s*)(.*)$/i
+const ITEM_HEADING = /^(#{1,6}\s+(?:\*\*)?B)(\d+)(\s*[:.\-–—]\s*)(.*)$/i
 const ANY_HEADING = /^#{1,6}\s/
 const BOX = /^(\s*[-*+]\s+\[)([ xX~])(\]\s+)(.*)$/
 const DEPS = /^(\s*\*\*Dependencies:?\*\*:?)(.*)$/i
@@ -176,18 +183,18 @@ type Block = {
   last: boolean
 }
 
-/** The text's blocks in order. Keys are the task id, or the heading line for anything else (`#2` on a repeat). */
-function blocks(text: string): Block[] {
+/** The text's blocks in order. Keys are the task id (`T3`, or `B3` for a backlog item), or the heading line for anything else (`#2` on a repeat). */
+function blocks(text: string, heading = TASK_HEADING, prefix = 'T'): Block[] {
   const lines = text.split('\n')
   const out: Block[] = []
   const seen = new Map<string, number>()
   let cur: string[] = []
-  let heading: string | null = null
+  let head: string | null = null
   let inFence = false
   const close = () => {
-    const m = heading === null ? null : TASK_HEADING.exec(heading)
-    const id = m ? `T${Number(m[2])}` : null
-    const base = heading === null ? '^' : (id ?? heading.trim())
+    const m = head === null ? null : heading.exec(head)
+    const id = m ? `${prefix}${Number(m[2])}` : null
+    const base = head === null ? '^' : (id ?? head.trim())
     const n = (seen.get(base) ?? 0) + 1
     seen.set(base, n)
     let trail = 0
@@ -202,7 +209,7 @@ function blocks(text: string): Block[] {
     if (!inFence && ANY_HEADING.test(line)) {
       close()
       cur = []
-      heading = line
+      head = line
     }
     cur.push(line)
   }
@@ -313,17 +320,20 @@ function mergeBlock(base: Block | null, ours: Block, theirs: Block, lineMerge: L
   return { lines: [...rest.slice(0, at), ...state, ...rest.slice(at)], clean }
 }
 
-/** Theirs' blocks with each renumbered task's heading and every Dependencies line that names it rewritten. */
-function renumber(theirs: Block[], moves: Map<string, string>): Block[] {
+/**
+ * Theirs' blocks with each renumbered task's heading and every Dependencies line that names it rewritten.
+ * A backlog item's Dependencies name tasks, not items, so `deps` is off for the backlog.
+ */
+function renumber(theirs: Block[], moves: Map<string, string>, heading = TASK_HEADING, deps = true): Block[] {
   const num = (id: string) => id.replace(/#\d+$/, '').slice(1)
   const byNumber = new Map([...moves].map(([from, to]) => [num(from), num(to)]))
   return theirs.map(block => {
     const to = block.id && moves.get(block.key)
     const lines = block.lines.map((line, i) => {
-      if (i === 0 && to) return line.replace(TASK_HEADING, (_, a, _n, c, d) => `${a}${num(to)}${c}${d}`)
-      const deps = DEPS.exec(line)
-      if (!deps) return line
-      return deps[1]! + deps[2]!.replace(/\b((?:T(?:ask)?\s*)?)(\d+)\b/gi, (m, p, n) => (byNumber.has(n) ? `${p}${byNumber.get(n)}` : m))
+      if (i === 0 && to) return line.replace(heading, (_, a, _n, c, d) => `${a}${num(to)}${c}${d}`)
+      const named = deps ? DEPS.exec(line) : null
+      if (!named) return line
+      return named[1]! + named[2]!.replace(/\b((?:T(?:ask)?\s*)?)(\d+)\b/gi, (m, p, n) => (byNumber.has(n) ? `${p}${byNumber.get(n)}` : m))
     })
     return to ? { ...block, key: to, id: to, lines } : { ...block, lines }
   })
@@ -337,12 +347,16 @@ export function mergeTodo(base: string, ours: string, theirs: string, opts: Merg
   const eol = ours.includes('\r\n') ? '\r\n' : '\n'
   const unix = (s: string) => s.replace(/\r\n?/g, '\n').replace(/\n$/, '')
   const endsWithNewline = /\n$/.test(ours)
-  const [bs, os] = [blocks(unix(base)), blocks(unix(ours))]
-  let ts = blocks(unix(theirs))
+  const backlog = opts.items === 'backlog'
+  const [heading, prefix] = backlog ? [ITEM_HEADING, 'B'] : [TASK_HEADING, 'T']
+  const [bs, os] = [blocks(unix(base), heading, prefix), blocks(unix(ours), heading, prefix)]
+  let ts = blocks(unix(theirs), heading, prefix)
   const [bm, om] = [new Map(bs.map(x => [x.key, x])), new Map(os.map(x => [x.key, x]))]
 
   // A number added on both sides for two different tasks: theirs moves to the next free one.
   const used = new Set([...bs, ...os, ...ts].flatMap(x => (x.id ? [Number(x.id.slice(1))] : [])))
+  // A deferred task's old number is never given to another (ceremonies T4).
+  for (const n of backlog ? [] : (opts.reserved ?? [])) used.add(n)
   let free = Math.max(0, ...used)
   const moves = new Map<string, string>()
   for (const t of ts) {
@@ -350,9 +364,9 @@ export function mergeTodo(base: string, ours: string, theirs: string, opts: Merg
     if (!t.id || !o?.id || bm.has(t.key) || o.title === t.title) continue
     while (used.has(++free));
     used.add(free)
-    moves.set(t.key, `T${free}`)
+    moves.set(t.key, `${prefix}${free}`)
   }
-  if (moves.size) ts = renumber(ts, moves)
+  if (moves.size) ts = renumber(ts, moves, heading, !backlog)
   const tm = new Map(ts.map(x => [x.key, x]))
 
   // Ours' order, with theirs' blocks put after the block theirs has before them.

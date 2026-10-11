@@ -109,6 +109,12 @@ if [[ -n $url ]]; then
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" \
     --data "{\"action\":\"tick\",\"args\":{\"id\":\"T3\",\"index\":0},\"rev\":\"$rev\"}" "$base/action")
   if [[ $code == 409 ]]; then echo "ok   serve-stale-409"; else echo "FAIL serve-stale-409: got $code"; fail=1; fi
+  # ceremonies T4: POST pull moves a backlog item into the task list; both files change on disk.
+  printf -- '# Backlog\n\n## B1: Docs\n- [ ] docs\n' > "$tmp/live/tasks/backlog.md"
+  rev=$(curl -s -D - -o /dev/null "$url" | tr -d '\r' | sed -n 's/^x-agent-skills-rev: //Ip')
+  out=$(curl -s -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" -H 'Content-Type: application/json' \
+    --data "{\"action\":\"pull\",\"args\":{\"id\":\"B1\"},\"rev\":\"$rev\"}" "$base/action")
+  if [[ $out == *'B1 Docs is T4 in tasks/todo.md now'* ]] && grep -q '^## Task 4: Docs' "$tmp/live/tasks/todo.md" && ! grep -q 'B1' "$tmp/live/tasks/backlog.md"; then echo "ok   serve-pull-both-files"; else echo "FAIL serve-pull-both-files: $out"; fail=1; fi
   for _ in $(seq 1 40); do grep -q 'event: changed' "$tmp/events.out" && break; sleep 0.1; done
   if grep -q 'event: changed' "$tmp/events.out"; then echo "ok   serve-changed-event"; else echo "FAIL serve-changed-event:"; sed 's/^/       /' "$tmp/events.out"; fail=1; fi
   kill "$events_pid" 2>/dev/null; wait "$events_pid" 2>/dev/null
@@ -186,6 +192,26 @@ out=$(g merge --no-edit add-b 2>&1); code=$?
 merged=$(cat "$repo/tasks/todo.md")
 if (( code == 0 )) && [[ $out == *'T4 (theirs) is now T6'* && $merged == *$'## Task 4: Key rotation'* && $merged == *$'## Task 6: Usage metrics'* && $merged == *$'## Task 5: Metrics docs\n**Status:** todo\n\n- [ ] Docs\n\n**Dependencies:** T6'* ]]; then echo "ok   merge-driver-renumbered"; else echo "FAIL merge-driver-renumbered (exit $code):"; echo "$out" | sed 's/^/       /'; echo "$merged" | sed 's/^/       /'; fail=1; fi
 check merge-driver-usage '--merge takes <base> <ours> <theirs> <path>' node "$script" --merge a b
+# ceremonies T4: backlog add on two branches merges item by item with distinct B ids, and a task
+# number taken on both sides skips the backlog's Was: numbers.
+repo="$tmp/merge-backlog"; mkdir -p "$repo/tasks"
+gb() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@"; }
+gb init -q -b main
+gb config merge.agent-skills.name 'agent-skills task-aware merge'
+gb config merge.agent-skills.driver "node '$script' --merge %O %A %B %P"
+printf 'tasks/todo.md   merge=agent-skills\ntasks/backlog.md merge=agent-skills\n' > "$repo/.gitattributes"
+printf -- '# Backlog\n\n## B1: Docs\n**Was:** T3 · deferred 2026-10-11\n- [ ] x\n' > "$repo/tasks/backlog.md"
+printf -- '## Task 1: Scaffold\n- [ ] builds\n' > "$repo/tasks/todo.md"
+gb add -A; gb commit -qm base
+gb checkout -qb ann
+printf '\n## B2: Quotas\n**Size:** L\n' >> "$repo/tasks/backlog.md"; printf '\n## Task 2: Keys\n- [ ] keys\n' >> "$repo/tasks/todo.md"; gb commit -qam ann
+gb checkout -q main; gb checkout -qb bob
+printf '\n## B2: Audit export\n' >> "$repo/tasks/backlog.md"; printf '\n## Task 2: Limits\n- [ ] limits\n' >> "$repo/tasks/todo.md"; gb commit -qam bob
+gb checkout -q ann
+out=$(gb merge --no-edit bob 2>&1); code=$?
+backlog=$(cat "$repo/tasks/backlog.md")
+if (( code == 0 )) && ! grep -q '^<<<<<<<' "$repo/tasks/backlog.md" && [[ $backlog == *$'## B2: Quotas\n**Size:** L\n\n## B3: Audit export'* && $out == *'B2 (theirs) is now B3'* ]]; then echo "ok   merge-driver-backlog"; else echo "FAIL merge-driver-backlog (exit $code):"; echo "$out" | sed 's/^/       /'; echo "$backlog" | sed 's/^/       /'; fail=1; fi
+if [[ $out == *'T2 (theirs) is now T4'* ]] && grep -q '^## Task 4: Limits' "$repo/tasks/todo.md"; then echo "ok   merge-driver-skips-was-numbers"; else echo "FAIL merge-driver-skips-was-numbers:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 # The board across branches (team-view T3): a real repository with two branches, read without fetching.
 repo="$tmp/branches"; mkdir -p "$repo"
 g() { git -C "$repo" -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@" >/dev/null 2>&1; }

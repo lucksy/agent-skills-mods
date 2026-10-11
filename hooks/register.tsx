@@ -896,7 +896,7 @@ async function mergeDriverCommand($: $, words: string[]): Promise<string> {
     }
     if (nextAttrs !== (attrs ?? '')) await $.fs.write(attrPath, nextAttrs)
     if (nextConfig !== config) await $.fs.write(configPath, nextConfig)
-    return 'Installed the merge driver: git now merges tasks/todo.md by task and specs\' approvals by role, with conflict markers only where it can\'t. Commit .gitattributes; each clone runs install once for its .git/config.'
+    return 'Installed the merge driver: git now merges tasks/todo.md by task, tasks/backlog.md by item and specs\' approvals by role, with conflict markers only where it can\'t. Commit .gitattributes; each clone runs install once for its .git/config.'
   }
 
   const nextConfig = config === null ? null : removeDriverConfig(config)
@@ -1172,10 +1172,10 @@ async function act(
 ): Promise<ActionResult> {
   const cwd = p.cwd
   const team = await readTeam($, cwd)
-  const r = runAction(name, args, {
+  const input = {
     todo: await readText($, `${cwd}/tasks/todo.md`),
     plan: name === 'block' || name === 'answer' ? await readText($, `${cwd}/tasks/plan.md`) : null,
-    backlog: name === 'backlog-add' ? await readText($, `${cwd}/${BACKLOG_FILE}`) : null,
+    backlog: name === 'backlog-add' || name === 'pull' || name === 'defer' ? await readText($, `${cwd}/${BACKLOG_FILE}`) : null,
     spec: opts.spec ?? null,
     list: p.list,
     today: dayOf(await $.clock.now()),
@@ -1183,8 +1183,18 @@ async function act(
     email: team ? await actionEmail($, cwd, name, args, team) : null,
     pending: await readPending($, cwd),
     keepFormat,
-  })
+  }
+  const r = runAction(name, args, input)
   if (!r.ok) return r
+  // A move writes two files (ceremonies T4): neither is written when either changed since it was read.
+  if (r.writes.length > 1) {
+    const read: Record<string, string | null> = { 'tasks/todo.md': input.todo, 'tasks/plan.md': input.plan, [BACKLOG_FILE]: input.backlog ?? null }
+    for (const w of r.writes) {
+      if (w.file in read && (await readText($, `${cwd}/${w.file}`)) !== read[w.file]) {
+        return { ok: false, reply: `${w.file} changed while this ran, so nothing was written. Run it again.`, writes: [] }
+      }
+    }
+  }
   for (const w of r.writes) await $.fs.write(`${cwd}/${w.file}`, w.text)
   if (opts.clearPending) await $.store.set(pendingKey(cwd), {})
   await load($)
@@ -1198,7 +1208,7 @@ async function act(
  */
 async function actionEmail($: $, cwd: string, name: ActionName, args: Record<string, unknown>, team: Team): Promise<string | null> {
   if (name === 'claim' || (name === 'assign' && args.who === 'me') || (name === 'sign' && team.approvals.length) || name === 'signoff' || name === 'answer') return gitEmail($)
-  if (name === 'start' || name === 'handoff') {
+  if (name === 'start' || name === 'handoff' || name === 'defer') {
     if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
     return emails.get(cwd)!
   }
@@ -1497,13 +1507,14 @@ export const register: Register = (on, options) => {
       if (verb === 'merge-driver') return reply(await mergeDriverCommand($, words))
       if (verb === 'size') return reply(await sizeCommand($, words))
       if (verb === 'backlog') return reply(await backlogCommand($, e.args.trim().replace(/^\S+\s*/, '')))
+      if ((verb === 'pull' || verb === 'defer') && words.length <= 1) return reply((await act($, await load($), verb, { id: words[0] ?? '' })).reply)
     }
     if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

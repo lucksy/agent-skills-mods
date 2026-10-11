@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { runAction, type ActionInput } from '../packages/core/actions'
-import { addBacklogItem, backlogText, nextBacklogId } from '../packages/core/backlog'
+import { addBacklogItem, backlogText, deferTask, nextBacklogId, nextTaskNumber } from '../packages/core/backlog'
 import { diagnose } from '../packages/core/doctor'
 import { FORMAT_RULES, parseWasLine } from '../packages/core/format'
 import { parseBacklog, parseTasks } from '../packages/core/parse'
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
-import { TODO_TEMPLATE } from './fixtures'
+import { TODO_NONE_DONE, TODO_TEMPLATE } from './fixtures'
 
 // ceremonies T3: tasks/backlog.md holds work that isn't scheduled yet, in the
 // task shape with B ids, and a `**Was:**` line for a task deferred from todo.md.
@@ -134,5 +134,85 @@ describe('doctor and --json (T3)', () => {
       ],
     })
     expect('backlog' in stateJson(await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE })))).toBe(false)
+  })
+})
+
+// ceremonies T4: pull and defer move a task between tasks/todo.md and tasks/backlog.md.
+describe('pull and defer (T4)', () => {
+  const NOTED = TODO_TEMPLATE.replace(
+    '## Task 4: Rate limit per key\n',
+    '## Task 4: Rate limit per key\n**Status:** todo · @sara\n**Size:** L\n**Handoff:** 2026-10-10 @amila → @sara: limits agreed with product\n\n**Description:** Sliding window per key.\n',
+  )
+  const both = (r: ReturnType<typeof runAction>) => Object.fromEntries(r.writes.map(w => [w.file, w.text]))
+
+  test('defer then pull round-trips a task with its boxes, size, handoff and notes', () => {
+    const deferred = runAction('defer', { id: 'T4' }, input({ todo: NOTED }))
+    expect(deferred.reply).toBe('T4 Rate limit per key is deferred: it is B1 in tasks/backlog.md now, and /progress pull B1 brings it back as T4.')
+    const d = both(deferred)
+    expect(d['tasks/todo.md']).toBe(NOTED.slice(0, NOTED.indexOf('## Task 4:')).replace(/\n+$/, '\n'))
+    expect(d['tasks/backlog.md']).toBe(
+      '---\nbacklog: api-keys\n---\n# Backlog\n\n## B1: Rate limit per key\n**Was:** T4 · deferred 2026-10-11\n**Size:** L\n**Handoff:** 2026-10-10 @amila → @sara: limits agreed with product\n\n**Description:** Sliding window per key.\n\n**Acceptance criteria:**\n- [ ] 60 requests per minute by default\n\n**Dependencies:** 1\n',
+    )
+    const item = parseBacklog(d['tasks/backlog.md']!).items[0]!
+    expect([item.size, item.was?.id, item.boxes.map(b => b.text), item.handoffs?.length]).toEqual(['L', 'T4', ['60 requests per minute by default'], 1])
+
+    const pulled = runAction('pull', { id: 'b1' }, input({ todo: d['tasks/todo.md']!, backlog: d['tasks/backlog.md']! }))
+    expect(pulled.reply).toBe('B1 Rate limit per key is T4 in tasks/todo.md now, its old number, after the last task.')
+    const p = both(pulled)
+    // Back as it was, its Status line a plain todo again.
+    expect(p['tasks/todo.md']).toBe(NOTED.replace('**Status:** todo · @sara\n', '**Status:** todo\n'))
+    expect(p['tasks/backlog.md']).toBe('---\nbacklog: api-keys\n---\n# Backlog\n')
+  })
+
+  test('a deferred number is never given to another task: pull and the next free number count Was lines', () => {
+    const todo = TODO_TEMPLATE.slice(0, TODO_TEMPLATE.indexOf('## Task 4:'))
+    const backlog = '# Backlog\n\n## B1: Rate limit per key\n**Was:** T4 · deferred 2026-10-11\n- [ ] 60 rpm\n\n## B2: Quotas\n- [ ] per tenant\n'
+    expect(nextTaskNumber(todo, backlog)).toBe(5)
+    expect(nextTaskNumber(todo, null)).toBe(4)
+    const r = runAction('pull', { id: 'B2' }, input({ todo, backlog }))
+    expect(r.reply).toBe('B2 Quotas is T5 in tasks/todo.md now, after the last task.')
+    expect(parseTasks(both(r)['tasks/todo.md']!).tasks.map(t => t.id)).toEqual(['T1', 'T2', 'T3', 'T5'])
+  })
+
+  test('a pulled task goes after the last task, before a checkpoint that follows it', () => {
+    const todo = `${TODO_TEMPLATE}\n## Checkpoint: Complete\n- [ ] Review\n`
+    const r = runAction('pull', { id: 'B3' }, input({ todo, backlog: BACKLOG }))
+    expect(both(r)['tasks/todo.md']).toContain('**Dependencies:** 1\n\n## Task 10: Per-tenant quotas\n**Status:** todo\n**Size:** L\n- [ ] Quota per tenant in the config\n- [ ] Verify: pnpm --filter gateway test\n\n**Dependencies:** T2\n\n## Checkpoint: Complete\n')
+    // B4's Was number T9 stays reserved, so B3 takes T10; the rest of the backlog stays byte for byte.
+    expect(both(r)['tasks/backlog.md']).toBe(BACKLOG.replace(/## B3:[\s\S]*?(?=## B4)/, ''))
+  })
+
+  test('an old number taken since is not taken twice: the next free one instead', () => {
+    const todo = `${TODO_TEMPLATE}\n## Task 9: Reused\n- [ ] x\n`
+    expect(runAction('pull', { id: 'B4' }, input({ todo, backlog: BACKLOG })).reply).toBe('B4 Audit log export is T10 in tasks/todo.md now, after the last task.')
+  })
+
+  test('defer refuses a task started, in review or done, or one others depend on, and names them', () => {
+    const r = (id: string, todo: string) => runAction('defer', { id }, input({ todo })).reply
+    expect(r('T1', TODO_TEMPLATE)).toBe('T1 Monorepo scaffold is done: only a task not yet started goes back to the backlog.')
+    expect(r('T2', TODO_TEMPLATE)).toBe('T2 Prisma schema for keys is started: only a task not yet started goes back to the backlog.')
+    expect(r('T4', TODO_TEMPLATE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Status:** in review · PR #4\n'))).toBe('T4 Rate limit per key is in review: only a task not yet started goes back to the backlog.')
+    expect(r('T2', TODO_NONE_DONE)).toBe("T2 Prisma schema for keys can't be deferred: T3 depends on it. Defer it first, or change its Dependencies line.")
+    expect(r('T1', TODO_NONE_DONE)).toBe("T1 Monorepo scaffold can't be deferred: T2 and T4 depend on it. Defer them first, or change their Dependencies lines.")
+    expect(r('T9', TODO_TEMPLATE)).toBe('No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.')
+  })
+
+  test('pull refuses an unknown item, a dependency tasks/todo.md lacks, and no backlog', () => {
+    expect(runAction('pull', { id: 'B9' }, input({ backlog: BACKLOG })).reply).toBe('No B9 in tasks/backlog.md. Items: B3, B4.')
+    const deps = BACKLOG.replace('**Dependencies:** T2', '**Dependencies:** T2, T12, T14')
+    expect(runAction('pull', { id: 'B3' }, input({ backlog: deps })).reply).toBe("B3 depends on T12 and T14, which are not in tasks/todo.md. Pull or add them first, or change B3's Dependencies line.")
+    expect(runAction('pull', { id: 'B3' }, input()).reply).toBe('No tasks/backlog.md here, so there is nothing to pull. /progress backlog add "title" starts one.')
+    expect(runAction('pull', {}, input()).reply).toBe('Say which item: /progress pull B3.')
+  })
+
+  test('defer takes the task\'s line out of an index too, so it doesn\'t come back from there', () => {
+    const todo = '# Tasks\n\n- [x] Task 1: A\n- [ ] Task 2: B\n\n## Task 1: A\n- [x] a\n\n## Task 2: B\n- [ ] b\n'
+    const r = deferTask(todo, null, 'T2', '@amila', '2026-10-11', 'x')
+    expect(r.ok && r.todo).toBe('# Tasks\n\n- [x] Task 1: A\n\n## Task 1: A\n- [x] a\n')
+    expect(r.ok && r.backlog).toContain('## B1: B\n**Was:** T2 · deferred 2026-10-11 @amila\n- [ ] b\n')
+  })
+
+  test('the rules Claude is told: the next free number counts Was lines', () => {
+    expect(FORMAT_RULES).toContain('The next free task number counts those `Was:` numbers as well')
   })
 })
