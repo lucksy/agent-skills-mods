@@ -1383,6 +1383,26 @@ test('/progress size writes and clears the Size line and says so; a bad size or 
   expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
 })
 
+// ceremonies T3: the backlog, listed and added to; the file is made on the first add.
+test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('backlog'))).text).toBe('No tasks/backlog.md here. /progress backlog add "title" [S|M|L] starts one.')
+  expect((await $.command.run(run('backlog add "Per-tenant quotas" L'))).text).toBe('Started tasks/backlog.md with B1 Per-tenant quotas (L).')
+  expect(files[`${CWD}/tasks/backlog.md`]).toBe('---\nbacklog: api-keys\n---\n# Backlog\n\n## B1: Per-tenant quotas\n**Size:** L\n')
+  expect((await $.command.run(run('backlog add Audit log export'))).text).toBe('Added B2 Audit log export to tasks/backlog.md (no size: it counts as 1 point).')
+  expect((await $.command.run(run('backlog add Retry policy s'))).text).toBe('Added B3 Retry policy (S) to tasks/backlog.md.')
+  expect((await $.command.run(run('backlog'))).text).toBe(
+    ['Backlog · tasks/backlog.md · 3 items, 3½ points', '  B1  Per-tenant quotas  L', '  B2  Audit log export   no size', '  B3  Retry policy       S'].join('\n'),
+  )
+  expect((await $.command.run(run('backlog add'))).text).toBe('Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].')
+  expect((await $.command.run(run('backlog add "Docs" XL'))).text).toBe('"XL" is not a size. Use S, M or L: /progress backlog add "Docs" M.')
+  expect((await $.command.run(run('backlog nope'))).text).toBe('Use: /progress backlog, or /progress backlog add "title" [S|M|L].')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  files[`${CWD}/tasks/backlog.md`] += '\n## B2: Again\n- [ ] x\n'
+  expect((await $.command.run(run('doctor'))).text).toContain('tasks/backlog.md\n  × B2 is used by 2 items; give each item its own number')
+})
+
 test('claim needs to know who you are', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   world(on, files, asPerson('sara@example.com'))

@@ -161,7 +161,7 @@ describe('bad requests', () => {
       [[1, 2], 'Send JSON: { action, args, rev }.'],
       [{ action: 'start', args: { id: 'T3' } }, 'Send the rev the page was loaded with.'],
       [{ action: 'start', args: 'T3', rev }, 'Send args as an object.'],
-      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size.'],
+      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add.'],
       [{ action: 'start', args: { id: 4 }, rev }, 'Say which task: /progress start T4.'],
       [{ action: 'start', args: { id: 'T9' }, rev }, 'No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.'],
       [{ action: 'tick', args: { id: 'T3', index: 7 }, rev }, 'No box 8 in T3.'],
@@ -184,8 +184,20 @@ describe('bad requests', () => {
 })
 
 describe('each action, through POST /action', () => {
-  test('the 14 actions are the table\'s', () => {
-    expect(ACTION_NAMES.length).toBe(14)
+  test('the 15 actions are the table\'s', () => {
+    expect(ACTION_NAMES.length).toBe(15)
+  })
+
+  test('backlog-add appends to tasks/backlog.md, which is part of the rev (ceremonies T3)', async () => {
+    const p = project({ 'tasks/backlog.md': '# Backlog\n\n## B1: Docs\n' })
+    const before = (await readRev(p.io)).rev
+    const r = await run(p, 'backlog-add', { title: 'Quotas', size: 'L' })
+    expect([r.status, r.json.reply]).toEqual([200, 'Added B2 Quotas (L) to tasks/backlog.md.'])
+    expect(p.disk['tasks/backlog.md']).toBe('# Backlog\n\n## B1: Docs\n\n## B2: Quotas\n**Size:** L\n')
+    expect(p.writes).toEqual(['tasks/backlog.md'])
+    // A page loaded before the backlog changed is stale.
+    const stale = await handle(post({ action: 'backlog-add', args: { title: 'Again' }, rev: before }), p.io)
+    expect(stale.status).toBe(409)
   })
 
   test('size writes the task\'s Size line and nothing else (ceremonies T1)', async () => {

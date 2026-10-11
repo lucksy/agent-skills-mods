@@ -39,6 +39,10 @@ check json-schema '"schema": 1' node "$script" "$tmp/build" --json
 # ceremonies T1: a sized task has its size in --json; an unsized one has no size key.
 mkdir -p "$tmp/sized/tasks"; printf -- '## Task 1: Scaffold\n**Status:** todo\n**Size:** L\n- [ ] builds\n' > "$tmp/sized/tasks/todo.md"
 check json-size '"size": "L"' node "$script" "$tmp/sized" --json --no-git
+# ceremonies T3: tasks/backlog.md in --json when there is one, and no backlog key without it.
+printf -- '# Backlog\n\n## B1: Quotas\n**Size:** M\n- [ ] per tenant\n' > "$tmp/sized/tasks/backlog.md"
+check json-backlog '"file": "tasks/backlog.md"' node "$script" "$tmp/sized" --json --no-git
+if node "$script" "$tmp/build" --json --no-git | grep -q '"backlog"'; then echo "FAIL json-no-backlog: a project with no backlog has a backlog key"; fail=1; else echo "ok   json-no-backlog"; fi
 if node "$script" "$tmp/build" --json --no-git | grep -q '"size"'; then echo "FAIL json-no-size: an unsized task has a size key"; fail=1; else echo "ok   json-no-size"; fi
 check colour $'\033[32m✓\033[0m T1' node "$script" "$tmp/build" --color --no-git
 check no-color-env 'T1 Scaffold' env NO_COLOR=1 node "$script" "$tmp/build" --no-git

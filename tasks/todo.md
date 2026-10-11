@@ -54,18 +54,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 3: The backlog file
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `parseBacklog` reads `tasks/backlog.md`: `## B<n>: title` items with the same boxes, Size and dependencies as tasks, plus an optional `**Was:** T9 · deferred <date> @who` line. `/progress backlog` lists the items with their sizes. `/progress backlog add "title" [S|M|L]` appends the next B id and creates the file, with its front matter, when it doesn't exist. `backlog` joins `--json`, and `doctor` checks the file for duplicate ids.
 
 **Acceptance criteria:**
-- [ ] The backlog parses, and with no file everything works as before
-- [ ] `backlog add` appends the next B id and keeps every other byte; it creates the file when missing
-- [ ] `doctor` reports duplicate B ids and duplicate `Was:` numbers
+- [x] The backlog parses, and with no file everything works as before
+- [x] `backlog add` appends the next B id and keeps every other byte; it creates the file when missing
+- [x] `doctor` reports duplicate B ids and duplicate `Was:` numbers
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 

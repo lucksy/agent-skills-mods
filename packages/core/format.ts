@@ -202,6 +202,17 @@ export function setSize(text: string, id: string, size: TaskSize | null): string
   return lines.join(eol)
 }
 
+/** A backlog item's old task number (ceremonies, C2): `**Was:** T9 · deferred 2026-10-14 @amila`. */
+export type Was = { id: string; day: string | null; by: string | null }
+
+const WAS_LINE = /^\s*\*\*Was:?\*\*:?\s*T(\d+)\b(?:\s*·\s*deferred\s+(\d{4}-\d{2}-\d{2}))?(?:\s+(@[\w.-]+))?\s*$/i
+
+/** A `**Was:**` line, or null for another line. */
+export function parseWasLine(line: string): Was | null {
+  const m = WAS_LINE.exec(line)
+  return m ? { id: `T${m[1]}`, day: m[2] ?? null, by: m[3] ?? null } : null
+}
+
 /** A handoff (format-v2, F6): `**Handoff:** 2026-10-10 @sara → @bob: migration done, tests left`. */
 export type Handoff = { day: string; from: string | null; to: string; note: string }
 
@@ -533,6 +544,7 @@ export const FORMAT_RULES = [
   '- An answered open question in tasks/plan.md has its answer on the line below it: `  → A: <answer> · @handle YYYY-MM-DD`. An answered question no longer blocks its task. Write an answer only when the person gives it (`/progress answer Q2 "…"`), in their name, and never answer for anyone.',
   '- A checkpoint the person has reviewed has `**Signed off:** @handle YYYY-MM-DD` on the line below its heading, and its review box ticked (`/progress signoff`). Never sign off for anyone.',
   '- A task may have a size on its own line under its Status line: `**Size:** S`, `M` or `L` (S = ½ point, M = 1, L = 2; a task without one counts as 1). Sizes are set by people (`/progress size T4 M`); keep the line when you rewrite the section, and don\'t add or change one unless asked.',
+  '- tasks/backlog.md, when there is one, holds work not yet scheduled: `## B<N>: title` items in the task shape (boxes, `**Size:**`, `**Dependencies:**` naming T ids). An item deferred from tasks/todo.md keeps its old number on a `**Was:** T9 · deferred YYYY-MM-DD @handle` line. B numbers are stable ids too; add items with `/progress backlog add "title" [S|M|L]`.',
 ].join('\n')
 
 // ------------------------------------------------------------------ the person's own changes

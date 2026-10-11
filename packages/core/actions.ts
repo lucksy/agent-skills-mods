@@ -3,14 +3,15 @@
 // POST /action both call it, so the dashboard and the commands can't drift apart.
 // Text in, `{ ok, reply, writes }` out; the caller reads, writes and replies. Pure.
 
-import { addHandoff, addQuestion, hasTaskSection, setAnswer, setFrontMatter, setOwner, setReview, setSize, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskSize, type TaskState } from './format'
+import { addHandoff, addQuestion, hasTaskSection, planName, setAnswer, setFrontMatter, setOwner, setReview, setSize, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskSize, type TaskState } from './format'
 import { parsePlan, parseSpec, parseTasks, type Task, type TaskList } from './parse'
 import { approvalStatus, signSpec } from './approvals'
 import { shortDay } from './forecast'
 import { TEAM_FILE, whoIs, type Team } from './team'
 import { pointsText, SIZES, WEIGHT } from './size'
+import { addBacklogItem, BACKLOG_FILE } from './backlog'
 
-export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size'] as const
+export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 /** What an action reads: the files as they are on disk, and who runs it. */
@@ -18,6 +19,8 @@ export type ActionInput = {
   /** tasks/todo.md and tasks/plan.md; null when missing (the plan is read for block and answer). */
   todo: string | null
   plan: string | null
+  /** tasks/backlog.md (ceremonies); null when missing. Read for the backlog actions only. */
+  backlog?: string | null
   /** The spec `sign` signs; null when there is none. */
   spec: { file: string; text: string } | null
   /** The task list as the board shows it (blockers included). */
@@ -364,6 +367,31 @@ const size: Action = {
   },
 }
 
+/**
+ * backlog-add (ceremonies T3, C2): an item appended to tasks/backlog.md as the
+ * next B id, with its size when given. The file is created when missing.
+ */
+const backlogAdd: Action = {
+  todo: false,
+  check: args => (strings(args, ['title', 'size']) ? args : 'Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].'),
+  edit: (args, input) => {
+    const title = oneLine(args.title).trim().replace(/^["'“”]|["'“”]$/g, '').trim()
+    if (!title) return refuse('Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].')
+    const raw = ((args.size as string | undefined) ?? '').trim()
+    const size = raw ? (raw.toUpperCase() as TaskSize) : null
+    if (size && !SIZES.includes(size)) return refuse(`"${raw}" is not a size. Use S, M or L: /progress backlog add "${title}" M.`)
+    const had = input.backlog ?? null
+    const plan = input.list?.meta?.plan ?? (input.todo === null ? undefined : planName(input.todo)) ?? 'plan'
+    const r = addBacklogItem(had, title, size, plan)
+    const what = `${r.id} ${title}${size ? ` (${size})` : ''}`
+    return {
+      ok: true,
+      reply: had === null ? `Started ${BACKLOG_FILE} with ${what}.` : `Added ${what} to ${BACKLOG_FILE}${size ? '' : ' (no size: it counts as 1 point)'}.`,
+      writes: [{ file: BACKLOG_FILE, text: r.text }],
+    }
+  },
+}
+
 export const ACTIONS: Record<ActionName, Action> = {
   start: setTask('start'),
   done: setTask('done'),
@@ -379,6 +407,7 @@ export const ACTIONS: Record<ActionName, Action> = {
   signoff,
   answer,
   size,
+  'backlog-add': backlogAdd,
 }
 
 export const isActionName = (name: string): name is ActionName => (ACTION_NAMES as readonly string[]).includes(name)

@@ -2,7 +2,7 @@
 // each with how to fix it. The fixable ones (missing Status lines, front
 // matter, a Status line the boxes disagree with, dates later than git shows) `/progress doctor fix` applies. Pure.
 
-import { backdateDoc, readFrontMatter, stampDoc, stampTodo, taskStates, type Past } from './format'
+import { backdateDoc, parseWasLine, readFrontMatter, stampDoc, stampTodo, taskStates, type Past } from './format'
 import { shortDay } from './forecast'
 import { parsePlan, parseSpec, parseTasks } from './parse'
 
@@ -24,6 +24,8 @@ export function diagnose(input: {
   today: string
   keepFormat: boolean
   past?: DoctorPast
+  /** tasks/backlog.md (ceremonies); absent or null when there is none. */
+  backlog?: string | null
 }): Finding[] {
   const out: Finding[] = []
   const add = (level: Finding['level'], file: string, message: string, isFixable = false) => out.push({ level, file, message: clipQuotes(message), isFixable })
@@ -79,6 +81,33 @@ export function diagnose(input: {
       }
       if (stampTodo(input.todo, input.today) !== input.todo && !out.some(f => f.file === file && f.isFixable)) add('warn', file, 'Status lines or front matter out of date', true)
     }
+  }
+
+  // ceremonies (T3): every B id once, and a deferred task's old number belonging to one task only.
+  if (input.backlog) {
+    const file = 'tasks/backlog.md'
+    const items: { id: string; was: string | null }[] = []
+    let inFence = false
+    for (const line of input.backlog.replace(/\r\n?/g, '\n').split('\n')) {
+      if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+      if (inFence) continue
+      const h = /^#{1,6}\s+(?:\*\*)?B(\d+)\s*[:.\-–—]/.exec(line)
+      if (h) items.push({ id: `B${h[1]}`, was: null })
+      else if (/^#{1,6}\s/.test(line)) items.push({ id: '', was: null })
+      const was = items.length ? parseWasLine(line) : null
+      if (was && items.at(-1)!.id && items.at(-1)!.was === null) items.at(-1)!.was = was.id
+    }
+    const named = items.filter(i => i.id)
+    for (const id of new Set(named.map(i => i.id))) {
+      const n = named.filter(i => i.id === id).length
+      if (n > 1) add('error', file, `${id} is used by ${n} items; give each item its own number`)
+    }
+    for (const was of new Set(named.flatMap(i => (i.was ? [i.was] : [])))) {
+      const by = named.filter(i => i.was === was).map(i => i.id)
+      if (by.length > 1) add('error', file, `${was} is the old number of ${by.length} items (${by.join(', ')}); a deferred number belongs to one task`)
+    }
+    const inTodo = new Set(input.todo === null ? [] : [...input.todo.matchAll(TASK_HEADING)].map(m => `T${m[1]}`))
+    for (const i of named) if (i.was && inTodo.has(i.was)) add('error', file, `${i.id} was ${i.was}, and tasks/todo.md has a ${i.was} too; one of them needs a new number`)
   }
 
   if (input.plan !== null) {
