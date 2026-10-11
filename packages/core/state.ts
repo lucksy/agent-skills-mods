@@ -15,6 +15,7 @@ import { moduleRows, parseCapabilityMap, type ModuleRow } from './modules'
 import { readBranches, type BranchBoard } from './branches'
 import { collisions, type Collision } from './collisions'
 import { look, parseSeen, seenOf, type Since } from './since'
+import { inbox, type InboxItem } from './inbox'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -219,6 +220,8 @@ export type StateJson = {
   collisions: Collision[] | null
   /** team-view (V4): what changed since the last look, each change with who made it; null unless asked for (`--json` asks). */
   since: Since | null
+  /** ceremonies (C7): what waits on me, the handle tasks/team.md gives my git email; without one, everything waiting. */
+  inbox: InboxItem[]
 }
 
 export function stateJson(s: State): StateJson {
@@ -270,5 +273,6 @@ export function stateJson(s: State): StateJson {
     branches: s.branches ?? null,
     collisions: s.collisions ?? null,
     since: s.since ?? null,
+    inbox: inbox(s, 'me'),
   }
 }

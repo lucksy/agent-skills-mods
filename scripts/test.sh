@@ -276,6 +276,13 @@ check standup-team-nothing '@sara: nothing under way' node "$script" "$repo" --s
 check standup-team-no-git 'Unowned: nothing under way' node "$script" "$repo" --standup-team --no-git
 if [[ -z $(git -C "$repo" status --porcelain) && $(git -C "$repo" rev-parse --abbrev-ref HEAD) == main ]]; then echo "ok   standup-team-untouched"; else echo "FAIL standup-team-untouched: the repository changed"; fail=1; fi
 
+# The decisions inbox (ceremonies T11): what waits on you, on a handle or on anyone, and in --json.
+check inbox-me 'Inbox · everything waiting (no tasks/team.md, so nothing is filtered) · 1 waiting' node "$script" "$tmp/build" --inbox --no-git
+check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all --no-git
+check inbox-handle '✓ Nothing is waiting on @amila.' node "$script" "$repo" --inbox @amila
+check inbox-nothing '✓ Nothing is waiting on you.' node "$script" "$tmp/empty" --inbox
+check inbox-json '"text": "approve SPEC.md"' node "$script" "$tmp/build" --json --no-git
+
 # The shared core imports only itself (J1).
 if out=$(node "$here/purity.mjs" 2>&1); then echo "ok   core-purity ($out)"; else echo "FAIL core-purity:"; echo "$out" | sed 's/^/       /'; fail=1; fi
 

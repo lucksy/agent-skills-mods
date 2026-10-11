@@ -1338,6 +1338,37 @@ test('/progress team names the team and you; without the file it says how to sta
   expect(out.text).toMatch(/A spec needs approval from: design, eng\./)
 })
 
+// ceremonies T11 (C7): the decisions inbox.
+test('/progress inbox: what waits on you by your git email, on a handle, or on anyone; writes nothing', async ($, on) => {
+  const files: Record<string, string> = {
+    [`${CWD}/SPEC.md`]: SPEC,
+    [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE,
+    [`${CWD}/tasks/plan.md`]: '# Plan\n\n## Open Questions\n- Q1 (T4): @sara, which region first?\n',
+    [`${CWD}/tasks/team.md`]: TEAM_MD,
+  }
+  world(on, files, asPerson('sara@example.com'))
+  expect((await $.command.run(run('inbox'))).text!.split('\n')).toEqual([
+    'Inbox · you (@sara) · 3 waiting',
+    'Questions to answer',
+    '  ♦ Q1 (T4): @sara, which region first? · holds up T4',
+    '  ♦ Should keys expire by default?',
+    'Specs to sign',
+    '  ♦ approve SPEC.md · as design',
+  ])
+  const amila = (await $.command.run(run('inbox @amila'))).text!
+  expect(amila).toContain('Inbox · @amila · 2 waiting')
+  expect(amila).toContain('  ♦ approve SPEC.md · as eng')
+  expect(amila).not.toContain('Q1')
+  expect((await $.command.run(run('inbox all'))).text).toContain('  ♦ approve SPEC.md · waiting on @sara (design), @amila (eng)')
+  expect((await $.command.run(run('inbox @zed'))).text!.split('\n')[0]).toBe('@zed is not in tasks/team.md: showing what names them or nobody.')
+  expect(Object.keys(files)).toHaveLength(4)
+})
+
+test('/progress inbox with nothing waiting says so', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  expect((await $.command.run(run('inbox'))).text).toBe('✓ Nothing is waiting on you.')
+})
+
 test('/progress team init drafts tasks/team.md from the git authors, and never overwrites it without force', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   world(on, files, asPerson('amila@example.com', 'Amila Perera\tamila@example.com\nSara K\tsara@example.com\nAmila Perera\tamila@example.com\n'))

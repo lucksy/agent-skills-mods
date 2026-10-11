@@ -262,7 +262,7 @@ Commits count when their subject starts with a plan task id followed by `:` or a
 **Estimated scope:** Medium
 
 ## Task 11: The decisions inbox
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `inbox(state, who)` in `inbox.ts` collects what waits on a person:
 - open questions (all of them, or those that mention them);
@@ -274,13 +274,13 @@ Commits count when their subject starts with a plan task id followed by `:` or a
 `who` is a handle, `me` or `all`. With no `team.md`, `me` sees everything. The Overview's "needs you" and the Team tab's "waiting on someone" then call `inbox` instead of their own copies. `/progress inbox [@handle|all]` and `--inbox` print it, and `inbox` (for `me`) joins `--json`.
 
 **Acceptance criteria:**
-- [ ] Each item kind is tested, filtered by handle, by role, for `all`, and with no `team.md`
-- [ ] The Overview and Team tab tests pass unchanged after they switch to `inbox`
-- [ ] `/progress inbox` with nothing waiting prints `✓ Nothing is waiting on you.`
+- [x] Each item kind is tested, filtered by handle, by role, for `all`, and with no `team.md`
+- [x] The Overview and Team tab tests pass unchanged after they switch to `inbox`
+- [x] `/progress inbox` with nothing waiting prints `✓ Nothing is waiting on you.`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 

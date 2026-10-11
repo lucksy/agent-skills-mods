@@ -7,13 +7,12 @@
 // nothing done is counted. Pure.
 
 import { shortDay } from '../forecast'
-import { approvalStatus } from '../approvals'
 import { branchOf, collisionLine, type Collision } from '../collisions'
 import type { TaskStatusWord, TaskStep } from '../format'
 import type { Task } from '../parse'
+import { inboxItems } from '../inbox'
 import type { State } from '../state'
 import { TEAM_FILE } from '../team'
-import { specApproval } from '../view'
 import { esc, inline } from './html'
 
 /** A task under way for someone: on this branch (`ref` null) or on another. */
@@ -49,9 +48,6 @@ const UNDER_WAY = new Set<TaskStatusWord>(['in progress', 'in review'])
 
 /** Under way on this branch, as the plan pane counts it: its Status line says so, or its index line is marked `[~]`. */
 const underWay = (t: Task) => t.status !== 'done' && (UNDER_WAY.has(t.state?.status ?? 'todo') || (!t.state && t.mark === 'doing'))
-
-/** Handles named in a question: `@pm`, not the `@` of an email address. */
-const named = (text: string) => [...text.matchAll(/(?:^|[\s(,])(@[\w-]+(?:\.[\w-]+)*)/g)].map(m => m[1]!)
 
 /** Everything the tab shows, as data: the people in handle order, the review queue, and who decisions wait on. */
 export function teamView(s: State): TeamView {
@@ -120,7 +116,7 @@ export function teamView(s: State): TeamView {
   return { fromTeam: !!team, people, queue, waiting: waitingOn(s) }
 }
 
-/** Open questions by the people they name, and each role a spec still needs by the people who hold it. */
+/** From the inbox (C7): open questions by the people they name, and each role a spec still needs by the people who hold it. */
 function waitingOn(s: State): Waiting[] {
   const by = new Map<string, Waiting>()
   const put = (who: string | null, item: Waiting['items'][number]) => {
@@ -128,20 +124,13 @@ function waitingOn(s: State): Waiting[] {
     if (!by.has(k)) by.set(k, { who, items: [] })
     by.get(k)!.items.push(item)
   }
-  const questions = [...(s.plan?.openQuestions ?? []).map(text => ({ file: 'tasks/plan.md', text })), ...(s.spec?.openQuestions ?? []).map(text => ({ file: s.specFile ?? 'SPEC.md', text }))]
-  for (const q of questions) {
-    // The tasks it holds up, as the board marks them blocked.
-    const tasks = (s.list?.tasks ?? []).filter(t => t.blockedBy === `${q.file}: ${q.text}`).map(t => t.id)
-    const who = [...new Set(named(q.text).map(h => h.replace(/\.+$/, '')))]
-    for (const h of who.length ? who : [null]) put(h === null ? null : (s.team?.members.find(m => key(m.handle) === key(h))?.handle ?? h), { kind: 'question', text: q.text, tasks })
-  }
-  if (s.team?.approvals.length)
-    for (const { file, spec } of s.specs) {
-      if (specApproval(spec, !!s.list) !== 'awaiting') continue
-      for (const w of approvalStatus(spec.approvals, s.team).waiting) {
-        if (!w.who.length) put(null, { kind: 'approval', text: `sign ${file} as ${w.role} (nobody on the team has the role)`, tasks: [] })
-        for (const h of w.who) put(h, { kind: 'approval', text: `sign ${file} as ${w.role}`, tasks: [] })
-      }
+  const items = inboxItems(s)
+  // Questions first, then signatures, each in the inbox's order.
+  for (const q of items.filter(i => i.kind === 'question')) for (const h of q.who.length ? q.who : [null]) put(h, { kind: 'question', text: q.text, tasks: q.tasks })
+  for (const a of items.filter(i => i.kind === 'approval'))
+    for (const w of a.roles ?? []) {
+      if (!w.who.length) put(null, { kind: 'approval', text: `sign ${a.file} as ${w.role} (nobody on the team has the role)`, tasks: [] })
+      for (const h of w.who) put(h, { kind: 'approval', text: `sign ${a.file} as ${w.role}`, tasks: [] })
     }
   return [...by.values()].sort((a, b) => (a.who === null ? 1 : b.who === null ? -1 : byHandle(a.who, b.who)))
 }

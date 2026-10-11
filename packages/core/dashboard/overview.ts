@@ -1,11 +1,12 @@
 // The Overview (K1): is it on track, when will it land, what needs me. Four
 // figures (the same ones the charts tab shows), tasks by state as a bar named in
-// words, then what is waiting on a person beside what is under way now. On the
-// live page (T11) a decision gets its button (answer, sign, sign off) and the
-// current task's boxes toggle. Pure.
+// words, then what is waiting on a person (from the inbox, C7) beside what is
+// under way now. On the live page (T11) a decision gets its button (answer,
+// sign, sign off) and the current task's boxes toggle. Pure.
 
 import { etaDrift, forecastHistory, shortDay } from '../forecast'
 import { health } from '../health'
+import { inboxItems, type InboxItem } from '../inbox'
 import { headline, nowCounts } from '../report'
 import type { State } from '../state'
 import { esc, inline, plainInline, plural } from './html'
@@ -87,25 +88,35 @@ function statesHtml(s: State): string {
 </div>`
 }
 
+/**
+ * The decisions the Overview lists, from the inbox: checkpoints due, open
+ * questions, and the spec in focus to approve. The same items, in the same
+ * order and words, as `needsYou` (the figure above counts those).
+ */
+export function overviewDecisions(s: State): InboxItem[] {
+  return inboxItems(s).filter(i => i.kind === 'checkpoint' || i.kind === 'question' || (i.kind === 'approval' && i.file === s.specFile))
+}
+
 function needsHtml(s: State, live = false): string {
-  if (!s.needsYou.length) return '<p class="good">✓ Nothing is waiting on you.</p>'
-  return `<ul class="needs">${s.needsYou.map((n, i) => `<li><span class="g" aria-hidden="true">♦</span><span>${inline(n)}${live ? decisionActions(s, n, i) : ''}</span></li>`).join('')}</ul>`
+  const items = overviewDecisions(s)
+  if (!items.length) return '<p class="good">✓ Nothing is waiting on you.</p>'
+  const due = items.find(i => i.kind === 'checkpoint')
+  return `<ul class="needs">${items.map(i => `<li><span class="g" aria-hidden="true">♦</span><span>${inline(i.text)}${live ? decisionActions(i, i === due, 'o') : ''}</span></li>`).join('')}</ul>`
 }
 
 /**
  * The button a decision gets on the live page: Answer for a question of the plan,
- * Sign for the spec to approve, Sign off for the checkpoint that is due (the first
- * listed: the order the signoff action picks). Anything else is read, not acted on.
+ * Sign for a spec to approve, Sign off for the checkpoint that is due (`isDue`:
+ * the first listed, the one the signoff action picks). Anything else is read, not
+ * acted on. `at` keeps form ids apart when two views show the same item.
  */
-function decisionActions(s: State, item: string, index: number): string {
-  const q = /^Q(\d+)\b/.exec(item)?.[0]
-  if (q && s.plan?.openQuestions.includes(item)) {
-    return actRow([actForm('answer', { q }, { label: 'Answer', name: `Answer ${q}`, submit: `Answer ${q}`, fields: [{ name: 'text', label: `Your answer to ${q}` }], subject: q, at: 'o' })])
+export function decisionActions(i: InboxItem, isDue: boolean, at: string): string {
+  if (i.kind === 'question' && i.q && i.file === 'tasks/plan.md') {
+    const q = i.q
+    return actRow([actForm('answer', { q }, { label: 'Answer', name: `Answer ${q}`, submit: `Answer ${q}`, fields: [{ name: 'text', label: `Your answer to ${q}` }], subject: q, at })])
   }
-  if (s.specFile && item === `approve ${s.specFile}`) return actRow([actButton('sign', { spec: s.specFile }, 'Sign', `Sign ${s.specFile}`, s.specFile)])
-  if (item.startsWith('checkpoint ') && s.needsYou.findIndex(n => n.startsWith('checkpoint ')) === index) {
-    return actRow([actButton('signoff', {}, 'Sign off', `Sign off ${item.split(':')[0]}`, 'checkpoint')])
-  }
+  if (i.kind === 'approval' && i.file) return actRow([actButton('sign', { spec: i.file }, 'Sign', `Sign ${i.file}`, i.file)])
+  if (i.kind === 'checkpoint' && isDue) return actRow([actButton('signoff', {}, 'Sign off', `Sign off ${i.text.split(':')[0]}`, 'checkpoint')])
   return ''
 }
 

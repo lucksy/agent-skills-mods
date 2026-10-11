@@ -28,6 +28,7 @@ import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
 import { branchesText, GIT_DIR_ARGV, readBranches, type BranchBoard } from '../packages/core/branches'
 import { collisionLine, collisionOf, collisions } from '../packages/core/collisions'
 import { lastWorkingDay, readCommits, standupTeam, standupTeamText } from '../packages/core/standup'
+import { inboxText } from '../packages/core/inbox'
 import { look, mergeSince, nextSeen, parseSeen, SEEN_FILE, seenOf, seenText, sinceLine, sinceText, type Seen, type Since } from '../packages/core/since'
 import { approvalStatus, clearApprovals } from '../packages/core/approvals'
 import { draftTeam, parseTeam, TEAM_FILE, teamText, whoIs, type Team } from '../packages/core/team'
@@ -613,6 +614,36 @@ async function teamStandup($: $, p: AsmProject): Promise<string> {
   const text = standupTeamText(standupTeam(p, board, commits, today), !!p.list && p.list.total > 0)
   const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
   return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
+}
+
+/**
+ * `/progress inbox [@handle|all]` (ceremonies C7): what waits on you (by your
+ * git email in tasks/team.md), on someone, or on anyone. Reviews on other
+ * branches come from the board across branches; nothing is fetched or written.
+ */
+async function inboxCommand($: $, p: AsmProject, words: string[]): Promise<string> {
+  const arg = words[0] ?? 'me'
+  const who = /^(me|all)$/i.test(arg) ? arg.toLowerCase() : `@${arg.replace(/^@/, '')}`
+  const team = await readTeam($, p.cwd)
+  const board = await readBoard($, p).catch(() => null)
+  const state = toState({
+    cwd: p.cwd,
+    today: dayOf(await $.clock.now()),
+    specs: await allSpecs($, p),
+    specFile: p.specFile,
+    list: p.list,
+    listFile: p.listFile,
+    plan: p.plan,
+    forecast: p.forecast,
+    snapshots: p.snapshots,
+    dates: p.dates,
+    history: null,
+    team,
+    me: team ? whoIs(team, await gitEmail($)) : null,
+    branches: board,
+  })
+  const unknown = team && who.startsWith('@') && !team.members.some(m => m.handle.toLowerCase() === who.toLowerCase()) ? `${who} is not in ${TEAM_FILE}: showing what names them or nobody.\n` : ''
+  return `${unknown}${inboxText(state, who)}`
 }
 
 /** `/progress report` and the panes' Report button (G1). */
@@ -1478,6 +1509,7 @@ export const register: Register = (on, options) => {
       if (verb === 'review') return reply(await reviewCommand($, words))
       if (verb === 'modules') return reply(await modulesCommand($, words[0]))
       if (verb === 'branches') return reply(await branchesCommand($))
+      if (verb === 'inbox' && words.length <= 1) return reply(await inboxCommand($, p, words))
       if (verb === 'since' && !words.length) return reply(await sinceCommand($))
       if (verb === 'handoff') return reply(await handoffCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if (verb === 'answer') return reply(await answerCommand($, e.args.trim().replace(/^\S+\s*/, '')))
