@@ -11,7 +11,7 @@
 import { shortDay } from '../forecast'
 import type { Task } from '../parse'
 import { MIN_OF_SIZE, type Retro } from '../retro'
-import { sprintPlan, sprintReview, type SprintReview } from '../sprint'
+import { byTime, sprintPlan, sprintReview, type SprintReview } from '../sprint'
 import { pointsOf, pointsText, weightOf } from '../size'
 import type { State } from '../state'
 import type { FlowSpec } from './flow'
@@ -65,7 +65,7 @@ export function burndownChart(s: State, r: SprintReview): Burndown {
   const weigh = (t: Task) => weightOf(sizes.get(t.id) ?? t)
   const scope = new Set([...r.committed.ids, ...r.added.ids])
   // The file as it is counts as today's copy; on a day with both, it wins (it comes last).
-  const copies = [...(s.sprintCopies ?? []), { day: s.today, list }].sort((a, b) => a.day.localeCompare(b.day))
+  const copies = [...(s.sprintCopies ?? []), { day: s.today, list }].sort(byTime)
   const until = s.today < r.end ? s.today : r.end
   const left = days
     .filter(d => d <= until)
@@ -79,7 +79,11 @@ export function burndownChart(s: State, r: SprintReview): Burndown {
   const ideal = (i: number) => (n > 1 ? (total * (n - 1 - i)) / (n - 1) : 0)
   const idealData = n > 1 ? days.map((d, i) => ({ x: d, y: ideal(i), tip: `${shortDay(d)} · ideal ${pointsText(Math.round(ideal(i) * 2) / 2)}` })) : [{ x: r.start, y: total, tip: `ideal ${pointsText(total)}` }]
   const last = left.at(-1)
-  if (!last) return { spec: null, legend, summary: `No copy of tasks/todo.md from the sprint yet: the burn-down fills in from its first day, ${shortDay(r.start)}.` }
+  if (!last) {
+    // Before its first working day (a sprint started on a weekend), or no copy of the plan from the sprint yet.
+    const first = days[0] ?? r.start
+    return { spec: null, legend, summary: s.today < first ? `The burn-down starts on ${shortDay(first)}, the sprint's first working day.` : `No copy of tasks/todo.md from the sprint yet: the burn-down fills in from its first working day, ${shortDay(first)}.` }
+  }
 
   const at = days.indexOf(last.x)
   // To the half point, as sizes come.
@@ -128,7 +132,8 @@ function standing(s: State, r: SprintReview, id: string): { glyph: string; cls: 
   const t = s.list?.tasks.find(x => x.id === id)
   if (t?.status === 'blocked' || t?.state?.status === 'blocked') return { glyph: '■', cls: 'g-blocked', words: 'blocked' }
   const st = t?.state?.status
-  if (st === 'in progress' || st === 'in review' || t?.id === s.list?.current?.id) return { glyph: '●', cls: 'g-doing', words: st === 'in review' ? 'in review' : 'in progress' }
+  // By its Status line only, as /progress sprint says it: the plan's next task isn't under way until it is started.
+  if (st === 'in progress' || st === 'in review') return { glyph: '●', cls: 'g-doing', words: st === 'in review' ? 'in review' : 'in progress' }
   return { glyph: '○', cls: 'g-todo', words: 'not started' }
 }
 

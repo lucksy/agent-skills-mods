@@ -782,6 +782,16 @@ describe('the Sprint tab (ceremonies T12)', () => {
   const fig = (html: string, key: string) => text(html.match(new RegExp(`<div class="fig f-${key}"[\\s\\S]*?</div>`))?.[0] ?? '').trim()
   const card = (html: string, id: string) => html.match(new RegExp(`<section class="card[^"]*" aria-labelledby="${id}">[\\s\\S]*?</section>`))?.[0] ?? ''
 
+  test('a sprint started on a Sunday: its next task not yet started says so, and the burn-down names Monday as its first day', async () => {
+    // Real-session check: `sprint start` on Sun 11 Oct, nothing started yet, viewed the same day.
+    const todo = sprinted('2026-10-11', '2026-10-16', sized)
+    const sunday: ProjectIo = { ...io({ 'tasks/todo.md': todo }, git([['2026-10-11', todo]])), now: Date.parse('2026-10-11T10:00:00Z') }
+    const html = tab(dashboardHtml(await buildState(sunday)))
+    expect(text(card(html, 'sp-scope'))).toContain('○ T2 Prisma schema for keys size M not started')
+    expect(html).not.toContain('in progress')
+    expect(text(html)).toContain('The burn-down starts on 12 Oct, the sprint\'s first working day.')
+  })
+
   test('a tab after the Board, and /progress dashboard sprint opens on it', async () => {
     const html = dashboardHtml(await running(), { view: 'sprint' })
     expect(html).toContain('<a role="tab" id="tab-sprint" href="#sprint" aria-controls="view-sprint">Sprint</a>')
