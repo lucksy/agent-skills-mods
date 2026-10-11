@@ -338,6 +338,11 @@ check sprint-review-demo 'Demo checklist'$'\n''  - [ ] T1 Scaffold: builds' node
 check sprint-review-next 'The sprint has ended. To start the next, for two weeks: /progress sprint start' node "$script" "$repo" --sprint
 if [[ -z $(git -C "$repo" status --porcelain) ]]; then echo "ok   sprint-review-untouched"; else echo "FAIL sprint-review-untouched: the repository changed"; fail=1; fi
 
+# The retro (ceremonies T9): the sprint that ended, from the same history.
+check retro-head 'Retro · sprint 5 Jan – 9 Jan' node "$script" "$repo" --retro
+check retro-scope 'Scope: +2 added after the start: T3 Alerts, T4 Metrics' node "$script" "$repo" --retro
+check retro-no-list 'nothing to look back on' node "$script" "$tmp/empty" --retro
+
 # The decisions inbox (ceremonies T11): what waits on you, on a handle or on anyone, and in --json.
 check inbox-me 'Inbox · everything waiting (no tasks/team.md, so nothing is filtered) · 1 waiting' node "$script" "$tmp/build" --inbox --no-git
 check inbox-spec '  ♦ approve SPEC.md' node "$script" "$tmp/build" --inbox all --no-git

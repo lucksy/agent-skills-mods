@@ -1490,6 +1490,19 @@ test('/progress report sprint reviews the last ended sprint from history, copies
   expect(seen.git.every(c => /^git (log|cat-file|rev-list|config|for-each-ref|rev-parse)$/.test(c))).toBe(true)
 })
 
+// ceremonies T9 (C6): the retro, about the work and never about people.
+test('/progress retro looks back on the whole plan without a sprint; no owner in the reply', async ($, on) => {
+  const task = (n: number, owner: string, started: string, done: string) => `## Task ${n}: Part ${n}\n**Status:** done · ${owner} · started ${started} · done ${done}\n**Size:** S\n- [x] works\n`
+  const todo = [task(1, '@amila', '2026-10-01', '2026-10-02'), task(2, '@sara', '2026-10-02', '2026-10-03'), task(3, '@amila', '2026-10-03', '2026-10-04'), task(4, '@sara', '2026-10-03', '2026-10-08'), '## Task 5: Next\n- [ ] later\n'].join('\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo }
+  world(on, files)
+  const out = (await $.command.run(run('retro'))).text!
+  expect(out.split('\n').slice(0, 3)).toEqual(['Retro · the whole plan (no sprint)', 'Slow against their size', '  T4 Part 4 (S) took 5d, the usual S is 1d'])
+  expect(out).not.toMatch(/@\w|amila|sara/)
+  expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`])
+  expect((await $.command.run(run('retro now'))).text).toMatch(/^Unknown argument "retro now"/)
+})
+
 // ceremonies T3: the backlog, listed and added to; the file is made on the first add.
 test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }

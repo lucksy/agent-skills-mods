@@ -199,7 +199,7 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 9: The retro
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `retro(state, sprint)` in `retro.ts` gives:
 - the slowest tasks: days in progress against the median for their size over this plan and the archived plans, listed when over 2× that median;
@@ -210,13 +210,13 @@ created: 2026-10-11
 Rows are keyed by task, with no owner and no per-person figure. `/progress retro` prints it for the current or last sprint; with no sprint it covers the whole plan. `--retro` prints the same.
 
 **Acceptance criteria:**
-- [ ] Slow vs size, block lengths and drift match a hand-checked fixture history
-- [ ] No output contains an owner handle or a per-person count (tested)
-- [ ] With no sprint and with under 3 done tasks of a size, it says what it can't compare
+- [x] Slow vs size, block lengths and drift match a hand-checked fixture history
+- [x] No output contains an owner handle or a per-person count (tested)
+- [x] With no sprint and with under 3 done tasks of a size, it says what it can't compare
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2, T8
 
