@@ -15,9 +15,16 @@ export const weightOf = (t: { size?: TaskSize }) => (t.size ? WEIGHT[t.size] : 1
 /** The points of some tasks together. */
 export const pointsOf = (tasks: readonly Pick<Task, 'size'>[]) => tasks.reduce((n, t) => n + weightOf(t), 0)
 
-/** A list's points done and in total; with no sizes, its done and total counts. */
-export function listPoints(list: TaskList): { done: number; total: number } {
-  return { done: pointsOf(list.tasks.filter(t => t.status === 'done')), total: pointsOf(list.tasks) }
+/** Each sized task's size by id: what an older copy of the list, written before the sizes were, is weighed by (T2). */
+export const sizesOf = (list: TaskList): Map<string, TaskSize> => new Map(list.tasks.flatMap(t => (t.size ? [[t.id, t.size] as const] : [])))
+
+/**
+ * A list's points done and in total; with no sizes, its done and total counts.
+ * `sizes` weighs a task without a Size line of its own (an older copy, by today's sizes).
+ */
+export function listPoints(list: TaskList, sizes?: ReadonlyMap<string, TaskSize>): { done: number; total: number } {
+  const sized = sizes ? list.tasks.map(t => ({ ...t, size: t.size ?? sizes.get(t.id) })) : list.tasks
+  return { done: pointsOf(sized.filter(t => t.status === 'done')), total: pointsOf(sized) }
 }
 
 /** `1 point`, `½ point`, `2½ points`: a number of points in words. */

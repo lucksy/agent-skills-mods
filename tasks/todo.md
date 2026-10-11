@@ -32,18 +32,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 2: The ETA in points
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** Snapshots gain optional `points` and `totalPoints`. `snapshotOf` records them, and the history rebuild fills them from past versions of `todo.md`. `forecast`, `throughput` and the burn-up read points when a snapshot has them and counts otherwise. Before this change, snapshot tests capture the forecast, the charts' series and `--json` for every existing fixture. Those outputs must stay byte-identical when no task has a size.
 
 **Acceptance criteria:**
-- [ ] Every existing fixture's forecast, chart series and `--json` output is byte-identical before and after
-- [ ] A plan with L tasks done and S tasks left gets an earlier ETA than the same plan counted by tasks, in a fixture with hand-checked numbers
-- [ ] Old `history.json` files without points still load and forecast
+- [x] Every existing fixture's forecast, chart series and `--json` output is byte-identical before and after
+- [x] A plan with L tasks done and S tasks left gets an earlier ETA than the same plan counted by tasks, in a fixture with hand-checked numbers
+- [x] Old `history.json` files without points still load and forecast
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T1
 

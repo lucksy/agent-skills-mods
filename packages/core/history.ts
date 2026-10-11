@@ -5,6 +5,7 @@
 
 import { dayOf, snapshotOf, type Snapshot } from './forecast'
 import { parseTasks, taskKey, type TaskList } from './parse'
+import { listPoints, sizesOf, weightOf } from './size'
 
 /** Newest commits read; a long project keeps its recent pace, which is what the forecast weighs. */
 export const MAX_COMMITS = 200
@@ -144,10 +145,15 @@ function samePlan(commits: Commit[], texts: (string | null)[], current: TaskList
   return out
 }
 
-/** A daily snapshot from each day's last commit, oldest first. */
+/**
+ * A daily snapshot from each day's last commit, oldest first. Once the current
+ * list has sizes, each copy is weighed by them too (ceremonies T2): a size
+ * written today counts for the days before it was written.
+ */
 export function snapshotsFromGit(commits: Commit[], texts: (string | null)[], current: TaskList): Snapshot[] {
   const byDay = new Map<string, Snapshot>()
-  for (const { day, list } of samePlan(commits, texts, current)) if (!byDay.has(day)) byDay.set(day, snapshotOf(day, list))
+  const sizes = sizesOf(current)
+  for (const { day, list } of samePlan(commits, texts, current)) if (!byDay.has(day)) byDay.set(day, snapshotOf(day, list, sizes))
   return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day))
 }
 
@@ -211,10 +217,17 @@ export function doneDaysFromMessages(
   return days
 }
 
-/** Snapshots implied by done days alone: done grows on each day, scope is today's. */
+/** Snapshots implied by done days alone: done grows on each day, scope is today's (in points too, once tasks have sizes). */
 export function snapshotsFromDoneDays(doneDays: Record<string, string>, current: TaskList): Snapshot[] {
   const days = [...new Set(Object.values(doneDays))].sort()
-  return days.map(day => ({ day, done: Object.values(doneDays).filter(d => d <= day).length, total: current.total }))
+  const byKey = new Map(current.tasks.map(t => [taskKey(t), t]))
+  const totalPoints = sizesOf(current).size ? listPoints(current).total : null
+  return days.map(day => {
+    const keys = Object.keys(doneDays).filter(k => doneDays[k]! <= day)
+    const snap: Snapshot = { day, done: keys.length, total: current.total }
+    if (totalPoints === null) return snap
+    return { ...snap, points: keys.reduce((n, k) => n + weightOf(byKey.get(k) ?? {}), 0), totalPoints }
+  })
 }
 
 // ------------------------------------------------------------ combining
@@ -240,7 +253,13 @@ export function combine(seen: Snapshot[], files: SourceData[], messages: SourceD
     const before = real.filter(r => r.day < s.day).at(-1)
     const after = real.find(r => r.day > s.day)
     const done = Math.min(Math.max(s.done, before?.done ?? 0), after?.done ?? Infinity)
-    byDay.set(s.day, { day: s.day, done, total: before?.total ?? after?.total ?? s.total })
+    const fill: Snapshot = { day: s.day, done, total: before?.total ?? after?.total ?? s.total }
+    // Points held between the same days, when the days around have them (ceremonies T2).
+    if (s.points !== undefined && (!before || before.points !== undefined) && (!after || after.points !== undefined)) {
+      fill.points = Math.min(Math.max(s.points, before?.points ?? 0), after?.points ?? Infinity)
+      fill.totalPoints = before?.totalPoints ?? after?.totalPoints ?? s.totalPoints
+    }
+    byDay.set(s.day, fill)
     fromMessages++
   }
   const snaps = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)).slice(-365)

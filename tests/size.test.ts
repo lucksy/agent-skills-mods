@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { runAction, type ActionInput } from '../packages/core/actions'
 import { boardHtml } from '../packages/core/dashboard/board'
 import { parseSizeLine, setSize, stampTodo } from '../packages/core/format'
+import { forecast, snapshotOf, type Snapshot } from '../packages/core/forecast'
 import { parseTasks } from '../packages/core/parse'
 import { listPoints, pointsOf, weightOf } from '../packages/core/size'
 import { stateJson, toState } from '../packages/core/state'
@@ -142,5 +143,44 @@ describe('size where tasks are shown (T1)', () => {
     const items = stateJson(state).tasks!.items
     expect(items.map(t => t.size)).toEqual(['S', 'L', undefined])
     expect('size' in items[2]!).toBe(false)
+  })
+})
+
+// ceremonies T2: the ETA in points. Snapshots carry points once a task has a
+// size, and the forecast reads them; with no sizes nothing changes (state.test.ts).
+describe('the ETA in points (T2)', () => {
+  /** T1–T3 are L and done, T4 and T5 S and left: 6 of 7 points done, 3 of 5 tasks. */
+  const NOW = Date.parse('2026-10-07T10:00:00Z')
+  const HISTORY: Snapshot[] = [
+    { day: '2026-10-01', done: 0, total: 5, points: 0, totalPoints: 7 },
+    { day: '2026-10-07', done: 3, total: 5, points: 6, totalPoints: 7 },
+  ]
+  const counts = (h: Snapshot[]) => h.map(({ points: _p, totalPoints: _t, ...s }) => s)
+
+  test('L tasks done and S tasks left: an earlier ETA than counting tasks, by hand', () => {
+    // Tasks: 3 in 6 days is 0.5 a day, 2 left: ⌈2 / 0.625⌉ = 4 days, ⌈2 / 0.5⌉ = 4, ⌈2 / 0.35⌉ = 6.
+    expect(forecast(counts(HISTORY), NOW)).toEqual({ kind: 'range', optimistic: '2026-10-11', median: '2026-10-11', slow: '2026-10-13', basis: 'from 3 tasks in 6 days', added: 0 })
+    // Points: 6 in 6 days is 1 a day, 1 left: ⌈1 / 1.25⌉ = 1 day, ⌈1 / 1⌉ = 1, ⌈1 / 0.7⌉ = 2.
+    expect(forecast(HISTORY, NOW)).toEqual({ kind: 'range', optimistic: '2026-10-08', median: '2026-10-08', slow: '2026-10-09', basis: 'from 6 points in 6 days', added: 0 })
+  })
+
+  test('a snapshot records points only once a task has a size', () => {
+    expect(snapshotOf('2026-10-11', parseTasks(SIZED))).toEqual({ day: '2026-10-11', done: 1, total: 3, doing: 1, blocked: 0, points: 0.5, totalPoints: 3.5 })
+    expect(Object.keys(snapshotOf('2026-10-11', parseTasks(TODO_TEMPLATE)))).toEqual(['day', 'done', 'total', 'doing', 'blocked'])
+  })
+
+  test('history stored before sizes: tasks until the days with points say a pace on their own', () => {
+    const old = counts(HISTORY)
+    // Only today has points: too little to say a pace, so the whole history counts tasks, as before.
+    const mixed = [old[0]!, HISTORY[1]!]
+    expect(forecast(mixed, NOW)).toEqual(forecast(old, NOW))
+    // Points from the second day on: those days alone give the range.
+    const later = [{ day: '2026-09-28', done: 0, total: 5 }, { day: '2026-10-01', done: 0, total: 5, points: 0, totalPoints: 7 }, HISTORY[1]!]
+    expect(forecast(later, NOW)).toMatchObject({ median: '2026-10-08', basis: 'from 6 points in 6 days' })
+  })
+
+  test('an old history.json, read as JSON, still loads and forecasts in tasks', () => {
+    const stored = JSON.parse('[{"day":"2026-10-01","done":0,"total":5},{"day":"2026-10-07","done":3,"total":5,"doing":1}]') as Snapshot[]
+    expect(forecast(stored, NOW)).toMatchObject({ kind: 'range', basis: 'from 3 tasks in 6 days' })
   })
 })
