@@ -138,6 +138,71 @@ approvals: design @sara 2026-10-09, product @pm 2026-10-10
 
 `module: <id>` in a task list's front matter names the module of `SPEC.md`'s capability map that it builds; a comma list is allowed. Without it, a plan counts for every module id its name contains, so `core-dashboard` counts for `core` and `dashboard`. Archived plans under `tasks/archive/` count too, which is how a finished module stays visible.
 
+The team-view module (0.39.0) adds answers, sign-offs and an opt-in merge driver. They stay inside v2's rules: optional lines that an older plugin ignores, with every other byte kept.
+
+### Answers to open questions (team-view)
+
+An answer goes on the line below its question in `tasks/plan.md`, indented two spaces:
+
+```markdown
+- Q2 (T6): Upstash Redis or self-hosted for the sliding window?
+  → A: Upstash · @pm 2026-10-11
+```
+
+- An answered question no longer counts as open, so it no longer blocks its task or shows under what needs a decision.
+- A new answer replaces the earlier one.
+- The answer carries the name of the person who gave it and the date. The name comes from `tasks/team.md` and your git email; when the team file doesn't name you, the answer is written with the date only, and the reply says why. Nobody answers for anyone else, and an agent writes an answer only when the person gives it.
+- `/progress answer Q2 "Upstash"` writes it, and so does the live dashboard's **Answer** button.
+
+### Checkpoint sign-offs (team-view)
+
+A checkpoint that a person has reviewed gets a line below its heading in `tasks/todo.md`, and its review box is ticked:
+
+```markdown
+## Checkpoint: Approvals
+**Signed off:** @amila 2026-10-11
+- [x] Review with human before proceeding
+```
+
+- `/progress signoff` signs off the checkpoint that is due, in your name with today's date. The live dashboard has a **Sign off** button for it too.
+- Nobody signs off for anyone else.
+
+### The merge driver (team-view)
+
+Opt-in. `/progress merge-driver install` shows what it will write and asks first; `/progress merge-driver install yes` writes it. `uninstall` removes exactly these lines again, and `status` says whether it is installed and whether the script it points at still exists.
+
+```gitattributes
+# .gitattributes (committed, so everyone's git uses it)
+tasks/todo.md   merge=agent-skills
+tasks/plan.md   merge=agent-skills
+SPEC*.md        merge=agent-skills
+specs/*.md      merge=agent-skills
+```
+
+```ini
+# .git/config (local; each clone runs install once)
+[merge "agent-skills"]
+    name = agent-skills task-aware merge
+    driver = node /absolute/path/to/scripts/agent-skills-progress.mjs --merge %O %A %B %P
+```
+
+The driver path is the plugin's own script, written as an absolute path. Git runs it for those files only. It needs Node 22.6 or newer.
+
+| Part | Rule |
+|---|---|
+| Task with the same id on both sides | Each box is ticked if either side ticked it. The Status line with the later stamp wins (done date, then started date). With equal stamps, ours wins. `**Handoff:**` lines are combined and sorted by date. |
+| Task on one side only | Kept |
+| Task added on both sides with the same number but different titles | Ours keeps the number. Theirs takes the next free number, and its `**Dependencies:**` are rewritten. The driver prints `T14 (theirs) is now T15` to stderr. |
+| Task deleted on one side, edited on the other | Conflict markers around that task |
+| `approvals:` in front matter | Combined by role. If both sides signed the same role, the earlier signature wins. `status: approved` is worked out again from the result. |
+| Other front-matter keys, prose, Open questions | Line-merged with `git merge-file`. If that conflicts, the usual markers appear. |
+
+The driver exits 0 when everything merged cleanly and 1 when it left markers, so git stops for you to resolve them as usual. It never drops content. A *blocked* Status does not beat a later *in progress* one: only the stamp counts.
+
+### "Since you last looked" (team-view)
+
+What you last saw is kept in `<git dir>/agent-skills/seen.json` (the folder `git rev-parse --git-dir` names, usually `.git/`). It is per clone, never committed, and shared by the plugin and the CLI. It holds a small snapshot: task states and owners, spec statuses, answered questions and collisions. Nothing in it goes into the markdown.
+
 ## What a viewer can show from it
 
 - Spec and plan approval, with dates (the run timeline's first two milestones).
@@ -145,6 +210,7 @@ approvals: design @sara 2026-10-09, product @pm 2026-10-10
 - Days per task and a done date for each task without git history, so a forecast works on any machine.
 - Blocked tasks and the question that blocks them.
 - (v2) Who owns each task, what is in review and with whom, handoff notes, who has signed a spec and who it waits on, and every module of the capability map with its progress.
+- (team-view) Answers to open questions and who gave them, who signed off each checkpoint, each task's furthest state across branches, tasks under way on two branches or with two owners, and what changed since you last looked.
 
 ## How the plugin keeps it
 
@@ -155,6 +221,7 @@ With the `progressFormat` option on (the default):
 3. **Edits carry state.** An `Edit` that ticks a task's last box is widened to set that task `done` with today's date in the same edit, so the file on disk is the file the agent last saw.
 4. **Work moves tasks.** A source edit, a test run or a commit sets the current task `in progress` at that step, and claims it for you when it has no owner and `tasks/team.md` knows you (v2); the change is written into `tasks/todo.md` at the end of the turn, or with the agent's next edit of it.
 5. **Approval is recorded.** The spec pane's Approve button writes `status: approved` and the date; with `approvals:` in `tasks/team.md` it signs for your roles instead, and approves on the last signature (v2).
-6. **`/progress format`** applies the format to an existing project and writes the rules into `AGENTS.md` (or `CLAUDE.md`) between marker comments, so other agents and future sessions keep it without the plugin.
+6. **Answers and sign-offs are written for you.** `/progress answer` and `/progress signoff`, and the live dashboard's buttons, write the lines above with your name (from `tasks/team.md` and your git email) and the date. Every write, from a command or the dashboard, goes through the same actions, and the live dashboard writes only when the file is still as the page loaded it.
+7. **`/progress format`** applies the format to an existing project and writes the rules into `AGENTS.md` (or `CLAUDE.md`) between marker comments, so other agents and future sessions keep it without the plugin.
 
 `scripts/agent-skills-progress.mjs --json` prints the parsed state for other tools.

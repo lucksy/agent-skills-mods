@@ -193,7 +193,7 @@ export function mergeTodo(base: string, ours: string, theirs: string): { text: s
 - [ ] The first prompt of a session shows "Since you last looked" when something changed, and nothing when nothing did. `/progress since` and `--since` show the same list.
 - [ ] `--serve` serves the dashboard on 127.0.0.1 with a token. Each of the 13 actions changes exactly its line on disk. A stale page gets a 409 and writes nothing. The page reloads within 2 s of a file change.
 - [ ] The Team tab shows each person's current task and step, WIP, the review queue with ages, handoffs and collisions, with no ranking.
-- [ ] `docs/progress-format.md` documents answers, sign-offs and the merge driver. The rules Claude is told include the new lines.
+- [x] `docs/progress-format.md` documents answers, sign-offs and the merge driver. The rules Claude is told include the new lines.
 - [ ] All tests pass. The README documents the commands. Checked in a real session and in Chrome.
 
 ## Open Questions

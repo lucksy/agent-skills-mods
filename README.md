@@ -2,7 +2,7 @@
 
 A Claude Code plugin that makes the [agent-skills](https://github.com/addyosmani/agent-skills) workflow readable inside Claude Code. You see `SPEC.md`, `tasks/plan.md` and `tasks/todo.md` as panes, a band above the prompt and the footer, so you don't have to open them in an editor.
 
-It runs next to agent-skills and changes nothing in it. The skills still write plain markdown, and this plugin reads it. For people outside the terminal, `/progress dashboard` writes the same project as one page: Overview, Board, Roadmap, Flow charts and Spec.
+It runs next to agent-skills and changes nothing in it. The skills still write plain markdown, and this plugin reads it. For people outside the terminal, `/progress dashboard` writes the same project as one page: Overview, Board, Team, Roadmap, Flow charts and Spec. `/progress dashboard live` serves it on your own machine with buttons that write back to the markdown.
 
 ```
 ╭ Plan ─────────────────────────────────────────────╮
@@ -61,6 +61,13 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Handoffs** | `/progress handoff T4 @bob "migration done, tests left"` gives the task to Bob and leaves a dated note under it. The note shows in `/progress task` and on the dashboard card, and the next person's agent reads it with the current task. | `**Handoff:** 2026-10-10 @sara → @bob: …` |
 | **Approvals by role** | With `approvals: product, design, eng` in `tasks/team.md`, the spec pane's `a` signs for your roles, with your name and the date, and the spec counts as approved only on the last signature. The pane and the dashboard's Spec tab show `2/3 approved · waiting on @sara (design)`. | Spec front matter: `approvals: design @sara 2026-10-09, …` |
 | **Modules** | Every module of `SPEC.md`'s capability map at a glance: its spec, its plans (archived ones included, so a finished module stays visible), progress and dates. `/progress modules <id>` prints one module's run timeline, from its archive if it is done. | `/progress modules [id]`, the dashboard's Modules tab |
+| **Across branches** | Each task's furthest state on any local branch or fetched remote-tracking ref (done, then in review, in progress, blocked, to do), the branch it is on, and how long ago this clone fetched. It reads `tasks/todo.md` from git objects already on your machine and never fetches, checks out or stashes. It reads local branches and remote refs with a commit in the last 30 days, up to 25, skipping refs at your own commit. | `/progress branches`, the dashboard's Board with **All branches** (`#board?branches=all`) |
+| **Collisions** | A task in progress or in review on two branches, or with two different owners, is a collision: `! T4 is also in progress on feat/rate-limit by @bob (2d)`. It shows in the band as soon as you start the task, on the board pane, on the dashboard's Board and Team tabs, and in `--json`. Done on one branch and under way on another is not a collision. | Above the prompt |
+| **Since you last looked** | Your first prompt of a session starts with what changed while you were away, each with who did it: tasks done, things assigned or handed to you, questions answered, specs back to draft, new collisions. At most six items, then `and N more · /progress since`; nothing when nothing changed. What you last saw is kept per clone in `<git dir>/agent-skills/seen.json`, never committed. | `Since you last looked (2026-10-09): T3 done by @bob · Q2 answered by @pm · T6 assigned to you` |
+| **Answers and sign-offs** | `/progress answer Q2 "Upstash"` writes the answer under the question in `tasks/plan.md`, with your name and the date; the question stops blocking its task. `/progress signoff` signs off the checkpoint that is due and ticks its review box. Nobody answers or signs for anyone else. | `  → A: Upstash · @pm 2026-10-11`, `**Signed off:** @amila 2026-10-11` |
+| **Merge driver** | Opt-in. With it, `git merge` merges `tasks/todo.md` task by task (a box ticked on either side stays ticked, the later-stamped Status wins, a task number taken on both sides is renumbered and reported) and a spec's `approvals:` role by role. Anything it can't merge cleanly gets ordinary conflict markers, and it never drops content. Install and uninstall show what they will write and ask first. | `/progress merge-driver [install\|uninstall\|status]` |
+| **Team tab** | A dashboard tab with one row per person in `tasks/team.md`, plus unowned work: their current task and step, work in progress, reviews waiting with their ages, handoffs to them and their collisions, and what is waiting on someone (open questions and unsigned approvals). It shows load and queues, never a ranking or speed. | `/progress dashboard team` |
+| **Live dashboard** | The dashboard served on 127.0.0.1, so a PM or designer without a terminal can act on it: **Sign** on the Spec tab, **Answer** on a question, start, done, review, block, claim, assign and hand off on Board cards, ticking a box, and **Sign off** on a due checkpoint. Each button runs the same edit as its `/progress` command and writes the markdown, which stays the only source of truth. The page reloads within two seconds of a file change, and if the file changed since you loaded the page it says `changed since you loaded it, reload` and writes nothing. Started from Claude Code, it stops when the session ends. | `/progress dashboard live`, or `--serve` from a shell |
 | **HTML report** | One self-contained page for people without Claude Code: done, ETA, pace and added scope as headline figures, a bar of tasks by state, both charts, days per task, and what needs a decision. No scripts and no external requests, so it opens offline and can be attached to an email. Light and dark. | `/progress report` writes `tasks/progress-report.html` and opens it in your default browser |
 | **Toasts** | When an agent edit finishes a task: `✓ T3 done Issue and revoke keys · Next: T4 Rate limit per key`. When that task is the last before a checkpoint, the toast names the checkpoint's own items instead: `♦ Checkpoint reached: After Tasks 1-2 · All tests pass · Review with human`. At most one per edit, none for unticking. | Over the transcript, after the edit |
 | **Answers about progress** | The parsed state (counts, current task and its open criteria, blocked tasks with their dependency chain, open questions, spec gaps, ETA) is the last section of the system prompt, after the cache boundary, so "what's left?" or "why is T3 blocked?" gets a short answer that cites task IDs and the source file instead of a guess, laid out as cards in a text block: a header naming its source (`Checkpoint 1 · 1 task left    from tasks/todo.md`), the task with its glyph and open boxes, a blocked task's dependency chain (`T6 ← T5 ← T4`) and the open question, then one sentence on what you can do. A prompt that names a task (`T3`, `task 3`) or asks about progress opens the board with that task highlighted. Projects without these files add nothing. | The model's answers, and the board |
@@ -84,12 +91,19 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | `/progress charts` | Opens the plan pane on the charts |
 | `/progress digest` | Copies the four-line digest and shows it |
 | `/progress report` | Writes `tasks/progress-report.html` and opens it in your default browser (from the terminal, VS Code or the desktop app; elsewhere it prints the path) |
-| `/progress dashboard [view]` | Writes `tasks/progress-dashboard.html` and opens it, on `overview`, `board`, `roadmap`, `flow`, `spec` or `modules`. Uses the plugin's own history, so its ETA matches the board |
+| `/progress dashboard [view]` | Writes `tasks/progress-dashboard.html` and opens it, on `overview`, `board`, `team`, `roadmap`, `flow`, `spec` or `modules`. Uses the plugin's own history, so its ETA matches the board |
 | `/progress team` · `team init [force]` | The team and who you are · a first `tasks/team.md` from the git authors |
 | `/progress assign T4 @sara` · `assign T4 me` · `claim T4` · `unassign T4` | Sets or clears a task's owner |
 | `/progress review T4 #42 @bob` | Puts a task in review, with its PR and reviewer (both optional) |
 | `/progress handoff T4 @bob "note"` | Gives a task to someone else, with a dated note |
 | `/progress modules [id]` | Every module of the capability map, or one module's run timeline |
+| `/progress branches` | The board across branches: each task's furthest state, the branch it is on, and how long ago this clone fetched |
+| `/progress since` | What changed since you last looked, in full (the first prompt of a session shows the short version) |
+| `/progress answer Q2 "Upstash"` | Answers an open question in `tasks/plan.md`, with your name and the date |
+| `/progress signoff` | Signs off the checkpoint that is due and ticks its review box |
+| `/progress merge-driver` · `merge-driver install` · `uninstall` | Whether the task-aware merge driver is installed · installs or removes it; each shows what it will write and needs `yes` to go ahead |
+| `/progress dashboard team` | The dashboard, opened on its Team tab |
+| `/progress dashboard live` | Starts the live dashboard on 127.0.0.1 and opens it; a second call reopens it. It stops when the session ends. Without Node 22.6 or newer, it prints the command to run instead |
 | `/progress format` | Applies the progress format to the files here and writes its rules into `AGENTS.md` or `CLAUDE.md` |
 | `/progress history` | Lists the history sources and what each added |
 | `/progress history logs on` / `off` | Reads Claude Code's session logs for this project, or stops using them |
@@ -191,12 +205,18 @@ node scripts/agent-skills-progress.mjs --timeline     # the run timeline, as the
 node scripts/agent-skills-progress.mjs --json         # the parsed state for other tools (State v1)
 node scripts/agent-skills-progress.mjs --dashboard    # the dashboard page, to tasks/progress-dashboard.html (or --dashboard out.html)
 node scripts/agent-skills-progress.mjs --modules      # every module of the capability map (--modules <id>: one module's timeline)
+node scripts/agent-skills-progress.mjs --branches     # the board across branches: furthest state, branch, fetch age
+node scripts/agent-skills-progress.mjs --since        # what changed since you last looked (shared with the plugin)
+node scripts/agent-skills-progress.mjs --serve [--port 7357] [--no-open]   # the live dashboard on 127.0.0.1; prints the URL with its token
+node scripts/agent-skills-progress.mjs --merge %O %A %B %P                 # the merge driver; git calls it, not people
 node scripts/agent-skills-progress.mjs --spec auth    # specs/auth.md or SPEC-auth.md
 ```
 
-Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_COLOR=1`), `--width <n>`. A braille spinner shows on stderr while it reads git.
+The merge driver is set up with `/progress merge-driver install` (see [docs/progress-format.md](docs/progress-format.md#the-merge-driver-team-view) for its rules). Other options: `--no-git`, `--no-color` (or `NO_COLOR=1`), `--color` (or `FORCE_COLOR=1`), `--width <n>`. A braille spinner shows on stderr while it reads git.
 
-`--json` prints State v1, marked `"schema": 1`. It holds every spec file, the task list (each task with its Status line, its blocker and the checkpoint after it), the plan's status and open questions, the forecast, the daily snapshots, the band's alerts and what needs a person. Fields are only added within v1; a change to existing ones would come as `schema: 2`. The type is `StateJson` in `packages/core/state.ts`.
+`--json` prints State v1, marked `"schema": 1`. It holds every spec file, the task list (each task with its Status line, its blocker and the checkpoint after it), the plan's status and open questions, the forecast, the daily snapshots, the band's alerts and what needs a person. Fields are only added within v1; a change to existing ones would come as `schema: 2`. Since 0.39.0 it also has `branches` (each task's furthest state across branches, with its ref and the fetch age), `collisions`, `since` (what changed since the last look, without recording a new look) and `plan.answered` (each answered question with its answer, who gave it and when). The type is `StateJson` in `packages/core/state.ts`.
+
+**The live server.** `--serve` listens on 127.0.0.1 only, never on another interface, and makes a new random token each run. Every request needs that token, as the `X-Agent-Skills-Token` header or `?token=` in the URL it prints, or it gets 401. A request that sends an `Origin` other than the server's own gets 403, and it sends no CORS headers, so another site open in your browser can't call it. A write (`POST /action` with `{ action, args, rev }`) goes ahead only if the files still hash to the `rev` the page loaded; otherwise it gets 409 and writes nothing. It runs the same 13 actions as the `/progress` commands (`start`, `done`, `block`, `unblock`, `tick`, `claim`, `assign`, `unassign`, `review`, `handoff`, `sign`, `signoff`, `answer`), signs with the git email of whoever runs the server, and only edits files: it never commits or pushes. In a git repository its Board has the All branches switch too. It watches `tasks/`, `specs/` and `SPEC*.md`, and the page reloads when they change. Ctrl-C stops it; `--port 0` picks a free port.
 
 It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type stripping) and nothing else.
 
@@ -204,9 +224,9 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 310 tests: parser, guard, forecast, state, team and approvals, modules, the dashboard's views, and the mod on terminal and desktop
+claude plugin test .         # 478 tests: parser, guard, forecast, state, team and approvals, modules, branches and collisions, the merge, since, the live server, the dashboard's views, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
-bash scripts/test.sh         # agent-skills-progress under Node, and that packages/core imports only itself
+bash scripts/test.sh         # agent-skills-progress under Node (real git merges with the driver, --branches, --since, --serve), and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder
 npm --prefix packages/charts ci && npm --prefix packages/charts run build   # rebuild the dashboard's chart bundle
 ```
@@ -239,6 +259,13 @@ packages/core/team.ts      tasks/team.md, and who you are from a git email
 packages/core/approvals.ts approvals by role: sign, status, who a spec waits on
 packages/core/modules.ts   the capability map's modules with their specs and plans
 packages/core/module-timeline.ts  one module's run timeline, from its archive
+packages/core/actions.ts   one table of write actions, shared by the /progress commands and the live server
+packages/core/branches.ts  tasks/todo.md on every branch, through one git cat-file --batch: the board across branches
+packages/core/collisions.ts  tasks under way on two branches, or with two owners
+packages/core/merge.ts     the task-aware three-way merge of a task list and of front matter
+packages/core/mergedriver.ts  installing and removing the merge driver in .gitattributes and .git/config
+packages/core/since.ts     what changed since the last look (seen.json)
+packages/core/serve.ts     the live server's request handling: token, Origin and rev checks, no sockets
 packages/core/dashboard/   the dashboard page: shell and tabs, one module per view, the generated chart bundle
 packages/charts/           the chart bundle's source (React + Nivo, dev dependencies only) and its build
 hooks/ui/                  surface modules: the tabs, the animated bar, the turning task marker
@@ -247,13 +274,13 @@ types/index.d.ts           the session state contract
 statusline/                the status line script and its test
 ```
 
-History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report or dashboard you ask for. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.
+History for the ETA is one snapshot per day, stored per project in the plugin's own store. Nothing is written into your repository except the report or dashboard you ask for, the edits your own commands and dashboard buttons make to the markdown, and `.gitattributes` if you install the merge driver. "Since you last looked" keeps its snapshot inside the git folder (`<git dir>/agent-skills/seen.json`), which is never committed. Nothing in the plugin or the CLI fetches or sends anything off the machine. Rebuilding it from git runs three read-only commands once per project: `git log` for the commits that touched the task list, one `git cat-file --batch` for their copies of it, and `git log` for commit messages. Session logs are read from `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`) only after you allow it; their format is Claude Code's own, so a line the plugin does not understand is skipped. Days the plugin saw for itself win over every other source, since they include uncommitted edits.
 
 ## Roadmap
 
 The user stories, mockups and chart designs live in the proposal; every story in it is now built except the upstream one below.
 
-The next modules are mapped in [SPEC.md](SPEC.md) (`/progress modules` shows where each stands): a board across branches, Agile ceremonies, a team site, and a VS Code extension. Teams (format-v2) shipped in 0.38.0; its format is in [docs/progress-format.md](docs/progress-format.md).
+The next modules are mapped in [SPEC.md](SPEC.md) (`/progress modules` shows where each stands): Agile ceremonies, a team site, and a VS Code extension. Teams (format-v2) shipped in 0.38.0, and the team across branches (team-view: the board across branches, collisions, the merge driver, "since you last looked", the Team tab and the live dashboard) in 0.39.0; the format is in [docs/progress-format.md](docs/progress-format.md).
 
 Upstream, the plan is to propose the progress format to agent-skills (issue text and eval cases in [docs/upstream/](docs/upstream/)), so any tool, not only this plugin, can read progress reliably.
 

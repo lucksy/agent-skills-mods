@@ -1,7 +1,7 @@
 {
   "name": "agent-skills-mods",
-  "version": "0.38.0",
-  "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, a guard that refuses overwriting an unfinished plan, a project dashboard, and teams: owners, reviews, handoffs, approvals by role and every module at a glance.",
+  "version": "0.39.0",
+  "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, a guard that refuses overwriting an unfinished plan, a project dashboard, teams (owners, reviews, handoffs, approvals by role, every module at a glance) and the team across branches: collisions, a task-aware merge driver, \"since you last looked\" and a live local dashboard that writes.",
   "author": {
     "name": "lucksy"
   },

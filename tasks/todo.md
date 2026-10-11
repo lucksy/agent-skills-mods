@@ -123,7 +123,7 @@ created: 2026-10-11
 
 **Verification:**
 - [x] Tests pass: `claude plugin test .`
-- [ ] Manual check: Chrome, light and dark, 360 px
+- [x] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4
 
@@ -146,7 +146,7 @@ created: 2026-10-11
 
 **Verification:**
 - [x] Tests pass: `claude plugin test .`
-- [ ] Manual check: Chrome, light and dark, 360 px
+- [x] Manual check: Chrome, light and dark, 360 px
 
 **Dependencies:** T4
 
@@ -286,7 +286,7 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 
 **Verification:**
 - [x] Tests pass: `claude plugin test .`
-- [ ] Manual check: Chrome, pressing Sign, Answer and Claim; a second tab to see the 409; light and dark, 360 px
+- [x] Manual check: Chrome, pressing Sign, Answer and Claim; a second tab to see the 409; light and dark, 360 px
 
 **Dependencies:** T10, T5, T6
 
@@ -300,7 +300,7 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Medium
 
 ## Task 12: /progress dashboard live
-**Status:** done · started 2026-10-11 · done 2026-10-11
+**Status:** in progress · started 2026-10-11
 
 **Description:** `/progress dashboard live` gives you the live dashboard from Claude Code. If Q1 found that a mod can start a long-running process, it starts `--serve` and opens the URL. If not, it prints the exact `! node … --serve` line. Either way, it says how to stop the server.
 
@@ -322,24 +322,24 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 
 ## Checkpoint: Live
 - [x] All tests pass
-- [ ] In Chrome, Sign, Answer and Claim change the markdown and the page reloads; a stale tab gets the 409
+- [x] In Chrome, Sign, Answer and Claim change the markdown and the page reloads; a stale tab gets the 409
 - [ ] Two people (two git emails) sign a spec that needs two roles, through the live dashboard (carried over from format-v2's Approvals checkpoint)
 - [ ] Review with human before proceeding
 
 ## Phase 6: Close
 
 ## Task 13: Docs, rules, README, 0.39.0 and final checks
-**Status:** todo
+**Status:** in progress · started 2026-10-11
 
 **Description:** `docs/progress-format.md` documents answers, sign-offs and the merge driver. The rules Claude is told include the answer and sign-off lines. The README documents every new command and flag. The version goes to 0.39.0 and the plugin description is updated. Run all suites and check every success criterion in the spec.
 
 **Acceptance criteria:**
-- [ ] The docs and README cover every command in the spec's Commands section
+- [x] The docs and README cover every command in the spec's Commands section
 - [ ] `/progress format` writes the new rules into AGENTS.md (or CLAUDE.md), checked in a real session
 - [ ] Every success criterion in SPEC-team-view.md is ticked, with how it was checked
 
 **Verification:**
-- [ ] Tests pass: `claude plugin validate . && claude plugin test . && bash scripts/test.sh && bash statusline/test.sh`
+- [x] Tests pass: `claude plugin validate . && claude plugin test . && bash scripts/test.sh && bash statusline/test.sh`
 
 **Dependencies:** T1–T12
 

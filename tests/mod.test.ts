@@ -26,6 +26,8 @@ function world(
     serve: { stdout: 'Serving /p at http://127.0.0.1:50123/?token=ab12\nOnly this machine can reach it, and only with the token. Ctrl-C stops it.\n', stderr: '', code: null as number | null },
     spawned: [] as string[][],
     ends: [] as (() => void)[],
+    // The slash commands the mod registers, with their description and argument hint (team-view T13).
+    commands: [] as { name: string; description?: string; argumentHint?: string }[],
   }
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
@@ -72,7 +74,10 @@ function world(
   clocks.set(seen, mock.clock(on, { now: Date.parse('2026-10-09T10:00:00Z') }))
   mock.store(on, stored)
   on('session.cwd', () => ({ value: CWD }))
-  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('command.register', (_$, e) => {
+    seen.commands.push({ name: e.name, description: e.description, argumentHint: e.argumentHint })
+    return { value: { command: e.name } }
+  })
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home' : undefined }))
   on('fs.exists', (_$, e) => ({ value: e.path in files }))
@@ -938,6 +943,9 @@ test('/progress format applies the format here and writes its rules into the pro
   expect(out.text).toMatch(/SPEC\.md: front matter/)
   expect(readFm(files[`${CWD}/SPEC.md`]!)).toMatch(/status: approved/)
   expect(files[`${CWD}/CLAUDE.md`]).toMatch(/^# Project\n\n<!-- agent-skills-mods:progress-format -->\n## agent-skills progress format\n/)
+  // team-view (T13): the answer and sign-off lines go with the rules.
+  expect(files[`${CWD}/CLAUDE.md`]).toContain('→ A: <answer> · @handle YYYY-MM-DD')
+  expect(files[`${CWD}/CLAUDE.md`]).toContain('**Signed off:** @handle YYYY-MM-DD')
   const again = await $.command.run(run('format'))
   expect(again.text).toBe('The progress format is already in place here.')
 })
@@ -1808,4 +1816,17 @@ test('/progress since outside a git repository says why, and the first prompt st
   expect(seen.logs).toEqual([])
   expect((await $.command.run(run('since'))).text).toBe('Not a git repository: "since you last looked" keeps its snapshot in the git folder.')
   expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`])
+})
+
+test('/progress names the team-view verbs in its description and argument hint (T13)', async ($, on) => {
+  const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const progress = seen.commands.find(c => c.name === 'progress')
+  expect(progress).toBeDefined()
+  for (const verb of ['branches', 'since', 'answer', 'signoff', 'merge-driver']) {
+    expect(progress!.description).toContain(verb)
+    expect(progress!.argumentHint).toContain(verb)
+  }
+  expect(progress!.argumentHint).toContain('merge-driver [install|uninstall|status]')
+  expect(progress!.argumentHint).toMatch(/dashboard \[[^\]]*team[^\]]*live\]/)
 })
