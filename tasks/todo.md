@@ -102,8 +102,8 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Checkpoint: Foundation
-- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] With no sizes and no backlog, every output is byte-identical to 0.39.0
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] With no sizes and no backlog, every output is byte-identical to 0.39.0
 - [ ] Review with human before proceeding
 
 ## Phase 2: Sprints
@@ -227,7 +227,7 @@ Rows are keyed by task, with no owner and no per-person figure. `/progress retro
 **Estimated scope:** Small
 
 ## Checkpoint: Sprints
-- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
 - [ ] In a real temporary git repo with two weeks of commits, `sprint plan`, `sprint start`, `report sprint` and `retro` agree with each other
 - [ ] Review with human before proceeding
 
@@ -347,24 +347,24 @@ With no sprint, the tab shows the backlog and the `sprint plan` proposal as text
 **Estimated scope:** Small
 
 ## Checkpoint: Dashboard
-- [ ] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] In Chrome, Pull, Size, Answer and Sign change the markdown and the page reloads
+- [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
+- [x] In Chrome, Pull, Size, Answer and Sign change the markdown and the page reloads
 - [ ] Review with human before proceeding
 
 ## Phase 5: Close
 
 ## Task 14: Docs, rules, README, 0.40.0 and final checks
-**Status:** todo
+**Status:** in progress · started 2026-10-11 · step test
 
 **Description:** `docs/progress-format.md` gets a ceremonies section covering Size, `sprint:` and `commit:`, and `backlog.md` with `Was:`. `FORMAT_RULES` and the skill rules Claude is told include them. The README documents every new command and the two tabs, and the "next modules" line moves on to team-site. The version goes to 0.40.0 in `plugin.json`. Then the final checks: a real session on this repo, and Chrome.
 
 **Acceptance criteria:**
-- [ ] The docs, rules and README cover every command and format line in the spec
+- [x] The docs, rules and README cover every command and format line in the spec
 - [ ] Every success criterion in SPEC-ceremonies.md is checked off with evidence
-- [ ] `claude plugin validate .` passes at 0.40.0
+- [x] `claude plugin validate .` passes at 0.40.0
 
 **Verification:**
-- [ ] Tests pass: `claude plugin validate . && claude plugin test . && bash scripts/test.sh && bash statusline/test.sh`
+- [x] Tests pass: `claude plugin validate . && claude plugin test . && bash scripts/test.sh && bash statusline/test.sh`
 - [ ] Manual check: a real session (size, defer, pull, sprint plan and start, standup team, retro, inbox)
 
 **Dependencies:** T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13

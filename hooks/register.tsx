@@ -1541,8 +1541,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | digest | report | dashboard | team | branches | since | answer | signoff | merge-driver | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|graph|next|digest|report|dashboard [view|team|live]|team [init]|branches|since|answer Q2 "…"|signoff|merge-driver [install|uninstall|status]|history|format|allow-overwrite|refresh]',
+      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | ready | sprint | backlog | inbox | standup | retro | digest | report | dashboard | team | branches | since | answer | signoff | merge-driver | history | format | allow-overwrite | refresh',
+      argumentHint: '[timeline|charts|graph|next|ready|sprint [plan|start …]|size T4 M|backlog [add "…"]|pull B3|defer T9|inbox|standup [team]|retro|digest|report [sprint]|dashboard [view|sprint|inbox|team|live]|team [init]|branches|since|answer Q2 "…"|signoff|merge-driver [install|uninstall|status]|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',

@@ -196,15 +196,15 @@ export function deferTask(todo: string, backlog: string | null, id: string, by: 
 
 ## Success Criteria
 
-- [ ] `/progress size` writes and clears the Size line. With no sizes, the forecast, the charts and `--json` counts are byte-identical to 0.39.0 on every existing fixture. With sizes, the ETA uses points.
-- [ ] `/progress defer` and `/progress pull` move a task between `todo.md` and `backlog.md` keeping its boxes and notes. A deferred number is never given to another task. Each refusal in Rules is tested.
-- [ ] `/progress ready` lists every not-ready task with its reasons. `/progress sprint plan` proposes ready tasks in dependency order up to the capacity range, shows the pace it used, and writes nothing.
-- [ ] `/progress sprint start` writes exactly `sprint:` and `commit:`. While the sprint runs, the band, the board pane and the Sprint tab show days left, committed vs done, and added.
-- [ ] `/progress standup team` gives one block per person in `team.md` plus unowned work, from Status lines across branches and commit subjects, and copies it.
-- [ ] `/progress report sprint` and the Sprint tab show committed vs done, added, carry over, and the demo checklist. Past sprints are rebuilt from git history with nothing new committed.
-- [ ] `/progress retro` shows the slowest tasks against their size, the longest blocks, scope added and ETA drift, with no per-person figure.
-- [ ] `/progress inbox` and the Inbox tab show what waits on you by handle and role. On the live page each item's button works, and a stale page gets a 409.
-- [ ] `docs/progress-format.md` documents Size, sprints and the backlog. The rules Claude is told include them. The README documents the commands.
+- [x] `/progress size` writes and clears the Size line. With no sizes, the forecast, the charts and `--json` counts are byte-identical to 0.39.0 on every existing fixture. With sizes, the ETA uses points.
+- [x] `/progress defer` and `/progress pull` move a task between `todo.md` and `backlog.md` keeping its boxes and notes. A deferred number is never given to another task. Each refusal in Rules is tested.
+- [x] `/progress ready` lists every not-ready task with its reasons. `/progress sprint plan` proposes ready tasks in dependency order up to the capacity range, shows the pace it used, and writes nothing.
+- [x] `/progress sprint start` writes exactly `sprint:` and `commit:`. While the sprint runs, the band, the board pane and the Sprint tab show days left, committed vs done, and added.
+- [x] `/progress standup team` gives one block per person in `team.md` plus unowned work, from Status lines across branches and commit subjects, and copies it.
+- [x] `/progress report sprint` and the Sprint tab show committed vs done, added, carry over, and the demo checklist. Past sprints are rebuilt from git history with nothing new committed.
+- [x] `/progress retro` shows the slowest tasks against their size, the longest blocks, scope added and ETA drift, with no per-person figure.
+- [x] `/progress inbox` and the Inbox tab show what waits on you by handle and role. On the live page each item's button works, and a stale page gets a 409.
+- [x] `docs/progress-format.md` documents Size, sprints and the backlog. The rules Claude is told include them. The README documents the commands.
 - [ ] All tests pass. Checked in a real session and in Chrome.
 
 ## Open Questions

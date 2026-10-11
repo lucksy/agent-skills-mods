@@ -1,4 +1,4 @@
-# The agent-skills progress format (v1, v2)
+# The agent-skills progress format (v1, v2, ceremonies)
 
 agent-skills hands work from skill to skill through markdown: `SPEC.md`, `tasks/plan.md` and `tasks/todo.md`. The skills record progress only as checkboxes. That is enough for the agent, but a viewer (this plugin, an editor extension, a CI job, a manager's report) has to guess the rest: whether the spec was approved, which task is under way, when each one started and finished.
 
@@ -177,6 +177,7 @@ tasks/todo.md   merge=agent-skills
 tasks/plan.md   merge=agent-skills
 SPEC*.md        merge=agent-skills
 specs/*.md      merge=agent-skills
+tasks/backlog.md merge=agent-skills
 ```
 
 ```ini
@@ -185,6 +186,8 @@ specs/*.md      merge=agent-skills
     name = agent-skills task-aware merge
     driver = node /absolute/path/to/scripts/agent-skills-progress.mjs --merge %O %A %B %P
 ```
+
+The `tasks/backlog.md` line came with ceremonies (0.40.0). An install from before it lacks that line: `/progress merge-driver` says so, and running `install` again adds it.
 
 The driver path is the plugin's own script, written as an absolute path. Git runs it for those files only. It needs Node 22.6 or newer.
 
@@ -195,6 +198,7 @@ The driver path is the plugin's own script, written as an absolute path. Git run
 | Task added on both sides with the same number but different titles | Ours keeps the number. Theirs takes the next free number, and its `**Dependencies:**` are rewritten. The driver prints `T14 (theirs) is now T15` to stderr. |
 | Task deleted on one side, edited on the other | Conflict markers around that task |
 | `approvals:` in front matter | Combined by role. If both sides signed the same role, the earlier signature wins. `status: approved` is worked out again from the result. |
+| `tasks/backlog.md` items (ceremonies) | Merged item by item, as tasks are. A B id added on both sides with different titles: ours keeps it, theirs takes the next free B id. A renumbered task in `tasks/todo.md` never takes a number the backlog records on a `**Was:**` line. |
 | Other front-matter keys, prose, Open questions | Line-merged with `git merge-file`. If that conflicts, the usual markers appear. |
 
 The driver exits 0 when everything merged cleanly and 1 when it left markers, so git stops for you to resolve them as usual. It never drops content. A *blocked* Status does not beat a later *in progress* one: only the stamp counts.
@@ -202,6 +206,86 @@ The driver exits 0 when everything merged cleanly and 1 when it left markers, so
 ### "Since you last looked" (team-view)
 
 What you last saw is kept in `<git dir>/agent-skills/seen.json` (the folder `git rev-parse --git-dir` names, usually `.git/`). It is per clone, never committed, and shared by the plugin and the CLI. It holds a small snapshot: task states and owners, spec statuses, answered questions and collisions. Nothing in it goes into the markdown.
+
+## Ceremonies: size, a backlog and sprints
+
+The ceremonies module (0.40.0) adds three things, all optional. A plan with no Size lines, no `tasks/backlog.md` and no `sprint:` reads, forecasts and renders exactly as before.
+
+### Size
+
+A task can have a size on its own line under its Status line:
+
+```markdown
+## Task 4: Rate limit per key
+**Status:** in progress · @amila · started 2026-10-13
+**Size:** M
+```
+
+| Size | Points |
+|---|---|
+| S | ½ |
+| M | 1 |
+| L | 2 |
+| none | 1, the same as M |
+
+- The ETA works in points once enough recorded days carry them, so a plan of large tasks done and small ones left lands sooner than its task count says. The burn-up and pace charts still count tasks.
+- People set sizes, with `/progress size T4 M` (`size T4 -` clears it) or the live dashboard's Size picker. An agent keeps the line when it rewrites the section and doesn't invent one.
+
+### The backlog
+
+`tasks/backlog.md` holds work that isn't scheduled. Its items have the same shape as tasks, with `B` ids:
+
+```markdown
+---
+backlog: gateway
+---
+# Backlog
+
+## B3: Per-tenant quotas
+**Size:** L
+- [ ] Quota per tenant in the config
+- [ ] Verify: pnpm --filter gateway test
+
+## B4: Audit log export
+**Was:** T9 · deferred 2026-10-14 @amila
+- [ ] CSV export of the audit log
+```
+
+- `/progress backlog add "Per-tenant quotas" L` appends the next B id, and makes the file when there is none.
+- `/progress pull B3` moves an item into `tasks/todo.md`, after its last task, as `**Status:** todo`. It keeps its boxes, size and notes.
+- `/progress defer T9` moves a task that hasn't started into the backlog as the next B id. Its number is recorded on `**Was:**`, so it is never given to another task. The next free task number counts both `tasks/todo.md` and every `Was:`. A pulled item takes its `Was:` number back when nothing has reused it.
+- Defer refuses a task that is in progress, in review or done, or that another task depends on (the reply names them). Pull refuses an item whose Dependencies name a task that isn't in `tasks/todo.md`.
+- A pull or a defer writes both files. Both must still be as the command or the page read them, or neither is written.
+- A task can depend on a backlog item (`**Dependencies:** B3`). It isn't ready until that item is pulled and done.
+
+### A sprint
+
+A running sprint is two lines in `tasks/todo.md`'s front matter, written by `/progress sprint start 2026-10-24 T4 T5 T7`:
+
+```yaml
+plan: gateway
+created: 2026-10-01
+sprint: 2026-10-13..2026-10-24
+commit: T4, T5, T7
+```
+
+- The start is the day it was started. A sprint ends on its end date; the next `sprint start` replaces both lines. There is no `sprint end`.
+- Past sprints are rebuilt from the git history of `tasks/todo.md`, so nothing is committed for them. Scope added is the tasks that appeared after the start and are not in `commit:`. Carry over is the committed tasks not done on the end date.
+- Working days are Monday to Friday, with no holidays.
+
+### What the ceremonies read
+
+| Ceremony | Command | Reads |
+|---|---|---|
+| Refinement | `/progress ready` | Each task not started: acceptance and verification boxes, open questions naming it, dependencies (blocking); a size and, once the plan uses owners, an owner (recommended) |
+| Sprint planning | `/progress sprint plan [days]` | Ready tasks in dependency order against the pace (points per working day over the last 10), filling the slow case, then the usual case. Writes nothing; prints the `sprint start` line |
+| The sprint now | `/progress sprint` | Days left, committed against done (tasks and points), added |
+| Sprint review | `/progress report sprint [day]` | Committed against done, added, carry over, and a demo checklist: the done tasks' acceptance boxes and the checkpoints signed off in the sprint |
+| Retro | `/progress retro` | Tasks over twice the median days for their size, the longest blocks (from the history of `blocked` Status lines), scope added, ETA drift. About the work, never about people |
+| Team standup | `/progress standup team` | Per person in `tasks/team.md`: done since the last working day on any branch the board reads, or named at the start of their commit subjects (`T4: …`); today; blocked |
+| Decisions inbox | `/progress inbox [@handle\|all]` | Open questions, specs to sign for your roles, the checkpoint due, reviews requested of you, handoffs to you |
+
+No ceremony gives a per-person figure: no velocity, points or speed for anyone.
 
 ## What a viewer can show from it
 
@@ -211,6 +295,7 @@ What you last saw is kept in `<git dir>/agent-skills/seen.json` (the folder `git
 - Blocked tasks and the question that blocks them.
 - (v2) Who owns each task, what is in review and with whom, handoff notes, who has signed a spec and who it waits on, and every module of the capability map with its progress.
 - (team-view) Answers to open questions and who gave them, who signed off each checkpoint, each task's furthest state across branches, tasks under way on two branches or with two owners, and what changed since you last looked.
+- (ceremonies) Each task's size and the ETA in points, the backlog, the running and past sprints with what was committed, added and carried over, and what waits on each person.
 
 ## How the plugin keeps it
 
@@ -222,6 +307,7 @@ With the `progressFormat` option on (the default):
 4. **Work moves tasks.** A source edit, a test run or a commit sets the current task `in progress` at that step, and claims it for you when it has no owner and `tasks/team.md` knows you (v2); the change is written into `tasks/todo.md` at the end of the turn, or with the agent's next edit of it.
 5. **Approval is recorded.** The spec pane's Approve button writes `status: approved` and the date; with `approvals:` in `tasks/team.md` it signs for your roles instead, and approves on the last signature (v2).
 6. **Answers and sign-offs are written for you.** `/progress answer` and `/progress signoff`, and the live dashboard's buttons, write the lines above with your name (from `tasks/team.md` and your git email) and the date. Every write, from a command or the dashboard, goes through the same actions, and the live dashboard writes only when the file is still as the page loaded it.
-7. **`/progress format`** applies the format to an existing project and writes the rules into `AGENTS.md` (or `CLAUDE.md`) between marker comments, so other agents and future sessions keep it without the plugin.
+7. **Moves keep ids stable.** `/progress pull`, `defer`, `size` and `sprint start` write through the same actions as the live dashboard's Pull, Defer and Size buttons, with your name and the date where the format records one.
+8. **`/progress format`** applies the format to an existing project and writes the rules into `AGENTS.md` (or `CLAUDE.md`) between marker comments, so other agents and future sessions keep it without the plugin.
 
 `scripts/agent-skills-progress.mjs --json` prints the parsed state for other tools.
