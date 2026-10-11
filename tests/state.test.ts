@@ -118,8 +118,10 @@ describe('no sizes, no change (ceremonies T2)', () => {
   const STORED: Snapshot[] = Array.from({ length: 30 }, (_, i) => ({ day: dayOf(Date.parse('2026-09-10T00:00:00Z') + i * 86_400_000), done: Math.floor(i / 4), total: 10 + Math.floor(i / 10), doing: i % 3, blocked: i % 5 === 0 ? 1 : 0 }))
   const outputs = (s: State) => {
     const fc = s.forecast
+    // T11's inbox is a field added to --json since 0.39.0; every other byte is as before.
+    const { inbox: _, ...json } = JSON.parse(renderJson(s)) as Record<string, unknown>
     return JSON.stringify({
-      json: renderJson(s),
+      json: JSON.stringify(json, null, 2),
       drift: forecastHistory(s.snapshots),
       burnup: burnup(s.snapshots, fc, 40, 8),
       flow: flow(s.snapshots, 40, 8),
