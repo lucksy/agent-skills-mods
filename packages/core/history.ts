@@ -337,13 +337,14 @@ export async function gitSources(run: Runner, file: string, list: TaskList): Pro
 
 // ------------------------------------------------------------ copies for sprints (ceremonies T6)
 
-/** A committed copy of a file: its commit, the day it was committed (UTC) and its text. */
-export type Copy = { hash: string; day: string; text: string }
+/** A committed copy of a file: its commit, when it was committed (the UTC day, and in ms) and its text. */
+export type Copy = { hash: string; day: string; ms: number; text: string }
 
 /**
- * The committed copies of `file`, the last of each day, newest first: those on
- * or after `since`, and the newest one before it (what the file held when that
- * day began). Without `since`, every copy back to where the file began. `cache`
+ * The committed copies of `file`, every commit, newest first: those on or after
+ * `since`, and the newest one before it (what the file held when that day
+ * began). Every commit, not the last of each day: a sprint started and grown on
+ * the same day needs its start commit (ceremonies T6). Without `since`, every copy back to where the file began. `cache`
  * maps a commit to its copy, so a commit already read is not read again.
  * Reads git objects already here; empty outside a repository.
  */
@@ -351,7 +352,7 @@ export async function readCopiesSince(run: Runner, file: string, opts: { since?:
   try {
     const log = await run(logArgv(file))
     if (log.exitCode !== 0) return []
-    const all = lastPerDay(parseLog(log.stdout))
+    const all = parseLog(log.stdout)
     const from = opts.since ? all.findIndex(c => dayOf(c.ms) < opts.since!) : -1
     const commits = from < 0 ? all : all.slice(0, from + 1)
     const cache = opts.cache ?? new Map<string, string | null>()
@@ -365,7 +366,7 @@ export async function readCopiesSince(run: Runner, file: string, opts: { since?:
       const text = cache.get(c.hash)
       // A commit without the file, or one past where the read stopped, ends the walk back.
       if (text === null || text === undefined) break
-      out.push({ hash: c.hash, day: dayOf(c.ms), text })
+      out.push({ hash: c.hash, day: dayOf(c.ms), ms: c.ms, text })
     }
     return out
   } catch {

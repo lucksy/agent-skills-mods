@@ -119,10 +119,14 @@ export function workingDays(from: string, to: string): number {
 }
 
 /** A committed copy of tasks/todo.md, parsed: what a sprint's history is read from. */
-export type TodoVersion = { day: string; list: TaskList }
+export type TodoVersion = { day: string; ms?: number; list: TaskList }
+
+/** Oldest first: by day, then by commit time within it; a version without a time (the plan as it is now) last in its day. Pure. */
+export const byTime = (a: { day: string; ms?: number }, b: { day: string; ms?: number }) =>
+  a.day.localeCompare(b.day) || (a.ms ?? Number.MAX_SAFE_INTEGER) - (b.ms ?? Number.MAX_SAFE_INTEGER)
 
 /** Copies as `readCopiesSince` gives them, parsed, oldest first. Pure. */
-export const versionsOf = (copies: Copy[]): TodoVersion[] => copies.map(c => ({ day: c.day, list: parseTasks(c.text) })).sort((a, b) => a.day.localeCompare(b.day))
+export const versionsOf = (copies: Copy[]): TodoVersion[] => copies.map(c => ({ day: c.day, ms: c.ms, list: parseTasks(c.text) })).sort(byTime)
 
 /**
  * What the plan held when the sprint began: the first copy that carries this
@@ -130,7 +134,7 @@ export const versionsOf = (copies: Copy[]): TodoVersion[] => copies.map(c => ({ 
  * first day; null when git has neither. Pure.
  */
 export function sprintBase(versions: TodoVersion[], sprint: Sprint): TodoVersion | null {
-  const sorted = [...versions].sort((a, b) => a.day.localeCompare(b.day))
+  const sorted = [...versions].sort(byTime)
   return sorted.find(v => v.list.meta?.sprint?.start === sprint.start && v.day >= sprint.start) ?? sorted.filter(v => v.day < sprint.start).at(-1) ?? null
 }
 
@@ -252,7 +256,7 @@ export function endAfter(day: string, n: number): string {
  */
 export function pastSprints(versions: TodoVersion[], current: TaskList | null): Sprint[] {
   const byStart = new Map<string, Sprint>()
-  const all = [...versions].sort((a, b) => a.day.localeCompare(b.day)).map(v => v.list.meta?.sprint)
+  const all = [...versions].sort(byTime).map(v => v.list.meta?.sprint)
   // The newest copy of a sprint says what it committed to last.
   for (const s of [...all, current?.meta?.sprint]) if (s) byStart.set(s.start, s)
   return [...byStart.values()].sort((a, b) => a.start.localeCompare(b.start))
@@ -285,7 +289,7 @@ export type SprintReview = SprintNow & {
  * last committed copy by then); while it runs, as the plan stands now. Pure.
  */
 export function sprintReview(sprint: Sprint, current: TaskList, versions: TodoVersion[], today: string): SprintReview {
-  const atEnd = today <= sprint.end ? null : [...versions].sort((a, b) => a.day.localeCompare(b.day)).filter(v => v.day <= sprint.end).at(-1)?.list
+  const atEnd = today <= sprint.end ? null : [...versions].sort(byTime).filter(v => v.day <= sprint.end).at(-1)?.list
   const list = atEnd ?? current
   const now = sprintOn(sprint, list, versions, today)
   const byId = new Map(list.tasks.map(t => [t.id, t]))

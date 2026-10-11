@@ -342,8 +342,20 @@ describe('the sprint now (T6)', () => {
     expect(sprintLine(now)).toBe('sprint · 6d left · 2/3 committed · +2')
   })
 
+  test('a task pulled the same day the sprint started, in a later commit, counts as added', async () => {
+    // Real-session check: `sprint start` and a pull, committed an hour apart on the first day.
+    const PULLED = V_MON + '\n' + section(8, 'Alerting', 'todo', 'S')
+    const SAME_DAY = gitOutput([['2026-10-12T15:00', PULLED], ['2026-10-12T14:00', V_MON], ['2026-10-09', V_FRI]])
+    const run: Runner = async (argv, opts) => ({ exitCode: 0, stdout: argv[1] === 'log' ? SAME_DAY.log : SAME_DAY.answer(argv, opts?.stdin ?? ''), stderr: '' })
+    const versions = versionsOf(await readCopiesSince(run, 'tasks/todo.md', { since: '2026-10-12' }))
+    expect(versions.map(v => v.list.tasks.length)).toEqual([6, 6, 7])
+    const now = sprintNow(parseTasks(PULLED), versions, '2026-10-12')!
+    expect(now.added.ids).toEqual(['T8'])
+    expect(sprintLine(now)).toBe('sprint · 10d left · 0/3 committed · +1')
+  })
+
   test('before the sprint\'s commit, the last copy from before its first day is the base', () => {
-    const versions = versionsOf([{ hash: 'a', day: '2026-10-09', text: V_FRI }])
+    const versions = versionsOf([{ hash: 'a', day: '2026-10-09', ms: Date.parse('2026-10-09T12:00:00Z'), text: V_FRI }])
     // Started today and not committed yet: T6 was added since Friday's copy.
     const now = sprintNow(parseTasks(V_MON), versions, '2026-10-12')!
     expect(now.added.ids).toEqual(['T6'])

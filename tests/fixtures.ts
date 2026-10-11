@@ -176,7 +176,8 @@ export const TODO_NONE_DONE = TODO_TEMPLATE.replace(/- \[x\]/g, '- [ ]')
 /** The two git calls' output for copies of a file, newest first: `[day, text]`, text null where the file is missing. */
 export function gitOutput(copies: [string, string | null][]) {
   const hash = (i: number) => `${i}`.padStart(40, 'a')
-  const log = copies.map(([day], i) => `${hash(i)} ${Date.parse(`${day}T12:00:00Z`) / 1000}`).join('\n') + '\n'
+  // A day is committed at noon; `2026-10-12T15:00` gives the time too, for two commits on one day.
+  const log = copies.map(([day], i) => `${hash(i)} ${Date.parse(day.includes('T') ? `${day}:00Z` : `${day}T12:00:00Z`) / 1000}`).join('\n') + '\n'
   const cat = copies
     .map(([, text], i) => (text === null ? `${hash(i)}:./tasks/todo.md missing\n` : `@@asm blob\n${text}\n`))
     .join('')

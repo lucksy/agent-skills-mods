@@ -8,7 +8,7 @@ import { etaDrift, forecastHistory, shortDay, type Snapshot } from './forecast'
 import type { Sprint, TaskSize } from './format'
 import { readCopiesSince, type Runner } from './history'
 import { parseTasks, type Task, type TaskList } from './parse'
-import { pickSprint, sprintBase, versionsOf, type TodoVersion } from './sprint'
+import { byTime, pickSprint, sprintBase, versionsOf, type TodoVersion } from './sprint'
 
 /** Done tasks of a size needed before one is called slow against them. */
 export const MIN_OF_SIZE = 3
@@ -84,7 +84,7 @@ export function retro(input: RetroInput): Retro {
   slow.sort((a, b) => b.days / b.usual - a.days / a.usual)
 
   // Blocks: the first and last copy in the window showing each task blocked; the plan now counts as today's copy.
-  const copies = [...input.versions, { day: today, list }].filter(v => inWindow(v.day)).sort((a, b) => a.day.localeCompare(b.day))
+  const copies = [...input.versions, { day: today, list }].filter(v => inWindow(v.day)).sort(byTime)
   const spans = new Map<string, { from: string; to: string }>()
   for (const v of copies)
     for (const t of v.list.tasks)
