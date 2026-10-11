@@ -9,6 +9,8 @@ import { endAfter, notReady, readiness, readyText, sprintBase, sprintLine, sprin
 import { buildState, stateJson, type ProjectIo } from '../packages/core/state'
 import { bandText } from '../packages/core/view'
 import { gitOutput, TODO_TEMPLATE } from './fixtures'
+import { sprintPace, sprintPlan, sprintPlanText, workingDaysBack } from '../packages/core/sprint'
+import type { Snapshot } from '../packages/core/forecast'
 
 // ceremonies T5: why a task isn't ready to start. Blocking reasons keep it out
 // of a sprint proposal; a size and an owner are only recommended.
@@ -402,5 +404,155 @@ describe('the sprint in State v1 (T6)', () => {
     expect(json.sprint?.added.ids).toEqual(['T7', 'T9'])
     expect(json.sprint?.committed).toEqual({ ids: ['T2', 'T3', 'T4'], done: ['T2', 'T3'], points: 3.5, donePoints: 2.5 })
     expect('sprint' in stateJson(await buildState(io({ 'tasks/todo.md': V_FRI }, fakeGit())))).toBe(false)
+  })
+})
+
+// ceremonies T7 (C1): the sprint plan, against the pace of the last 10 working days.
+
+/** A plan task with acceptance and verification boxes (`verify: false` leaves the second out). */
+const planTask = (n: number, title: string, opts: { status?: string; size?: 'S' | 'M' | 'L'; deps?: string; verify?: boolean } = {}) =>
+  [
+    `## Task ${n}: ${title}`,
+    `**Status:** ${opts.status ?? 'todo'}`,
+    ...(opts.size ? [`**Size:** ${opts.size}`] : []),
+    '**Acceptance criteria:**',
+    `- [${opts.status?.startsWith('done') ? 'x' : ' '}] ${title.toLowerCase()} works`,
+    ...(opts.verify === false ? [] : ['**Verification:**', `- [${opts.status?.startsWith('done') ? 'x' : ' '}] Tests pass`]),
+    ...(opts.deps ? [`**Dependencies:** ${opts.deps}`] : []),
+    '',
+  ].join('\n')
+
+const PLAN_TODO =
+  FM() +
+  [
+    planTask(1, 'Scaffold', { status: 'done · done 2026-10-02', size: 'S' }),
+    planTask(2, 'Keys', { status: 'in progress · started 2026-10-08', size: 'M' }),
+    planTask(3, 'Rate limit', { size: 'L', deps: 'T4' }),
+    planTask(4, 'Schema', { size: 'M' }),
+    planTask(5, 'Quotas', { size: 'M', deps: 'T6' }),
+    planTask(6, 'Audit', { size: 'S', verify: false }),
+    planTask(7, 'Export'),
+    planTask(8, 'Alerts', { size: 'L' }),
+    planTask(9, 'Docs', { size: 'M' }),
+  ].join('\n')
+const PLAN_DAY = '2026-10-12' // a Monday
+
+/**
+ * Hand-checked: 10 working days before Mon 12 Oct is Mon 28 Sep, so the pace runs
+ * from the 28 Sep snapshot (21 Sep is older). Usual: 13 − 2 = 11 points over 10
+ * working days = 1.1/day. Last 5 working days (from Mon 5 Oct): 13 − 8 = 5 over 5
+ * = 1.0/day. Slow: max(min(1.1, 1.0), 0.44) × 0.7 = 0.7/day. Over 5 days the
+ * capacity is 3½ (0.7 × 5) to 5½ (1.1 × 5) points; over 10, 7 to 11.
+ */
+const PACED: Snapshot[] = [
+  { day: '2026-09-21', done: 0, total: 12, points: 0, totalPoints: 15 },
+  { day: '2026-09-28', done: 2, total: 12, points: 2, totalPoints: 15 },
+  { day: '2026-10-05', done: 6, total: 12, points: 8, totalPoints: 15 },
+  { day: '2026-10-12', done: 9, total: 12, points: 13, totalPoints: 15 },
+]
+
+const parts = (snapshots: Snapshot[], todo = PLAN_TODO) => ({ list: parseTasks(todo), plan: null, backlog: null, snapshots, today: PLAN_DAY })
+
+describe('the pace a sprint is planned against (T7)', () => {
+  test('working days back skip weekends', () => {
+    expect(workingDaysBack('2026-10-12', 10)).toBe('2026-09-28')
+    expect(workingDaysBack('2026-10-12', 1)).toBe('2026-10-09')
+    expect(workingDaysBack('2026-10-11', 5)).toBe('2026-10-05')
+  })
+
+  test('in points over the last 10 working days, the slow case from the last 5', () => {
+    const pace = sprintPace(PACED, PLAN_DAY)
+    expect(pace.kind === 'pace' && { unit: pace.unit, usual: pace.usual.toFixed(2), slow: pace.slow.toFixed(2), days: pace.days }).toEqual({ unit: 'points', usual: '1.10', slow: '0.70', days: 10 })
+  })
+
+  test('in tasks when only the newest snapshot has points; in points when the newest run alone says a pace', () => {
+    // Points on 12 Oct only: 9 − 2 = 7 tasks over 10 days = 0.7; last 5 days 3 over 5 = 0.6; slow 0.6 × 0.7 = 0.42.
+    const late = PACED.map(s => (s.day === '2026-10-12' ? s : { day: s.day, done: s.done, total: s.total }))
+    const tasks = sprintPace(late, PLAN_DAY)
+    expect(tasks.kind === 'pace' && [tasks.unit, tasks.usual.toFixed(2), tasks.slow.toFixed(2)]).toEqual(['tasks', '0.70', '0.42'])
+    // Points from 5 Oct: 3 tasks done since, 13 − 8 = 5 points over 5 days = 1.0; slow 0.7.
+    const run = PACED.map(s => (s.day >= '2026-10-05' ? s : { day: s.day, done: s.done, total: s.total }))
+    const points = sprintPace(run, PLAN_DAY)
+    expect(points.kind === 'pace' && [points.unit, points.usual.toFixed(2), points.slow.toFixed(2), points.days]).toEqual(['points', '1.00', '0.70', 5])
+  })
+
+  test('under 3 tasks done in the window, or under 2 working days, there is no pace', () => {
+    expect(sprintPace([PACED[1]!, { ...PACED[3]!, done: 4 }], PLAN_DAY)).toEqual({ kind: 'none', reason: '2 of 3 tasks done in the last 10 working days' })
+    expect(sprintPace([{ ...PACED[3]!, day: '2026-10-09', done: 0 }, PACED[3]!], PLAN_DAY)).toEqual({ kind: 'none', reason: 'under 2 working days of history' })
+    expect(sprintPace([], PLAN_DAY)).toEqual({ kind: 'none', reason: 'no history yet' })
+  })
+})
+
+describe('the sprint plan (T7)', () => {
+  test('under way first, then ready tasks in dependency order; the slow case fills, then the usual case, then it stops', () => {
+    // T2 1 → 1, T4 1 → 2 (both within 3½), T3 2 → 4 and T7 1 → 5 (within 5½ only), T8 2 → 7 is past 5½.
+    const plan = sprintPlan(parts(PACED), 5)!
+    expect(plan.capacity).toEqual({ slow: 3.5, usual: 5.5 })
+    expect(plan.proposed.map(r => [r.task.id, r.points, r.running, r.fit])).toEqual([
+      ['T2', 1, 1, 'slow'],
+      ['T4', 1, 2, 'slow'],
+      ['T3', 2, 4, 'usual'],
+      ['T7', 1, 5, 'usual'],
+    ])
+    expect(plan.over.map(t => t.id)).toEqual(['T8', 'T9'])
+    expect(plan.end).toBe('2026-10-16')
+  })
+
+  test('a task whose dependency is proposed earlier is proposed; one whose dependency is not ready is not', () => {
+    const plan = sprintPlan(parts(PACED), 10)!
+    expect(plan.proposed.map(r => r.task.id)).toEqual(['T2', 'T4', 'T3', 'T7', 'T8', 'T9'])
+    expect(plan.notReady.map(r => [r.task.id, r.reasons])).toEqual([
+      ['T5', ['waits on T6']],
+      ['T6', ['no verification']],
+    ])
+  })
+
+  test('a dependency committed to a sprint that has not ended counts as met', () => {
+    const todo = PLAN_TODO.replace('created: 2026-10-01\n', 'created: 2026-10-01\nsprint: 2026-10-05..2026-10-16\ncommit: T6\n')
+    const list = parseTasks(todo)
+    const plan = sprintPlan({ ...parts(PACED, todo), sprint: sprintNow(list, [], PLAN_DAY) }, 10)!
+    expect(plan.notReady.map(r => r.task.id)).toEqual(['T6'])
+    expect(plan.proposed.map(r => r.task.id)).toContain('T5')
+  })
+
+  test('the text: capacity and pace, a row per task with its running total, past capacity, not ready, the start line', () => {
+    expect(sprintPlanText(sprintPlan(parts(PACED), 5), parseTasks(PLAN_TODO)).split('\n')).toEqual([
+      'Sprint plan · 5 working days · capacity ≈ 3½–5½ points (pace 1.1/day, slow case 0.7)',
+      '  T2  Keys        M  1  running 1  in progress',
+      '  T4  Schema      M  1  running 2',
+      '  T3  Rate limit  L  2  running 4  usual case only',
+      '  T7  Export      -  1  running 5  usual case only',
+      '  - no size: counts as 1 point',
+      'Ready, past capacity: T8, T9',
+      'Not ready:',
+      '  ✗ T5  Quotas      waits on T6',
+      '  ✗ T6  Audit       no verification',
+      'To start it: /progress sprint start 2026-10-16 T2 T4 T3 T7',
+    ])
+  })
+
+  test('with under 3 tasks done it says so and proposes every ready task by count', () => {
+    const plan = sprintPlan(parts([PACED[1]!, { ...PACED[3]!, done: 4 }]), 10)!
+    expect(plan.capacity).toBeNull()
+    const text = sprintPlanText(plan, parseTasks(PLAN_TODO)).split('\n')
+    expect(text[0]).toBe('Sprint plan · 10 working days · no pace yet (2 of 3 tasks done in the last 10 working days), so by count: every ready task, keep what fits')
+    expect(text.at(-1)).toBe('To start it: /progress sprint start 2026-10-23 T2 T4 T3 T7 T8 T9')
+  })
+
+  test('a running sprint is named; nothing ready, everything done and no task list each say so', () => {
+    const todo = PLAN_TODO.replace('created: 2026-10-01\n', 'created: 2026-10-01\nsprint: 2026-10-05..2026-10-16\ncommit: T2\n')
+    const list = parseTasks(todo)
+    const sprint = sprintNow(list, [], PLAN_DAY)
+    expect(sprintPlanText(sprintPlan({ ...parts(PACED, todo), sprint }, 10), list, sprint).split('\n')[1]).toBe("The sprint to 16 Oct hasn't ended: starting this one replaces it.")
+    const stuck = FM() + planTask(1, 'Audit', { verify: false })
+    expect(sprintPlanText(sprintPlan(parts(PACED, stuck), 10), parseTasks(stuck)).split('\n').slice(1)).toEqual(['Nothing is ready to propose.', 'Not ready:', '  ✗ T1  Audit  no verification'])
+    const done = FM() + planTask(1, 'Scaffold', { status: 'done · done 2026-10-02' })
+    expect(sprintPlanText(sprintPlan(parts(PACED, done), 10), parseTasks(done))).toBe('Every task is done: there is nothing left to plan.')
+    expect(sprintPlanText(null, null)).toBe('No task list yet: a sprint plan reads the tasks in tasks/todo.md.')
+  })
+
+  test('State v1 is a plan input as it is', async () => {
+    const state = await buildState({ cwd: '/p', now: Date.parse(`${PLAN_DAY}T10:00:00Z`), read: async rel => (rel === 'tasks/todo.md' ? PLAN_TODO : null), list: async () => [] })
+    expect(sprintPlan(state, 10)?.pace.kind).toBe('none')
   })
 })

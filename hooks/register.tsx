@@ -43,7 +43,7 @@ import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
 import { BACKLOG_FILE, backlogText } from '../packages/core/backlog'
-import { readyText, sprintLine, sprintNow, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
+import { readyText, sprintLine, sprintNow, sprintPlan, sprintPlanText, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
 import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
@@ -771,9 +771,21 @@ async function sprintCommand($: $, words: string[]): Promise<string> {
   const p = await load($)
   const sub = words[0]?.toLowerCase()
   if (sub === 'start') return (await act($, p, 'sprint-start', { end: words[1] ?? '', ids: words.slice(2) })).reply
+  if (sub === 'plan') return sprintPlanCommand($, p, words[1])
   if (sub) return 'Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).'
   await readSprint($, p)
   return sprintText(await currentSprint($, p), p.list, dayOf(await $.clock.now()))
+}
+
+/** `/progress sprint plan [days]` (C1): what fits `days` working days (default 10) at the recent pace. Writes nothing. */
+async function sprintPlanCommand($: $, p: AsmProject, arg: string | undefined): Promise<string> {
+  const days = arg === undefined ? 10 : /^\d+$/.test(arg) ? Number(arg) : NaN
+  if (!(days >= 1 && days <= 60)) return `"${arg}" is not a number of working days. Use: /progress sprint plan 10 (1 to 60; 10 by default).`
+  const text = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
+  await readSprint($, p)
+  const sprint = await currentSprint($, p)
+  const parts = { list: p.list, plan: p.plan, backlog: text === null ? null : parseBacklog(text), snapshots: p.snapshots, today: dayOf(await $.clock.now()), sprint }
+  return sprintPlanText(sprintPlan(parts, days), p.list, sprint)
 }
 
 /** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
@@ -1615,7 +1627,7 @@ export const register: Register = (on, options) => {
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [plan 10|start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))

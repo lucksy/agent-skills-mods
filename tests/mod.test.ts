@@ -1458,6 +1458,24 @@ test('/progress sprint start writes sprint: and commit:; /progress sprint, the b
   expect((await $.command.run(run('sprint stop'))).text).toBe('Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).')
 })
 
+// ceremonies T7 (C1): the sprint plan replies with the proposal and the start line, and writes nothing.
+test('/progress sprint plan proposes by count without a pace, names what is not ready, prints the start line and writes nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('sprint plan'))).text!.split('\n')).toEqual([
+    'Sprint plan · 10 working days · no pace yet (under 2 working days of history), so by count: every ready task, keep what fits',
+    '  T2  Prisma schema for keys  -  1  running 1  under way',
+    '  - no size: counts as 1 point',
+    'Not ready:',
+    '  ✗ T3  Issue and revoke keys   no verification',
+    '  ✗ T4  Rate limit per key      no verification',
+    'To start it: /progress sprint start 2026-10-22 T2',
+  ])
+  expect((await $.command.run(run('sprint plan 5'))).text!.split('\n').at(-1)).toBe('To start it: /progress sprint start 2026-10-15 T2')
+  expect((await $.command.run(run('sprint plan two'))).text).toBe('"two" is not a number of working days. Use: /progress sprint plan 10 (1 to 60; 10 by default).')
+  expect(files).toEqual({ [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+})
+
 // ceremonies T3: the backlog, listed and added to; the file is made on the first add.
 test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }

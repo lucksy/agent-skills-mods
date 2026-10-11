@@ -123,6 +123,8 @@ declare module 'claude-code' {
       branchBoard: AsmBranchBoard | null
       /** team-view: the session's first "since you last looked", once it has looked. */
       sinceLook: AsmSince | null
+      /** ceremonies T6: tasks/todo.md's committed copies since the running sprint began, for its scope added. */
+      sprintCopies: { start: string; versions: { day: string; list: AsmTaskList }[] } | null
     }
   }
 }

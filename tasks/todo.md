@@ -154,18 +154,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 7: Sprint planning against pace
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `sprintPlan(state, days)` works out the pace in points per working day over the last 10 working days. It gives a capacity range of the usual case and the slow case times `days`. It walks the ready tasks (T5) in dependency order, counting a dependency proposed earlier as met, and adds them until the slow case is full. Then it marks the ones that fit only in the usual case. Below the proposal it lists the not-ready tasks with their reasons, then prints the `/progress sprint start <end> T…` line. With under 3 tasks done it says so and proposes by count. It writes nothing.
 
 **Acceptance criteria:**
-- [ ] Against fixed history, the capacity range and the proposal match hand-checked numbers
-- [ ] A task whose dependency is proposed earlier is proposed; one whose dependency is not ready is not
-- [ ] With under 3 tasks done, it says so and still proposes; no file changes in any case
+- [x] Against fixed history, the capacity range and the proposal match hand-checked numbers
+- [x] A task whose dependency is proposed earlier is proposed; one whose dependency is not ready is not
+- [x] With under 3 tasks done, it says so and still proposes; no file changes in any case
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2, T5, T6
 
