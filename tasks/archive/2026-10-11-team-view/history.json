@@ -1,0 +1,16 @@
+[
+  {
+    "day": "2026-10-10",
+    "done": 8,
+    "total": 13,
+    "doing": 3,
+    "blocked": 1
+  },
+  {
+    "day": "2026-10-11",
+    "done": 13,
+    "total": 13,
+    "doing": 0,
+    "blocked": 0
+  }
+]
