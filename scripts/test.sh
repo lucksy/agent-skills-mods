@@ -230,6 +230,13 @@ if (cls.has('allb') || ctl['board-owner'].value !== 'amila') fail('this branch d
 console.log('both kept')
 JS
 if out=$(node "$tmp/board-script.js" "$tmp/across.html" 2>&1); then echo "ok   dashboard-branches-script ($out)"; else echo "FAIL dashboard-branches-script: $out"; fail=1; fi
+# The live page has the Board across branches too: --serve reads the branches as --dashboard does.
+node "$script" "$repo" --serve --port 0 --no-open > "$tmp/serve-b.out" 2>&1 &
+serve_b=$!
+url=''
+for _ in $(seq 1 100); do url=$(grep -o 'http://127.0.0.1:[0-9]*/?token=[0-9a-f]*' "$tmp/serve-b.out" | head -1); [[ -n $url ]] && break; sleep 0.1; done
+if [[ -n $url ]] && curl -s "$url" | grep -q 'id="board-branches"'; then echo "ok   serve-branches-board"; else echo "FAIL serve-branches-board"; fail=1; fi
+kill "$serve_b" 2>/dev/null; wait "$serve_b" 2>/dev/null
 # Since you last looked (team-view T9): the first look stores a snapshot quietly in the git folder, the next lists what changed with who did it.
 check since-first 'First look here: nothing to compare with yet' node "$script" "$repo" --since
 if [[ -f $repo/.git/agent-skills/seen.json ]] && grep -q '"schema": 1' "$repo/.git/agent-skills/seen.json"; then echo "ok   since-stored-in-git-dir"; else echo "FAIL since-stored-in-git-dir"; fail=1; fi

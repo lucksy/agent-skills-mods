@@ -194,7 +194,7 @@ async function main() {
     specFile = specCandidates(o.spec).find(f => names.includes(f))
     if (!specFile) throw new Error(`no ${specCandidates(o.spec).join(' or ')} in ${cwd}`)
   }
-  if (o.mode === 'serve') return serve(io, { specFile, port: o.port, open: o.open })
+  if (o.mode === 'serve') return serve(io, { specFile, port: o.port, open: o.open, branches: o.git })
   const stop = o.mode === 'full' || o.mode === 'timeline' || o.mode === 'dashboard' ? spinner('Reading the plan and its git history') : () => {}
   // The dashboard's Board has an All branches switch (team-view T5).
   // --since reads the branches too, for new collisions; --json reports since without storing a look.
@@ -298,7 +298,7 @@ function gitMergeFile(base, ours, theirs) {
  * run one at a time; a change under tasks/, specs/ or to SPEC*.md sends
  * `changed` to every open event stream.
  */
-async function serve(io, { specFile, port, open }) {
+async function serve(io, { specFile, port, open, branches }) {
   const { handle } = await import('../packages/core/serve.ts')
   const { dashboardHtml } = await import('../packages/core/dashboard/page.ts')
   const { gather } = await import('../packages/core/cli.ts')
@@ -313,8 +313,9 @@ async function serve(io, { specFile, port, open }) {
     list: io.list,
     write: (rel, text) => writeFile(resolve(cwd, rel), text),
     email: () => git(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null)),
-    // The dashboard with its write buttons, posting with the rev it was built from (T11).
-    page: async rev => dashboardHtml(await gather({ ...io, now: Date.now() }, { specFile }), { live: { rev } }),
+    // The dashboard with its write buttons, posting with the rev it was built from (T11),
+    // and the Board across branches as --dashboard has it (T5, T6).
+    page: async rev => dashboardHtml(await gather({ ...io, now: Date.now() }, { specFile, branches }), { live: { rev } }),
   }
 
   const streams = new Set()

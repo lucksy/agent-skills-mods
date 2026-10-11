@@ -87,11 +87,14 @@ export function collisionOf(task: Task, board: BranchBoard | null, now: number):
 /**
  * The band's line for a collision, from this branch's side: the first other
  * branch involved. `T4 is also in progress on feat/rate-limit by @bob (2d)`.
+ * With `by`, from that person's side instead: the first ref someone else holds.
  */
-export function collisionLine(c: Collision, here: string | null): string {
-  const other = c.on.find(r => branchOf(r) !== (here ?? 'HEAD')) ?? c.on[0]!
+export function collisionLine(c: Collision, here: string | null, by?: { owner: string | null }): string {
+  // From a branch's side (the band, the board) or, with `by`, from a person's (the Team tab): the others.
+  const theirs = (r: CollisionRef) => (by ? (r.owner ? handle(r.owner) : '') !== (by.owner ? handle(by.owner) : '') : branchOf(r) !== (here ?? 'HEAD'))
+  const other = c.on.find(theirs) ?? c.on[0]!
   const age = other.age ? ` (${other.age})` : ''
-  const more = c.on.filter(r => branchOf(r) !== (here ?? 'HEAD')).length - 1
+  const more = c.on.filter(theirs).length - 1
   const rest = more > 0 ? ` and ${more} more` : ''
   if (UNDER_WAY.has(other.state)) return `${c.id} is also ${other.state} on ${other.ref}${other.owner ? ` by ${other.owner}` : ''}${age}${rest}`
   return `${c.id} is also assigned to ${other.owner} on ${other.ref}${age}${rest}`

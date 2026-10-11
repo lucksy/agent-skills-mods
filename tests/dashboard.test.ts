@@ -485,7 +485,9 @@ describe('Team (team-view T6)', () => {
     expect(pm).toMatch(/Handoffs T4 Rate limit per key · from @sara 8 Oct: limits agreed, tests left/)
     const bob = text(person(await tab(), 'bob'))
     expect(bob).toMatch(/Now T2 Prisma schema for keys on origin\/feat\/rate-limit/)
-    expect(bob).toContain('T2 is also in progress on origin/feat/rate-limit by @bob (1d)')
+    // Each card says the collision from that person's side: the other one's ref and owner, never their own.
+    expect(bob).toContain('T2 is also in progress on main by @amila (2d)')
+    expect(bob).not.toContain('by @bob')
     const zed = text(person(await tab(), 'zed'))
     expect(zed).toMatch(/Now nothing in progress/)
     expect(zed).toMatch(/Work in progress 0 Reviews/)
@@ -505,6 +507,17 @@ describe('Team (team-view T6)', () => {
     expect(queue).toContain('<a href="#card-T3">T3</a>')
     expect(person(html, 'pm')).toContain('<a href="#card-T4">T4</a>')
     expect(person(html, 'amila')).toMatch(/<p class="p-clash"><a href="#card-T2">/)
+  })
+
+  test('a review on another branch keeps its PR and reviewer, and waits on that reviewer', async () => {
+    const onFeat = own(TODO_TEMPLATE, '4', 'Rate limit per key', 'in review · @bob · started 2026-10-06 · PR #7 · reviewer @zed')
+    const s = await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE, 'tasks/team.md': TEAM }))
+    const b = branchRows({ name: 'main', list: parseTasks(TODO_TEMPLATE) }, [{ ref: ref('feat/limits', 'c3'), text: onFeat }], null)
+    const html = section(dashboardHtml({ ...s, branches: b, collisions: collisions(b, NOW) }), 'team')
+    const queue = html.match(/<div class="card queue"[\s\S]*?<\/div>/)?.[0] ?? ''
+    expect(text(queue)).toMatch(/T4 Rate limit per key · PR #7 on feat\/limits · @bob → reviewer @zed/)
+    expect(text(person(html, 'zed'))).toMatch(/Reviews waiting T4 Rate limit per key · PR #7 on feat\/limits/)
+    expect(text(person(html, '-'))).toMatch(/Reviews waiting none/)
   })
 
   test("the Board's cards are the link targets: one id each, on this branch's columns only", async () => {

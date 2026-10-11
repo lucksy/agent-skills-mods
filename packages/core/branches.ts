@@ -70,7 +70,7 @@ export const stateWord = (t: Task): TaskStatusWord => t.state?.status ?? (t.stat
  * A task as one ref has it: its state and owner, the day its Status line says
  * it started, and the ref's newest commit time (null for the working tree).
  */
-export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null; started: string | null; at: number | null }
+export type RefState = { ref: string; remote: boolean; state: TaskStatusWord; owner: string | null; started: string | null; at: number | null; pr: string | null; reviewer: string | null }
 
 /** One task across the refs: its furthest state and where, plus every ref's own (for collisions, T4). */
 export type BranchRow = {
@@ -111,7 +111,7 @@ export function branchRows(
   for (const { name, remote, at, list } of lists) {
     for (const t of list.tasks) {
       if (!/^T\d+$/.test(t.id)) continue
-      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, at }
+      const on: RefState = { ref: name, remote, state: stateWord(t), owner: t.owner ?? null, started: t.state?.started ?? null, at, pr: t.pr ?? null, reviewer: t.reviewer ?? null }
       const row = rows.get(t.id)
       if (!row) {
         const started = on.state !== 'todo'

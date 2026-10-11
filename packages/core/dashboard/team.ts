@@ -74,7 +74,7 @@ export function teamView(s: State): TeamView {
     const t = local.get(row.id)
     if (queue.some(q => q.id === row.id) || t?.status === 'done') continue
     const r = row.on.find(x => branchOf(x) !== here && x.state === 'in review')
-    if (r) queue.push({ id: row.id, title: row.title, pr: null, owner: r.owner, reviewer: null, ref: r.ref, age: r.started ? daysBetween(r.started, s.today) : null })
+    if (r) queue.push({ id: row.id, title: row.title, pr: r.pr, owner: r.owner, reviewer: r.reviewer, ref: r.ref, age: r.started ? daysBetween(r.started, s.today) : null })
   }
   queue.sort((a, b) => (b.age ?? -1) - (a.age ?? -1))
 
@@ -93,7 +93,7 @@ export function teamView(s: State): TeamView {
   }
   if (!team) for (const t of tasks) add(t.owner)
   for (const w of wip) add(w.owner)
-  for (const q of queue) if (q.ref === null) add(q.reviewer)
+  for (const q of queue) add(q.reviewer)
   for (const h of handoffs) add(h.to)
   for (const c of clashes) for (const r of c.on) add(r.owner)
 
@@ -106,7 +106,7 @@ export function teamView(s: State): TeamView {
       listed,
       current: work.find(w => w.ref === null && w.state === 'in progress') ?? work.find(w => w.state === 'in progress') ?? null,
       wip: work,
-      reviews: queue.filter(q => q.ref === null && mine(q.reviewer)),
+      reviews: queue.filter(q => mine(q.reviewer)),
       handoffs: handle === null ? [] : handoffs.filter(h => mine(h.to)).map(({ to: _, ...h }) => h),
       collisions: clashes.filter(c => c.on.some(r => mine(r.owner))),
     }
@@ -178,11 +178,11 @@ function personHtml(s: State, p: Person): string {
   const cur = p.current
   const now = cur ? `${taskRef(s, cur.id)} ${inline(cur.title)}${where(cur.ref)}${cur.step ? ` · step ${cur.step}` : ''}` : '<span class="muted">nothing in progress</span>'
   const wip = `${p.wip.length}${p.wip.length ? ` · ${p.wip.map(w => `${taskRef(s, w.id)}${w.state === 'in review' ? ' (in review)' : ''}${where(w.ref)}`).join(', ')}` : ''}`
-  const reviews = list(p.reviews.map(r => item(r.id, r.title, `${r.pr ? ` · PR ${esc(r.pr)}` : ''}${age(r.age)}`)), 'none')
+  const reviews = list(p.reviews.map(r => item(r.id, r.title, `${r.pr ? ` · PR ${esc(r.pr)}` : ''}${where(r.ref)}${age(r.age)}`)), 'none')
   const handoffs = list(p.handoffs.map(h => item(h.id, h.title, ` · from ${h.from ? esc(h.from) : 'someone'} ${shortDay(h.day)}: ${inline(h.note)}`)), 'none')
   const here = s.branches?.here ?? null
   const clashes = p.collisions.length
-    ? p.collisions.map(c => `<p class="p-clash">${taskRef(s, c.id)} ${esc(collisionLine(c, here).slice(c.id.length + 1))}</p>`).join('')
+    ? p.collisions.map(c => `<p class="p-clash">${taskRef(s, c.id)} ${esc(collisionLine(c, here, { owner: p.handle }).slice(c.id.length + 1))}</p>`).join('')
     : '<span class="muted">none</span>'
   const row = (label: string, body: string) => `<div><dt>${label}</dt><dd>${body}</dd></div>`
   return `<li class="person${p.handle === null ? ' p-none' : ''}" data-person="${p.handle === null ? '-' : esc(key(p.handle))}">
