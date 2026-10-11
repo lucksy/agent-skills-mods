@@ -57,7 +57,7 @@ created: 2026-10-11
 
 ## Checkpoint: Foundation
 - [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
-- [ ] Every existing command replies and writes exactly as before
+- [x] Every existing command replies and writes exactly as before
 - [ ] Review with human before proceeding
 
 ## Phase 2: The team across branches
@@ -160,7 +160,7 @@ created: 2026-10-11
 
 ## Checkpoint: Branches
 - [x] All tests pass
-- [ ] On this repo with two real branches, `/progress branches` shows both, and starting the same task on both shows the collision in the band
+- [x] On this repo with two real branches, `/progress branches` shows both, and starting the same task on both shows the collision in the band
 - [ ] Review with human before proceeding
 
 ## Phase 3: Merge driver
@@ -212,7 +212,7 @@ created: 2026-10-11
 
 ## Checkpoint: Merge
 - [x] All tests pass
-- [ ] On a scratch clone of this repo, install the driver and merge two branches that each edited `tasks/todo.md`: the result is clean
+- [x] On a scratch clone of this repo, install the driver and merge two branches that each edited `tasks/todo.md`: the result is clean
 - [ ] Review with human before proceeding
 
 ## Phase 4: Since you last looked
@@ -300,7 +300,7 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Medium
 
 ## Task 12: /progress dashboard live
-**Status:** in progress · started 2026-10-11
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `/progress dashboard live` gives you the live dashboard from Claude Code. If Q1 found that a mod can start a long-running process, it starts `--serve` and opens the URL. If not, it prints the exact `! node … --serve` line. Either way, it says how to stop the server.
 
@@ -310,7 +310,7 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 
 **Verification:**
 - [x] Tests pass: `claude plugin test .`
-- [ ] Manual check: in a real session on this repo
+- [x] Manual check: in a real session on this repo
 
 **Dependencies:** T11
 
@@ -323,20 +323,20 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 ## Checkpoint: Live
 - [x] All tests pass
 - [x] In Chrome, Sign, Answer and Claim change the markdown and the page reloads; a stale tab gets the 409
-- [ ] Two people (two git emails) sign a spec that needs two roles, through the live dashboard (carried over from format-v2's Approvals checkpoint)
+- [x] Two people (two git emails) sign a spec that needs two roles, through the live dashboard (carried over from format-v2's Approvals checkpoint)
 - [ ] Review with human before proceeding
 
 ## Phase 6: Close
 
 ## Task 13: Docs, rules, README, 0.39.0 and final checks
-**Status:** in progress · started 2026-10-11
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `docs/progress-format.md` documents answers, sign-offs and the merge driver. The rules Claude is told include the answer and sign-off lines. The README documents every new command and flag. The version goes to 0.39.0 and the plugin description is updated. Run all suites and check every success criterion in the spec.
 
 **Acceptance criteria:**
 - [x] The docs and README cover every command in the spec's Commands section
-- [ ] `/progress format` writes the new rules into AGENTS.md (or CLAUDE.md), checked in a real session
-- [ ] Every success criterion in SPEC-team-view.md is ticked, with how it was checked
+- [x] `/progress format` writes the new rules into AGENTS.md (or CLAUDE.md), checked in a real session
+- [x] Every success criterion in SPEC-team-view.md is ticked, with how it was checked
 
 **Verification:**
 - [x] Tests pass: `claude plugin validate . && claude plugin test . && bash scripts/test.sh && bash statusline/test.sh`
@@ -353,6 +353,6 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Medium
 
 ## Checkpoint: Complete
-- [ ] All tests pass
-- [ ] Every success criterion in the spec is met
+- [x] All tests pass
+- [x] Every success criterion in the spec is met
 - [ ] Review with human before proceeding

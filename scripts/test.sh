@@ -169,6 +169,14 @@ if [[ $out == *'T3: deleted in ours, changed in theirs'* ]]; then echo "ok   mer
 inside=$(awk '/^<<<<<<< /{m=1} m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
 outside=$(awk '/^<<<<<<< /{m=1} !m{print} /^>>>>>>> /{m=0}' "$repo/tasks/todo.md")
 if [[ $(grep -c '^<<<<<<< ' "$repo/tasks/todo.md") == 1 && $inside == *'## Task 3: Rate limit'*'- [x] 429 after 60 req/min'* && $inside != *'Task 1'* && $inside != *'Task 2'* && $outside == *'- [x] Builds'*'## Task 2: Schema'* ]]; then echo "ok   merge-driver-markers-one-task"; else echo "FAIL merge-driver-markers-one-task:"; sed 's/^/       /' "$repo/tasks/todo.md"; fail=1; fi
+# A task number taken on both sides: theirs is renumbered, its references with it, and git shows the report.
+g merge --abort 2>/dev/null; g checkout -q ann
+g checkout -qb add-a; printf '\n## Task 4: Key rotation\n**Status:** todo\n\n- [ ] Rotate\n\n**Dependencies:** T3\n' >> "$repo/tasks/todo.md"; g commit -qam 'T4 rotation'
+g checkout -q ann; g checkout -qb add-b; printf '\n## Task 4: Usage metrics\n**Status:** todo\n\n- [ ] Count\n\n**Dependencies:** T1\n\n## Task 5: Metrics docs\n**Status:** todo\n\n- [ ] Docs\n\n**Dependencies:** T4\n' >> "$repo/tasks/todo.md"; g commit -qam 'T4 metrics, T5 docs'
+g checkout -q add-a
+out=$(g merge --no-edit add-b 2>&1); code=$?
+merged=$(cat "$repo/tasks/todo.md")
+if (( code == 0 )) && [[ $out == *'T4 (theirs) is now T6'* && $merged == *$'## Task 4: Key rotation'* && $merged == *$'## Task 6: Usage metrics'* && $merged == *$'## Task 5: Metrics docs\n**Status:** todo\n\n- [ ] Docs\n\n**Dependencies:** T6'* ]]; then echo "ok   merge-driver-renumbered"; else echo "FAIL merge-driver-renumbered (exit $code):"; echo "$out" | sed 's/^/       /'; echo "$merged" | sed 's/^/       /'; fail=1; fi
 check merge-driver-usage '--merge takes <base> <ours> <theirs> <path>' node "$script" --merge a b
 # The board across branches (team-view T3): a real repository with two branches, read without fetching.
 repo="$tmp/branches"; mkdir -p "$repo"

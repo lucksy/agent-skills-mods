@@ -186,15 +186,15 @@ export function mergeTodo(base: string, ours: string, theirs: string): { text: s
 
 ## Success Criteria
 
-- [ ] `/progress branches`, `--branches` and the Board's `?branches=all` show each task's furthest state across local branches and fetched refs, with the branch name and fetch age. No command touches the network (checked by running with networking off).
-- [ ] Starting a task that is in progress or in review on another branch shows the collision in the band within the same prompt. Collisions also appear on the board pane, the dashboard and `--json`.
-- [ ] With the driver installed, merging two branches that each ticked boxes and moved different tasks gives a clean `tasks/todo.md` with no markers, in a real `git merge` in `scripts/test.sh`. A delete-versus-edit leaves markers around that task only. A task number taken on both sides is renumbered and reported.
-- [ ] `/progress merge-driver install` asks first, writes exactly the `.gitattributes` lines and the `.git/config` entry, and `uninstall` removes them again.
-- [ ] The first prompt of a session shows "Since you last looked" when something changed, and nothing when nothing did. `/progress since` and `--since` show the same list.
-- [ ] `--serve` serves the dashboard on 127.0.0.1 with a token. Each of the 13 actions changes exactly its line on disk. A stale page gets a 409 and writes nothing. The page reloads within 2 s of a file change.
-- [ ] The Team tab shows each person's current task and step, WIP, the review queue with ages, handoffs and collisions, with no ranking.
+- [x] `/progress branches`, `--branches` and the Board's `?branches=all` show each task's furthest state across local branches and fetched refs, with the branch name and fetch age. No command touches the network (checked by running with networking off).
+- [x] Starting a task that is in progress or in review on another branch shows the collision in the band within the same prompt. Collisions also appear on the board pane, the dashboard and `--json`.
+- [x] With the driver installed, merging two branches that each ticked boxes and moved different tasks gives a clean `tasks/todo.md` with no markers, in a real `git merge` in `scripts/test.sh`. A delete-versus-edit leaves markers around that task only. A task number taken on both sides is renumbered and reported.
+- [x] `/progress merge-driver install` asks first, writes exactly the `.gitattributes` lines and the `.git/config` entry, and `uninstall` removes them again.
+- [x] The first prompt of a session shows "Since you last looked" when something changed, and nothing when nothing did. `/progress since` and `--since` show the same list.
+- [x] `--serve` serves the dashboard on 127.0.0.1 with a token. Each of the 13 actions changes exactly its line on disk. A stale page gets a 409 and writes nothing. The page reloads within 2 s of a file change.
+- [x] The Team tab shows each person's current task and step, WIP, the review queue with ages, handoffs and collisions, with no ranking.
 - [x] `docs/progress-format.md` documents answers, sign-offs and the merge driver. The rules Claude is told include the new lines.
-- [ ] All tests pass. The README documents the commands. Checked in a real session and in Chrome.
+- [x] All tests pass. The README documents the commands. Checked in a real session and in Chrome.
 
 ## Open Questions
 

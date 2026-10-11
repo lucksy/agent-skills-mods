@@ -55,41 +55,41 @@ T3 and T7 can start in parallel with T1. T5 and T6 can run in parallel, and so c
 Tasks are tracked in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation
-- [ ] Task 1: One actions table for the existing write commands
-- [ ] Task 2: Answer questions and sign off checkpoints
+- [x] Task 1: One actions table for the existing write commands
+- [x] Task 2: Answer questions and sign off checkpoints
 
 ### Checkpoint: Foundation
-- [ ] Tests pass; every existing command replies and writes exactly as before
+- [x] Tests pass; every existing command replies and writes exactly as before
 
 ### Phase 2: The team across branches
-- [ ] Task 3: The board across branches
-- [ ] Task 4: Collision alerts
-- [ ] Task 5: Dashboard Board across branches
-- [ ] Task 6: The Team tab
+- [x] Task 3: The board across branches
+- [x] Task 4: Collision alerts
+- [x] Task 5: Dashboard Board across branches
+- [x] Task 6: The Team tab
 
 ### Checkpoint: Branches
-- [ ] Two real branches show on the board and collide in the band
+- [x] Two real branches show on the board and collide in the band
 
 ### Phase 3: Merge driver
-- [ ] Task 7: Task-aware merge in core
-- [ ] Task 8: The merge driver, installed and run by git
+- [x] Task 7: Task-aware merge in core
+- [x] Task 8: The merge driver, installed and run by git
 
 ### Checkpoint: Merge
-- [ ] A real `git merge` of two edited task lists comes out clean
+- [x] A real `git merge` of two edited task lists comes out clean
 
 ### Phase 4: Since you last looked
-- [ ] Task 9: Since you last looked
+- [x] Task 9: Since you last looked
 
 ### Phase 5: Live dashboard
-- [ ] Task 10: The live server
-- [ ] Task 11: Write buttons on the live dashboard
-- [ ] Task 12: /progress dashboard live
+- [x] Task 10: The live server
+- [x] Task 11: Write buttons on the live dashboard
+- [x] Task 12: /progress dashboard live
 
 ### Checkpoint: Live
-- [ ] In Chrome, Sign, Answer and Claim change the markdown and the page reloads
+- [x] In Chrome, Sign, Answer and Claim change the markdown and the page reloads
 
 ### Phase 6: Close
-- [ ] Task 13: Docs, rules, README, 0.39.0 and final checks
+- [x] Task 13: Docs, rules, README, 0.39.0 and final checks
 
 ### Checkpoint: Complete
 - [ ] Every success criterion in the spec is met; review with human
