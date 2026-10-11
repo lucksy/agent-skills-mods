@@ -17,6 +17,7 @@ import type { State } from '../state'
 import { esc, inline, plural } from './html'
 import { actButton, actForm, actRow, tickButton, type LiveAt } from './live'
 import { dueCheckpoint } from '../actions'
+import { pointsText, WEIGHT } from '../size'
 
 type Col = 'todo' | 'waiting' | 'doing' | 'review' | 'blocked' | 'done'
 const COLUMNS: { key: Col; label: string }[] = [
@@ -195,10 +196,12 @@ function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean
     meta = `${boxes}${d && !d.isEstimate ? ` · done ${shortDay(d.day)}` : ''}`
   } else meta = boxes === 'no boxes' ? boxes : plural(n, 'box', 'boxes')
   const phaseTag = showPhase && phase ? `<span class="c-phase">Phase ${phase}</span>` : ''
+  // ceremonies (C1): a sized task says its size; an unsized one says nothing, as before.
+  const sizeTag = t.size ? `<span class="c-size" title="Size ${t.size}: ${pointsText(WEIGHT[t.size])}">size ${t.size}</span>` : ''
   const k = clashHtml(s, t.id)
   const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${anchor ? ` id="card-${esc(t.id)}"` : ''}>
 <p class="c-title">${k.flag}<span class="id">${esc(t.id)}</span> ${inline(t.title)}</p>
-<p class="c-meta">${meta}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}${live ? `${boxesHtml(t)}${cardActions(t, col, live.at)}` : ''}
+<p class="c-meta">${meta}${sizeTag}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}${live ? `${boxesHtml(t)}${cardActions(t, col, live.at)}` : ''}
 </li>`
   const cp = t.checkpoint
   if (!cp) return card

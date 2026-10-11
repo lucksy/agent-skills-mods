@@ -3,13 +3,15 @@
 // POST /action both call it, so the dashboard and the commands can't drift apart.
 // Text in, `{ ok, reply, writes }` out; the caller reads, writes and replies. Pure.
 
-import { addHandoff, addQuestion, hasTaskSection, setAnswer, setFrontMatter, setOwner, setReview, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskState } from './format'
+import { addHandoff, addQuestion, hasTaskSection, planName, setAnswer, setFrontMatter, setOwner, setReview, setSize, signOff, stampDoc, stampTodo, tickTask, toggleBox, type TaskSize, type TaskState } from './format'
 import { parsePlan, parseSpec, parseTasks, type Task, type TaskList } from './parse'
 import { approvalStatus, signSpec } from './approvals'
 import { shortDay } from './forecast'
 import { TEAM_FILE, whoIs, type Team } from './team'
+import { pointsText, SIZES, WEIGHT } from './size'
+import { addBacklogItem, BACKLOG_FILE, deferTask, pullItem } from './backlog'
 
-export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer'] as const
+export const ACTION_NAMES = ['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add', 'pull', 'defer'] as const
 export type ActionName = (typeof ACTION_NAMES)[number]
 
 /** What an action reads: the files as they are on disk, and who runs it. */
@@ -17,6 +19,8 @@ export type ActionInput = {
   /** tasks/todo.md and tasks/plan.md; null when missing (the plan is read for block and answer). */
   todo: string | null
   plan: string | null
+  /** tasks/backlog.md (ceremonies); null when missing. Read for the backlog actions only. */
+  backlog?: string | null
   /** The spec `sign` signs; null when there is none. */
   spec: { file: string; text: string } | null
   /** The task list as the board shows it (blockers included). */
@@ -337,6 +341,87 @@ const answer: Action = {
   },
 }
 
+/**
+ * size (ceremonies T1, C1): task `id`'s `**Size:**` line set to S, M or L, or
+ * cleared with `-`; every other byte kept. A task without a size counts as 1 point.
+ */
+const size: Action = {
+  todo: true,
+  check: args =>
+    !(isStr(args.id) && args.id && strings(args, ['size']))
+      ? 'Say which task and its size: /progress size T4 M (S, M or L; - clears it).'
+      : args,
+  edit: (args, input) => {
+    const found = findTask(args.id as string, input)
+    if (typeof found === 'string') return refuse(found)
+    const { id, task } = found
+    const raw = ((args.size as string | undefined) ?? '').trim()
+    if (!raw) return refuse(`Say the size: /progress size ${id} M (S, M or L; - clears it).`)
+    const want = raw === '-' ? null : (raw.toUpperCase() as TaskSize)
+    if (want !== null && !SIZES.includes(want)) return refuse(`"${raw}" is not a size. Use S, M or L, or - to clear it: /progress size ${id} M.`)
+    const was = task.size ?? null
+    if (want === was) return { ok: true, reply: want ? `${id} ${task.title} is already size ${want}.` : `${id} ${task.title} has no size.`, writes: [] }
+    const writes = [{ file: TODO, text: setSize(input.todo!, id, want) }]
+    if (!want) return { ok: true, reply: `${id} ${task.title} has no size now (was ${was}): it counts as 1 point, like M.`, writes }
+    return { ok: true, reply: `${id} ${task.title} is size ${want} (${pointsText(WEIGHT[want])})${was ? `, was ${was}` : ''}.`, writes }
+  },
+}
+
+/** The plan's short name, which a backlog made by an action is headed with. */
+const planOf = (input: ActionInput) => input.list?.meta?.plan ?? (input.todo === null ? undefined : planName(input.todo)) ?? 'plan'
+
+/**
+ * backlog-add (ceremonies T3, C2): an item appended to tasks/backlog.md as the
+ * next B id, with its size when given. The file is created when missing.
+ */
+const backlogAdd: Action = {
+  todo: false,
+  check: args => (strings(args, ['title', 'size']) ? args : 'Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].'),
+  edit: (args, input) => {
+    const title = oneLine(args.title).trim().replace(/^["'“”]|["'“”]$/g, '').trim()
+    if (!title) return refuse('Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].')
+    const raw = ((args.size as string | undefined) ?? '').trim()
+    const size = raw ? (raw.toUpperCase() as TaskSize) : null
+    if (size && !SIZES.includes(size)) return refuse(`"${raw}" is not a size. Use S, M or L: /progress backlog add "${title}" M.`)
+    const had = input.backlog ?? null
+    const r = addBacklogItem(had, title, size, planOf(input))
+    const what = `${r.id} ${title}${size ? ` (${size})` : ''}`
+    return {
+      ok: true,
+      reply: had === null ? `Started ${BACKLOG_FILE} with ${what}.` : `Added ${what} to ${BACKLOG_FILE}${size ? '' : ' (no size: it counts as 1 point)'}.`,
+      writes: [{ file: BACKLOG_FILE, text: r.text }],
+    }
+  },
+}
+
+/**
+ * pull and defer (ceremonies T4, C2): a task between tasks/todo.md and
+ * tasks/backlog.md, both files written together (the caller checks neither
+ * changed since it read them). Boxes, size and notes go with it; a deferred
+ * task's number is kept on its `Was:` line and comes back with it.
+ */
+function move(verb: 'pull' | 'defer'): Action {
+  return {
+    todo: true,
+    check: args => (isStr(args.id) && args.id ? args : `Say which ${verb === 'pull' ? 'item' : 'task'}: /progress ${verb} ${verb === 'pull' ? 'B3' : 'T9'}.`),
+    edit: (args, input) => {
+      const id = (args.id as string).trim()
+      if (verb === 'pull' && (input.backlog ?? null) === null) return refuse(`No ${BACKLOG_FILE} here, so there is nothing to pull. /progress backlog add "title" starts one.`)
+      const r = verb === 'pull' ? pullItem(input.todo!, input.backlog!, id) : deferTask(input.todo!, input.backlog ?? null, id, sessionHandle(input), input.today, planOf(input))
+      if (!r.ok) return refuse(r.reason)
+      const writes = [
+        { file: TODO, text: r.todo },
+        { file: BACKLOG_FILE, text: r.backlog },
+      ]
+      const reply =
+        verb === 'pull'
+          ? `${r.from} ${r.title} is ${r.to} in tasks/todo.md now${r.wasKept ? ', its old number' : ''}, after the last task.`
+          : `${r.from} ${r.title} is deferred: it is ${r.to} in ${BACKLOG_FILE} now, and /progress pull ${r.to} brings it back as ${r.from}.`
+      return { ok: true, reply, writes }
+    },
+  }
+}
+
 export const ACTIONS: Record<ActionName, Action> = {
   start: setTask('start'),
   done: setTask('done'),
@@ -351,6 +436,10 @@ export const ACTIONS: Record<ActionName, Action> = {
   sign,
   signoff,
   answer,
+  size,
+  'backlog-add': backlogAdd,
+  pull: move('pull'),
+  defer: move('defer'),
 }
 
 export const isActionName = (name: string): name is ActionName => (ACTION_NAMES as readonly string[]).includes(name)

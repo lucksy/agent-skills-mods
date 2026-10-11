@@ -8,6 +8,7 @@ import { runAction, type ActionInput } from './actions'
 import { parsePlan, parseSpec, parseTasks, withBlockers } from './parse'
 import { parseTeam, TEAM_FILE } from './team'
 import { specFiles } from './view'
+import { BACKLOG_FILE } from './backlog'
 
 /** A request as node:http hands it in: header names in lower case, `url` the path and query. */
 export type ServeRequest = { method: string; url: string; headers: Record<string, string | undefined>; body?: string }
@@ -73,7 +74,7 @@ export function hashText(text: string): string {
 type Files = { names: string[]; text: Record<string, string | null> }
 
 async function readFiles(io: ServeIo): Promise<Files> {
-  const names = ['tasks/todo.md', 'tasks/plan.md', ...specFiles(await io.list(''), await io.list('specs'))]
+  const names = ['tasks/todo.md', 'tasks/plan.md', BACKLOG_FILE, ...specFiles(await io.list(''), await io.list('specs'))]
   const texts = await Promise.all(names.map(n => io.read(n)))
   return { names, text: Object.fromEntries(names.map((n, i) => [n, texts[i]!])) }
 }
@@ -81,7 +82,7 @@ async function readFiles(io: ServeIo): Promise<Files> {
 const revOf = (f: Files) => hashText(f.names.map(n => `${n}\0${f.text[n] ?? '\u0001'}`).join('\0'))
 
 /**
- * The rev: one hash over tasks/todo.md, tasks/plan.md and every spec, the files
+ * The rev: one hash over tasks/todo.md, tasks/plan.md, tasks/backlog.md and every spec, the files
  * an action can write. A write goes ahead only when it still matches what the
  * page loaded, so an edit to any of them since makes the page reload first.
  */
@@ -155,7 +156,7 @@ async function action(body: string, io: ServeIo): Promise<ServeResponse> {
   if (now.rev !== rev) return json(409, { reply: STALE, rev: now.rev })
 
   const { text } = now.files
-  const specs = now.files.names.slice(2)
+  const specs = now.files.names.slice(3)
   if (a.spec !== undefined && (typeof a.spec !== 'string' || !specs.includes(a.spec))) {
     return reply(400, `No spec ${String(a.spec)} here.${specs.length ? ` Specs: ${specs.join(', ')}.` : ''}`)
   }
@@ -174,6 +175,7 @@ async function action(body: string, io: ServeIo): Promise<ServeResponse> {
   const input: ActionInput = {
     todo,
     plan,
+    backlog: text[BACKLOG_FILE]!,
     spec: specFile && specText !== null ? { file: specFile, text: specText } : null,
     list: source === null ? null : withBlockers(parseTasks(source), questions),
     today: io.today(),

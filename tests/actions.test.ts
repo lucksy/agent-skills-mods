@@ -36,11 +36,11 @@ function input(over: Partial<ActionInput> = {}): ActionInput {
 
 describe('the actions table (T1)', () => {
   test('names every write the commands make today', () => {
-    expect([...ACTION_NAMES]).toEqual(['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer'])
+    expect([...ACTION_NAMES]).toEqual(['start', 'done', 'block', 'unblock', 'tick', 'claim', 'assign', 'unassign', 'review', 'handoff', 'sign', 'signoff', 'answer', 'size', 'backlog-add', 'pull', 'defer'])
   })
 
   test('an unknown action, or args of the wrong type, are refused and write nothing', () => {
-    expect(runAction('rename', { id: 'T2' }, input())).toEqual({ ok: false, reply: 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer.', writes: [] })
+    expect(runAction('rename', { id: 'T2' }, input())).toEqual({ ok: false, reply: 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add, pull, defer.', writes: [] })
     const r = runAction('start', { id: 4 }, input())
     expect(r.ok).toBe(false)
     expect(r.writes).toEqual([])

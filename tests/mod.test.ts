@@ -1409,6 +1409,68 @@ test('/progress assign, claim and unassign write the owner and say so', async ($
   expect((await $.command.run(run('assign T3'))).text).toBe('Say who: /progress assign T3 @sara, or /progress claim T3 for yourself.')
 })
 
+// ceremonies T1: a task's size, written and cleared by /progress size, shown by /progress task.
+test('/progress size writes and clears the Size line and says so; a bad size or task is refused and writes nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('size T4 L'))).text).toBe('T4 Rate limit per key is size L (2 points).')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Size:** L\n'))
+  expect((await $.command.run(run('task T4'))).text.split('\n')[1]).toBe('to do · size L (2 points)')
+  expect((await $.command.run(run('size 4 s'))).text).toBe('T4 Rate limit per key is size S (½ point), was L.')
+  expect((await $.command.run(run('size T4 -'))).text).toBe('T4 Rate limit per key has no size now (was S): it counts as 1 point, like M.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  expect((await $.command.run(run('size T4 XL'))).text).toBe('"XL" is not a size. Use S, M or L, or - to clear it: /progress size T4 M.')
+  expect((await $.command.run(run('size T9 M'))).text).toMatch(/^No "## Task 9:" section in tasks\/todo\.md\./)
+  expect((await $.command.run(run('size T4'))).text).toBe('Say the size: /progress size T4 M (S, M or L; - clears it).')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+})
+
+// ceremonies T3: the backlog, listed and added to; the file is made on the first add.
+test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('backlog'))).text).toBe('No tasks/backlog.md here. /progress backlog add "title" [S|M|L] starts one.')
+  expect((await $.command.run(run('backlog add "Per-tenant quotas" L'))).text).toBe('Started tasks/backlog.md with B1 Per-tenant quotas (L).')
+  expect(files[`${CWD}/tasks/backlog.md`]).toBe('---\nbacklog: api-keys\n---\n# Backlog\n\n## B1: Per-tenant quotas\n**Size:** L\n')
+  expect((await $.command.run(run('backlog add Audit log export'))).text).toBe('Added B2 Audit log export to tasks/backlog.md (no size: it counts as 1 point).')
+  expect((await $.command.run(run('backlog add Retry policy s'))).text).toBe('Added B3 Retry policy (S) to tasks/backlog.md.')
+  expect((await $.command.run(run('backlog'))).text).toBe(
+    ['Backlog · tasks/backlog.md · 3 items, 3½ points', '  B1  Per-tenant quotas  L', '  B2  Audit log export   no size', '  B3  Retry policy       S'].join('\n'),
+  )
+  expect((await $.command.run(run('backlog add'))).text).toBe('Say what it is: /progress backlog add "Per-tenant quotas" [S|M|L].')
+  expect((await $.command.run(run('backlog add "Docs" XL'))).text).toBe('"XL" is not a size. Use S, M or L: /progress backlog add "Docs" M.')
+  expect((await $.command.run(run('backlog nope'))).text).toBe('Use: /progress backlog, or /progress backlog add "title" [S|M|L].')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+  files[`${CWD}/tasks/backlog.md`] += '\n## B2: Again\n- [ ] x\n'
+  expect((await $.command.run(run('doctor'))).text).toContain('tasks/backlog.md\n  × B2 is used by 2 items; give each item its own number')
+})
+
+// ceremonies T4: pull and defer from the command line, and a file changed under them writes neither.
+test('/progress defer and pull move a task between the two files and say so; refusals write nothing', async ($, on) => {
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files)
+  expect((await $.command.run(run('defer T2'))).text).toBe('T2 Prisma schema for keys is started: only a task not yet started goes back to the backlog.')
+  expect(`${CWD}/tasks/backlog.md` in files).toBe(false)
+  expect((await $.command.run(run('defer t4'))).text).toBe('T4 Rate limit per key is deferred: it is B1 in tasks/backlog.md now, and /progress pull B1 brings it back as T4.')
+  expect(files[`${CWD}/tasks/backlog.md`]).toContain('## B1: Rate limit per key\n**Was:** T4 · deferred 2026-10-09\n')
+  expect(files[`${CWD}/tasks/todo.md`]).not.toContain('Task 4')
+  expect((await $.command.run(run('pull B7'))).text).toBe('No B7 in tasks/backlog.md. Items: B1.')
+  expect((await $.command.run(run('pull b1'))).text).toBe('B1 Rate limit per key is T4 in tasks/todo.md now, its old number, after the last task.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE.replace('## Task 4: Rate limit per key\n', '## Task 4: Rate limit per key\n**Status:** todo\n'))
+  expect((await $.command.run(run('pull'))).text).toBe('Say which item: /progress pull B3.')
+})
+
+test('/progress pull writes neither file when one changed while it ran', async ($, on) => {
+  const backlog = '# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n'
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  // The backlog as the action reads it, then changed by someone else before the write.
+  let reads = 0
+  Object.defineProperty(files, `${CWD}/tasks/backlog.md`, { enumerable: true, configurable: true, get: () => (++reads > 1 ? `${backlog}\n## B2: Theirs\n` : backlog) })
+  world(on, files)
+  expect((await $.command.run(run('pull B1'))).text).toBe('tasks/backlog.md changed while this ran, so nothing was written. Run it again.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+})
+
 test('claim needs to know who you are', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
   world(on, files, asPerson('sara@example.com'))
@@ -1594,10 +1656,10 @@ test('/progress merge-driver install asks first, writes exactly the spec\'s line
 
   expect((await $.command.run(run('merge-driver install yes'))).text).toMatch(/^Installed the merge driver/)
   expect(files[`${CWD}/.gitattributes`]).toBe(
-    `${ATTRS_BEFORE}tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n`,
+    `${ATTRS_BEFORE}tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\ntasks/backlog.md merge=agent-skills\n`,
   )
   expect(files[`${CWD}/.git/config`]).toBe(`${CONFIG_BEFORE}[merge "agent-skills"]\n    name = agent-skills task-aware merge\n    driver = node ${script} --merge %O %A %B %P\n`)
-  expect((await $.command.run(run('merge-driver status'))).text).toBe(`The merge driver is installed: git merges tasks/todo.md by task and specs' approvals by role. It runs ${script}.`)
+  expect((await $.command.run(run('merge-driver status'))).text).toBe(`The merge driver is installed: git merges tasks/todo.md by task, tasks/backlog.md by item and specs' approvals by role. It runs ${script}.`)
   expect((await $.command.run(run('merge-driver install'))).text).toBe(`The merge driver is already installed; it runs ${script}.`)
 
   // A broken path: the plugin moved.
@@ -1633,7 +1695,7 @@ test('/progress merge-driver outside a git repository writes nothing', async ($,
   expect((await $.command.run(run('merge-driver install yes'))).text).toBe('Not a git repository here, so there is no merge for the driver to run.')
   expect(Object.keys(files)).toEqual([])
 })
-const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\n'
+const ATTRIBUTE_TEXT = 'tasks/todo.md   merge=agent-skills\ntasks/plan.md   merge=agent-skills\nSPEC*.md        merge=agent-skills\nspecs/*.md      merge=agent-skills\ntasks/backlog.md merge=agent-skills\n'
 // team-view T3 (V1): the board across branches.
 test('/progress branches shows each task\'s furthest state across refs, with the fetch age', async ($, on) => {
   const theirs = TODO_TEMPLATE.replace('## Task 2: Prisma schema for keys\n', '## Task 2: Prisma schema for keys\n**Status:** in review · @bob · started 2026-10-07\n')

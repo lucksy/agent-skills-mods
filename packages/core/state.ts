@@ -7,7 +7,7 @@
 
 import { forecast, dayOf, shortDay, snapshotOf, type Forecast, type Snapshot } from './forecast'
 import { combine, earliestDays, gitSources, type Runner } from './history'
-import { parsePlan, parseSpec, parseTasks, withBlockers, type PlanDoc, type Spec, type Task, type TaskList } from './parse'
+import { parseBacklog, parsePlan, parseSpec, parseTasks, withBlockers, type Backlog, type PlanDoc, type Spec, type Task, type TaskList } from './parse'
 import { decisions } from './report'
 import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './view'
 import { parseTeam, TEAM_FILE, whoIs, type Member, type Team } from './team'
@@ -16,6 +16,9 @@ import { readBranches, type BranchBoard } from './branches'
 import { collisions, type Collision } from './collisions'
 import { look, parseSeen, seenOf, type Since } from './since'
 import { inbox, type InboxItem } from './inbox'
+import type { TaskSize, Was } from './format'
+import { BACKLOG_FILE } from './backlog'
+import { pointsOf } from './size'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -67,6 +70,8 @@ export type StateParts = {
   collisions?: Collision[] | null
   /** team-view (V4): what changed since the last look (seen.json); null when not asked for. */
   since?: Since | null
+  /** ceremonies (C2): tasks/backlog.md, parsed; absent or null when there is none. */
+  backlog?: Backlog | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -125,6 +130,8 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
   const team = teamText === null ? null : parseTeam(teamText)
   const email = team && io.run ? await io.run(['git', 'config', 'user.email']).then(r => (r.exitCode === 0 ? r.stdout.trim() || null : null), () => null) : null
   const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email), modules: await readModules(io, specs, todoText) }
+  const backlogText = await io.read(BACKLOG_FILE)
+  if (backlogText !== null) parts.backlog = parseBacklog(backlogText)
   if (opts.branches && io.run) {
     const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
     parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
@@ -190,6 +197,8 @@ export type TaskJson = {
   owner: string | null
   reviewer: string | null
   pr: string | null
+  /** ceremonies (C1): its `**Size:**` line; the key is left out for a task without one, so a plan with no sizes prints as before. */
+  size?: TaskSize
   /** The checkpoint after this task, with its items still open. */
   checkpoint: { title: string; open: string[] } | null
 }
@@ -222,6 +231,8 @@ export type StateJson = {
   since: Since | null
   /** ceremonies (C7): what waits on me, the handle tasks/team.md gives my git email; without one, everything waiting. */
   inbox: InboxItem[]
+  /** ceremonies (C2): the backlog's items and their points; the key is left out when there is no tasks/backlog.md. */
+  backlog?: { file: string; points: number; items: { id: string; title: string; size: TaskSize | null; was: Was | null; deps: string[]; open: string[] }[] }
 }
 
 export function stateJson(s: State): StateJson {
@@ -258,6 +269,7 @@ export function stateJson(s: State): StateJson {
         owner: t.owner ?? null,
         reviewer: t.reviewer ?? null,
         pr: t.pr ?? null,
+        ...(t.size ? { size: t.size } : {}),
         checkpoint: t.checkpoint && { title: t.checkpoint.title, open: t.checkpoint.items.filter(b => !b.isDone).map(b => b.text) },
       })),
     },
@@ -274,5 +286,14 @@ export function stateJson(s: State): StateJson {
     collisions: s.collisions ?? null,
     since: s.since ?? null,
     inbox: inbox(s, 'me'),
+    ...(s.backlog
+      ? {
+          backlog: {
+            file: BACKLOG_FILE,
+            points: pointsOf(s.backlog.items),
+            items: s.backlog.items.map(i => ({ id: i.id, title: i.title, size: i.size ?? null, was: i.was ?? null, deps: i.deps, open: i.boxes.filter(b => !b.isDone).map(b => b.text) })),
+          },
+        }
+      : {}),
   }
 }

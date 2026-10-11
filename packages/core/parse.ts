@@ -1,7 +1,7 @@
 // Parsers for the files agent-skills writes: SPEC.md, tasks/plan.md and tasks/todo.md.
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
-import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseStatusLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskState } from './format'
+import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseSizeLine, parseStatusLine, parseWasLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskSize, type TaskState, type Was } from './format'
 import { parseApprovals, type Signature } from './approvals'
 
 export type Box = { text: string; isDone: boolean }
@@ -33,6 +33,8 @@ export type Task = {
   reviewer?: string
   /** Its `**Handoff:**` notes, oldest first (format-v2, F6). */
   handoffs?: Handoff[]
+  /** Its `**Size:**` line (ceremonies, C1), when it has one. */
+  size?: TaskSize
   /** Which part of the section each box is in, parallel to `boxes`: acceptance criteria or verification. */
   kinds?: ('criteria' | 'verification')[]
   /**
@@ -88,6 +90,11 @@ export function parseDeps(text: string): string[] {
  * plain checklist, and text with no boxes at all as `empty`.
  */
 export function parseTasks(text: string): TaskList {
+  return readList(text, TASK_HEADING, 'T')
+}
+
+/** A list of `## <prefix>N: title` sections: tasks (`T`, with a one-line index too) or backlog items (`B`). */
+function readList(text: string, heading: RegExp, prefix: 'T' | 'B'): TaskList {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const tasks: Task[] = []
   const checkpoints: Checkpoint[] = []
@@ -124,11 +131,11 @@ export function parseTasks(text: string): TaskList {
     const h = HEADING.exec(line)
     if (h) {
       const title = stripMd(h[2] ?? '')
-      const task = TASK_HEADING.exec(title)
+      const task = heading.exec(title)
       const cp = CHECKPOINT.exec(title)
       if (task) {
         const t: Task = {
-          id: `T${task[1] ?? ''}`,
+          id: `${prefix}${task[1] ?? ''}`,
           title: (task[2] ?? '').trim(),
           phase,
           boxes: [],
@@ -167,6 +174,11 @@ export function parseTasks(text: string): TaskList {
         if (st.reviewer) section.task.reviewer = st.reviewer
         continue
       }
+      const size = section.task.size ? null : parseSizeLine(line)
+      if (size) {
+        section.task.size = size
+        continue
+      }
     }
 
     if (section.kind === 'checkpoint') {
@@ -195,7 +207,7 @@ export function parseTasks(text: string): TaskList {
       section.cp.items.push(item)
     } else {
       // A struck-through line (`~~T1 · title~~ — superseded`) still names its task.
-      const line = TASK_LINE.exec(item.text.replace(/^~~/, '').replace(/~~(?=\s|$)/, ''))
+      const line = prefix === 'T' ? TASK_LINE.exec(item.text.replace(/^~~/, '').replace(/~~(?=\s|$)/, '')) : null
       if (line) {
         const t: Task = {
           id: `T${line[1] ?? ''}`,
@@ -309,6 +321,34 @@ export function withBlockers(list: TaskList, questions: { file: string; text: st
   if (![...by.keys()].some(id => list.tasks.some(t => t.id === id))) return list
   const tasks = list.tasks.map(t => ({ ...t, blockedBy: by.get(t.id) }))
   return { ...finish(tasks, list.checkpoints, list.kind), meta: list.meta }
+}
+
+// ---------------------------------------------------------------- tasks/backlog.md
+
+/** A backlog item (ceremonies, C2): the task shape with a B id, and the task number it had when it was deferred. */
+export type BacklogItem = Task & { was?: Was }
+
+export type Backlog = { items: BacklogItem[]; meta?: { backlog?: string } }
+
+const BACKLOG_HEADING = /^B(\d+)\s*[:.\-–—]\s*(.*)$/
+
+/** Reads tasks/backlog.md with the task parser: `## B3: title` items with boxes, size, dependencies and a `**Was:**` line. */
+export function parseBacklog(text: string): Backlog {
+  const list = readList(text, BACKLOG_HEADING, 'B')
+  const items: BacklogItem[] = list.kind === 'tasks' ? list.tasks.map(t => ({ ...t })) : []
+  // Each item's Was line: under its heading, outside code blocks.
+  let at: BacklogItem | undefined
+  let inFence = false
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+    if (inFence) continue
+    const h = HEADING.exec(line)
+    if (h) at = items.find(i => i.id === `B${BACKLOG_HEADING.exec(stripMd(h[2] ?? ''))?.[1] ?? ''}`)
+    const was = at && !at.was ? parseWasLine(line) : null
+    if (at && was) at.was = was
+  }
+  const { fields, hasFrontMatter } = readFrontMatter(text)
+  return hasFrontMatter ? { items, meta: { backlog: fields.backlog || undefined } } : { items }
 }
 
 /** Tasks still to do, as the write guard counts them. */

@@ -8,18 +8,18 @@ created: 2026-10-11
 ## Phase 1: Foundation
 
 ## Task 1: Task size
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A task can have an optional `**Size:** S|M|L` line under its Status line. `size.ts` holds the weights (S ½, M 1, L 2, none 1) and the points of a list. The parser exposes `task.size`. The `size` action writes, replaces or clears the line (`/progress size T4 M`, `size T4 -`), keeping every other byte. Size shows on the board pane, the dashboard's Board cards, `/progress task` and `size` in `--json`. `FORMAT_RULES` describes the line.
 
 **Acceptance criteria:**
-- [ ] The Size line round-trips, and files without it parse exactly as before
-- [ ] `/progress size` refuses an unknown task or a size other than S, M, L or `-`
-- [ ] Size shows on the board pane, the Board cards, `/progress task` and `--json`
+- [x] The Size line round-trips, and files without it parse exactly as before
+- [x] `/progress size` refuses an unknown task or a size other than S, M, L or `-`
+- [x] Size shows on the board pane, the Board cards, `/progress task` and `--json`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 
@@ -32,18 +32,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 2: The ETA in points
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** Snapshots gain optional `points` and `totalPoints`. `snapshotOf` records them, and the history rebuild fills them from past versions of `todo.md`. `forecast`, `throughput` and the burn-up read points when a snapshot has them and counts otherwise. Before this change, snapshot tests capture the forecast, the charts' series and `--json` for every existing fixture. Those outputs must stay byte-identical when no task has a size.
 
 **Acceptance criteria:**
-- [ ] Every existing fixture's forecast, chart series and `--json` output is byte-identical before and after
-- [ ] A plan with L tasks done and S tasks left gets an earlier ETA than the same plan counted by tasks, in a fixture with hand-checked numbers
-- [ ] Old `history.json` files without points still load and forecast
+- [x] Every existing fixture's forecast, chart series and `--json` output is byte-identical before and after
+- [x] A plan with L tasks done and S tasks left gets an earlier ETA than the same plan counted by tasks, in a fixture with hand-checked numbers
+- [x] Old `history.json` files without points still load and forecast
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T1
 
@@ -54,18 +54,18 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 3: The backlog file
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `parseBacklog` reads `tasks/backlog.md`: `## B<n>: title` items with the same boxes, Size and dependencies as tasks, plus an optional `**Was:** T9 · deferred <date> @who` line. `/progress backlog` lists the items with their sizes. `/progress backlog add "title" [S|M|L]` appends the next B id and creates the file, with its front matter, when it doesn't exist. `backlog` joins `--json`, and `doctor` checks the file for duplicate ids.
 
 **Acceptance criteria:**
-- [ ] The backlog parses, and with no file everything works as before
-- [ ] `backlog add` appends the next B id and keeps every other byte; it creates the file when missing
-- [ ] `doctor` reports duplicate B ids and duplicate `Was:` numbers
+- [x] The backlog parses, and with no file everything works as before
+- [x] `backlog add` appends the next B id and keeps every other byte; it creates the file when missing
+- [x] `doctor` reports duplicate B ids and duplicate `Was:` numbers
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** None
 
@@ -77,19 +77,19 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 4: Pull and defer
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `pull B3` moves an item into `todo.md` as a task with `**Status:** todo`, at the end of the last phase. It takes its `Was:` number if it has one, or else the next free number, which counts every `Was:` id. `defer T9` moves an unstarted task to the backlog as the next B id with `**Was:** T9 · deferred <date> @me`. Both keep the task's boxes, size and notes. Both write two files, and both hashes are checked before either is written. The refusals follow the spec's Rules. The merge driver's next-free-number check also counts the `Was:` ids in the working tree's backlog. Per Q1, `/progress merge-driver install` also writes `tasks/backlog.md merge=agent-skills` into `.gitattributes`, and the driver merges the backlog item by item, renumbering a B id taken on both sides. `merge-driver` status says when an existing install lacks the backlog line, and suggests re-running `install`.
 
 **Acceptance criteria:**
-- [ ] Pull and defer round-trip a task with its boxes, size and notes intact. A deferred number is never given to another task, by pull or by `/plan`'s next free number.
-- [ ] Defer refuses a task that is started, in review or done, or that has dependents, and names the dependents. Pull refuses unknown dependencies.
-- [ ] A stale hash on either file writes neither, from the command and from `POST /action`
-- [ ] With the driver installed, a real `git merge` of two branches that each ran `backlog add` gives a clean `backlog.md` with both items and distinct B ids
+- [x] Pull and defer round-trip a task with its boxes, size and notes intact. A deferred number is never given to another task, by pull or by `/plan`'s next free number.
+- [x] Defer refuses a task that is started, in review or done, or that has dependents, and names the dependents. Pull refuses unknown dependencies.
+- [x] A stale hash on either file writes neither, from the command and from `POST /action`
+- [x] With the driver installed, a real `git merge` of two branches that each ran `backlog add` gives a clean `backlog.md` with both items and distinct B ids
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T3
 

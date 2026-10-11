@@ -1,9 +1,9 @@
 // The merge driver (team-view, T8): what git runs as `--merge %O %A %B %P` and
 // what `/progress merge-driver install|uninstall|status` writes and reads.
 //
-//   mergeByPath        tasks/todo.md → mergeTodo; tasks/plan.md, SPEC*.md, specs/*.md → mergeFrontMatter;
+//   mergeByPath        tasks/todo.md and tasks/backlog.md → mergeTodo; tasks/plan.md, SPEC*.md, specs/*.md → mergeFrontMatter;
 //                      anything else → the handed-in line merge alone
-//   .gitattributes     the four `merge=agent-skills` lines, added and removed line by line
+//   .gitattributes     the five `merge=agent-skills` lines, added and removed line by line
 //   .git/config        the `[merge "agent-skills"]` section, added and removed whole
 //
 // Every other byte of both files is kept, so uninstall undoes install. Pure: the
@@ -19,15 +19,20 @@ export const ATTRIBUTE_LINES = [
   'tasks/plan.md   merge=agent-skills',
   'SPEC*.md        merge=agent-skills',
   'specs/*.md      merge=agent-skills',
+  'tasks/backlog.md merge=agent-skills',
 ]
+
+/** The line added for the backlog (ceremonies T4): an install from before it lacks only this one. */
+export const BACKLOG_ATTRIBUTE = ATTRIBUTE_LINES[4]!
 
 const SECTION = `[merge "${DRIVER}"]`
 const NAME = 'agent-skills task-aware merge'
 
 /** Which merge a path gets: by task, by front matter and prose, or by line only. */
-export function mergeKind(path: string): 'todo' | 'doc' | 'lines' {
+export function mergeKind(path: string): 'todo' | 'backlog' | 'doc' | 'lines' {
   const p = path.replace(/\\/g, '/').replace(/^\.\//, '')
   if (p === 'tasks/todo.md') return 'todo'
+  if (p === 'tasks/backlog.md') return 'backlog'
   if (p === 'tasks/plan.md' || /^specs\/[^/]+\.md$/.test(p) || /(^|\/)SPEC[^/]*\.md$/.test(p)) return 'doc'
   return 'lines'
 }
@@ -37,11 +42,13 @@ export type DriverResult = { text: string; conflicts: string[]; renumbered: [str
 /**
  * The driver's merge of one file, picked by its path in the repo (`%P`).
  * `required`: the roles tasks/team.md says sign a spec (a spec's status is worked out again from them).
+ * `reserved`: the task numbers the working tree's tasks/backlog.md records as old ones (`Was:`), which a renumbered task never takes.
  */
-export function mergeByPath(path: string, base: string, ours: string, theirs: string, opts: { lineMerge?: LineMerge; required?: string[] } = {}): DriverResult {
+export function mergeByPath(path: string, base: string, ours: string, theirs: string, opts: { lineMerge?: LineMerge; required?: string[]; reserved?: number[] } = {}): DriverResult {
   const lineMerge = opts.lineMerge ?? wholeMerge
   const kind = mergeKind(path)
-  if (kind === 'todo') return mergeTodo(base, ours, theirs, { lineMerge })
+  if (kind === 'todo') return mergeTodo(base, ours, theirs, { lineMerge, reserved: opts.reserved })
+  if (kind === 'backlog') return mergeTodo(base, ours, theirs, { lineMerge, items: 'backlog' })
   if (kind === 'doc') {
     const isSpec = path.replace(/\\/g, '/') !== 'tasks/plan.md'
     const r = mergeFrontMatter(base, ours, theirs, { lineMerge, ...(isSpec && opts.required?.length ? { required: opts.required } : {}) })
@@ -164,7 +171,9 @@ export function driverStatusText(s: DriverStatus, scriptExists: boolean): string
   else if (!s.script) parts.push(`.git/config has a [merge "${DRIVER}"] driver that isn't this plugin's: ${s.driver}`)
   else if (!scriptExists) parts.push(`Broken path: .git/config runs ${s.script}, which isn't there (the plugin moved?).`)
   if (!s.attributes.length) parts.push(`.git/config has the driver, but .gitattributes doesn't name it, so git doesn't use it.`)
+  // ceremonies T4: installed before the driver merged the backlog.
+  else if (s.missing.length === 1 && s.missing[0] === BACKLOG_ATTRIBUTE) parts.push('Installed before the driver merged the backlog: .gitattributes has no tasks/backlog.md line, so git merges tasks/backlog.md line by line.')
   else if (s.missing.length) parts.push(`.gitattributes is missing: ${s.missing.join(' · ')}`)
-  if (!parts.length) return `The merge driver is installed: git merges tasks/todo.md by task and specs' approvals by role. It runs ${s.script}.`
+  if (!parts.length) return `The merge driver is installed: git merges tasks/todo.md by task, tasks/backlog.md by item and specs' approvals by role. It runs ${s.script}.`
   return [...parts, '/progress merge-driver install puts it right (it asks first).'].join('\n')
 }
