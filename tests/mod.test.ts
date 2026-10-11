@@ -1458,6 +1458,51 @@ test('/progress sprint start writes sprint: and commit:; /progress sprint, the b
   expect((await $.command.run(run('sprint stop'))).text).toBe('Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).')
 })
 
+// ceremonies T8 (C5): the sprint review, rebuilt from tasks/todo.md's history and copied.
+test('/progress report sprint reviews the last ended sprint from history, copies it and writes nothing; /progress sprint shows it too', async ($, on) => {
+  const S = '---\nsprint: 2026-09-28..2026-10-02\ncommit: T2, T3\n---\n'
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: S + TODO_T2_DONE }
+  const seen = world(on, files, gitOutput([['2026-10-02', S + TODO_T2_DONE], ['2026-09-28', S + TODO_TEMPLATE.slice(0, TODO_TEMPLATE.indexOf('## Task 4'))]]))
+  const out = (await $.command.run(run('report sprint'))).text!
+  const text = out.split('\n\n')[0]!
+  expect(text.split('\n')).toEqual([
+    'Sprint review · 28 Sep – 2 Oct · ended 2 Oct',
+    '1 of 2 committed done (1 of 2 points) · +1 added · 1 carries over',
+    'Done',
+    '  ✓ T2 Prisma schema for keys',
+    'Carries over',
+    '  ○ T3 Issue and revoke keys',
+    'Added, not done',
+    '  ○ T4 Rate limit per key',
+    'Demo checklist',
+    '  - [ ] T2 Prisma schema for keys: Key table with hashed secret',
+    '  - [ ] T2 Prisma schema for keys: Migration runs on a clean database',
+  ])
+  expect(out.endsWith('\n\nCopied to the clipboard.')).toBe(true)
+  expect(seen.copied).toEqual([text])
+  expect((await $.command.run(run('report sprint 2026-11-02'))).text).toBe('No sprint ran on 2026-11-02. Sprints: 28 Sep – 2 Oct.')
+  expect((await $.command.run(run('report sprint soon'))).text).toBe('Use: /progress report sprint, or /progress report sprint 2026-10-13 for the sprint that day fell in.')
+  const sprint = (await $.command.run(run('sprint'))).text!
+  expect(sprint.startsWith(`${text}\n\nThe sprint has ended. To start the next, for two weeks: /progress sprint start 2026-10-22 T3 T4`)).toBe(true)
+  // Read from git objects already here: nothing written, nothing committed.
+  expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`])
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(S + TODO_T2_DONE)
+  expect(seen.git.every(c => /^git (log|cat-file|rev-list|config|for-each-ref|rev-parse)$/.test(c))).toBe(true)
+})
+
+// ceremonies T9 (C6): the retro, about the work and never about people.
+test('/progress retro looks back on the whole plan without a sprint; no owner in the reply', async ($, on) => {
+  const task = (n: number, owner: string, started: string, done: string) => `## Task ${n}: Part ${n}\n**Status:** done · ${owner} · started ${started} · done ${done}\n**Size:** S\n- [x] works\n`
+  const todo = [task(1, '@amila', '2026-10-01', '2026-10-02'), task(2, '@sara', '2026-10-02', '2026-10-03'), task(3, '@amila', '2026-10-03', '2026-10-04'), task(4, '@sara', '2026-10-03', '2026-10-08'), '## Task 5: Next\n- [ ] later\n'].join('\n')
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: todo }
+  world(on, files)
+  const out = (await $.command.run(run('retro'))).text!
+  expect(out.split('\n').slice(0, 3)).toEqual(['Retro · the whole plan (no sprint)', 'Slow against their size', '  T4 Part 4 (S) took 5d, the usual S is 1d'])
+  expect(out).not.toMatch(/@\w|amila|sara/)
+  expect(Object.keys(files)).toEqual([`${CWD}/tasks/todo.md`])
+  expect((await $.command.run(run('retro now'))).text).toMatch(/^Unknown argument "retro now"/)
+})
+
 // ceremonies T3: the backlog, listed and added to; the file is made on the first add.
 test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }

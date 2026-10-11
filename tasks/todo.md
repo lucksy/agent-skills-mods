@@ -176,18 +176,18 @@ created: 2026-10-11
 **Estimated scope:** Small
 
 ## Task 8: Past sprints and the sprint review
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `pastSprints` finds every `sprint:` value in `todo.md`'s history, and in archived plans' `history.json` where it is recorded. `sprintReview(sprint)` gives committed against done, scope added, what carries over, and a demo checklist. The checklist holds the done tasks' acceptance boxes and the checkpoints signed off between the start and end dates. `/progress report sprint` prints the current or last ended sprint and copies it to the clipboard; `report sprint 2026-10-13` picks a past one. `--sprint` gains the review once the sprint has ended.
 
 **Acceptance criteria:**
-- [ ] Two past sprints are rebuilt from a fixture history, with nothing new committed
-- [ ] Committed vs done, added and carry over match hand-checked numbers
-- [ ] The demo checklist lists exactly the done tasks' acceptance boxes and the checkpoints signed off in the sprint
+- [x] Two past sprints are rebuilt from a fixture history, with nothing new committed
+- [x] Committed vs done, added and carry over match hand-checked numbers
+- [x] The demo checklist lists exactly the done tasks' acceptance boxes and the checkpoints signed off in the sprint
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T6
 
@@ -199,7 +199,7 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Task 9: The retro
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** `retro(state, sprint)` in `retro.ts` gives:
 - the slowest tasks: days in progress against the median for their size over this plan and the archived plans, listed when over 2× that median;
@@ -210,13 +210,13 @@ created: 2026-10-11
 Rows are keyed by task, with no owner and no per-person figure. `/progress retro` prints it for the current or last sprint; with no sprint it covers the whole plan. `--retro` prints the same.
 
 **Acceptance criteria:**
-- [ ] Slow vs size, block lengths and drift match a hand-checked fixture history
-- [ ] No output contains an owner handle or a per-person count (tested)
-- [ ] With no sprint and with under 3 done tasks of a size, it says what it can't compare
+- [x] Slow vs size, block lengths and drift match a hand-checked fixture history
+- [x] No output contains an owner handle or a per-person count (tested)
+- [x] With no sprint and with under 3 done tasks of a size, it says what it can't compare
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh`
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh`
 
 **Dependencies:** T2, T8
 

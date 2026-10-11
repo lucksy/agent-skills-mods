@@ -3,7 +3,7 @@
 // tasks/todo.md with the same parser as the Claude Code plugin and prints the
 // stage, a progress bar, the ETA range, the run timeline and what needs you.
 //
-//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --sprint | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
+//   node scripts/agent-skills-progress.mjs [dir] [--brief | --timeline | --json | --branches | --since | --sprint | --retro | --standup-team | --inbox [@handle|all] | --ready] [--no-color] [--no-git] [--spec <id>] [--width <n>]
 //   node scripts/agent-skills-progress.mjs [dir] --serve [--port 7357] [--no-open]
 //   node scripts/agent-skills-progress.mjs --merge <base> <ours> <theirs> <path>   (git's merge driver)
 //
@@ -55,7 +55,11 @@ Usage: agent-skills-progress [dir] [options]
   --since         what changed since you last looked, with who did it; then
                   remembers this look (in the git folder, shared with the plugin)
   --sprint        the sprint now: days left, committed against done (tasks and
-                  points) and the scope added since it began
+                  points) and the scope added since it began; once it has
+                  ended, its review: carry over and the demo checklist
+  --retro         the retro of the running or last sprint (else the whole plan):
+                  tasks slow against their size, the longest blocks, scope added
+                  and the ETA's drift; about the work, never about people
   --standup-team  the team standup: a line per person with what was done since the
                   last working day (on any branch, or named by their commits), today
                   and blocked, then what nobody owns
@@ -95,6 +99,7 @@ function parseArgs(argv) {
     else if (a === '--standup-team') o.mode = 'standup-team'
     else if (a === '--ready') o.mode = 'ready'
     else if (a === '--sprint') o.mode = 'sprint'
+    else if (a === '--retro') o.mode = 'retro'
     else if (a === '--inbox') {
       o.mode = 'inbox'
       // A handle, all or me: not a folder.
@@ -242,8 +247,20 @@ async function main() {
   }
   if (o.mode === 'sprint') {
     // ceremonies C5: the same lines as /progress sprint, scope added from tasks/todo.md's copies since the start.
-    const { sprintText } = await import('../packages/core/sprint.ts')
-    return console.log(sprintText(state.sprint ?? null, state.list, state.today))
+    const { sprintReview, sprintText, versionsOf } = await import('../packages/core/sprint.ts')
+    // Once it has ended, its review (ceremonies T8): the plan as it stood on its end date.
+    let review = null
+    if (state.sprint?.phase === 'ended' && state.list && io.run) {
+      const { readCopiesSince } = await import('../packages/core/history.ts')
+      review = sprintReview(state.sprint, state.list, versionsOf(await readCopiesSince(io.run, 'tasks/todo.md', { since: state.sprint.start })), state.today)
+    }
+    return console.log(sprintText(state.sprint ?? null, state.list, state.today, review))
+  }
+  if (o.mode === 'retro') {
+    // ceremonies C6: the same lines as /progress retro, from tasks/todo.md's copies and the archived plans.
+    if (!state.list || state.list.total === 0 || state.listFile !== 'tasks/todo.md') return console.log('No tasks/todo.md here, so there is nothing to look back on.')
+    const { gatherRetro, retro, retroText } = await import('../packages/core/retro.ts')
+    return console.log(retroText(retro(await gatherRetro(io, state.list, state.snapshots, state.today))))
   }
   if (o.mode === 'standup-team') {
     // ceremonies C3: the same lines /progress standup team copies, from the board and one log since the last working day.

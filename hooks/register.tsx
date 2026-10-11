@@ -43,7 +43,8 @@ import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
 import { BACKLOG_FILE, backlogText } from '../packages/core/backlog'
-import { readyText, sprintLine, sprintNow, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
+import { gatherRetro, retro, retroText } from '../packages/core/retro'
+import { readyText, sprintLine, sprintNow, sprintReportText, sprintReview, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
 import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
@@ -773,7 +774,43 @@ async function sprintCommand($: $, words: string[]): Promise<string> {
   if (sub === 'start') return (await act($, p, 'sprint-start', { end: words[1] ?? '', ids: words.slice(2) })).reply
   if (sub) return 'Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).'
   await readSprint($, p)
-  return sprintText(await currentSprint($, p), p.list, dayOf(await $.clock.now()))
+  const now = await currentSprint($, p)
+  const today = dayOf(await $.clock.now())
+  // Once it has ended, its review (ceremonies T8), from the copies read since it began.
+  const review = now?.phase === 'ended' && p.list ? sprintReview(now, p.list, (await read($, sprintCopies))?.versions ?? [], today) : null
+  return sprintText(now, p.list, today, review)
+}
+
+/**
+ * `/progress report sprint [day]` (ceremonies C5): the review of the running or
+ * last ended sprint, or of the one `day` fell in, rebuilt from tasks/todo.md's
+ * committed copies (nothing new is committed), and copied to the clipboard.
+ */
+async function sprintReport($: $, p: AsmProject, day: string | null): Promise<string> {
+  if (!p.list || p.list.total === 0 || p.listFile !== 'tasks/todo.md') return 'No tasks/todo.md here, so there is no sprint to review.'
+  if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Use: /progress report sprint, or /progress report sprint 2026-10-13 for the sprint that day fell in.'
+  const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
+  const versions = versionsOf(await readCopiesSince(run, 'tasks/todo.md', { cache: sprintCache }))
+  const text = sprintReportText(versions, p.list, day, dayOf(await $.clock.now()))
+  if (!text.startsWith('Sprint review')) return text
+  const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
+  return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
+}
+
+/**
+ * `/progress retro` (ceremonies C6): the running or last sprint (else the whole
+ * plan) looked back on: slow against size, blocks, scope added, ETA drift. Reads
+ * tasks/todo.md's committed copies and the archived plans; writes nothing.
+ */
+async function retroCommand($: $, p: AsmProject): Promise<string> {
+  if (!p.list || p.list.total === 0 || p.listFile !== 'tasks/todo.md') return 'No tasks/todo.md here, so there is nothing to look back on.'
+  const cwd = p.cwd
+  const io = {
+    read: (rel: string) => readText($, `${cwd}/${rel}`),
+    dirs: (rel: string) => $.fs.list(`${cwd}/${rel}`).then(es => es.filter(e => e.kind === 'dir').map(e => e.name), () => [] as string[]),
+    run: (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 }),
+  }
+  return retroText(retro(await gatherRetro(io, p.list, p.snapshots, dayOf(await $.clock.now()), sprintCache)))
 }
 
 /** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
@@ -1591,6 +1628,7 @@ export const register: Register = (on, options) => {
     if (arg === 'standup team') return reply(await teamStandup($, p))
     if (arg === 'report') return reply(await writeReport($, p))
     if (arg === 'ready') return reply(await readyCommand($, p))
+    if (arg === 'report sprint' || arg.startsWith('report sprint ')) return reply(await sprintReport($, p, arg.slice('report sprint'.length).trim() || null))
     if (arg === 'team' || arg.startsWith('team ')) return reply(await teamCommand($, arg))
     {
       const verb = rawWords[0]?.toLowerCase()
@@ -1609,13 +1647,14 @@ export const register: Register = (on, options) => {
       if (verb === 'backlog') return reply(await backlogCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if ((verb === 'pull' || verb === 'defer') && words.length <= 1) return reply((await act($, await load($), verb, { id: words[0] ?? '' })).reply)
       if (verb === 'sprint') return reply(await sprintCommand($, words))
+      if (verb === 'retro' && !words.length) return reply(await retroCommand($, p))
     }
     if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report [sprint [2026-10-13]]|retro|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
