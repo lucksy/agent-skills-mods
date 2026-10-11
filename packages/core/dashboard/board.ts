@@ -15,9 +15,10 @@ import type { TaskStatusWord } from '../format'
 import type { Task } from '../parse'
 import type { State } from '../state'
 import { esc, inline, plural } from './html'
-import { actButton, actForm, actRow, tickButton, type LiveAt } from './live'
+import { actButton, actForm, actRow, sizePicker, tickButton, type LiveAt } from './live'
 import { dueCheckpoint } from '../actions'
 import { pointsText, WEIGHT } from '../size'
+import { isUnderWay } from '../sprint'
 
 type Col = 'todo' | 'waiting' | 'doing' | 'review' | 'blocked' | 'done'
 const COLUMNS: { key: Col; label: string }[] = [
@@ -55,10 +56,14 @@ export function boardHtml(s: State, live = false): string {
   const acrossCols = rows && COLUMNS.filter(c => c.key !== 'review' || rows.some(r => r.state === 'in review'))
   const owners = [...new Set([...list.tasks.map(t => t.owner), ...(rows ?? []).map(r => r.owner)].filter((o): o is string => !!o))].sort((a, b) => a.localeCompare(b))
   const due = live ? dueCheckpoint(list) : null
+  // ceremonies (T12): a card in the sprint (committed or added) is marked for #board?sprint=1; on the
+  // live page, once the plan uses sizes, a backlog or a sprint, cards get a Size picker and Defer.
+  const inSprint = s.sprint ? new Set([...s.sprint.committed.ids, ...s.sprint.added.ids]) : null
+  const sizing = live && (!!s.sprint || !!s.backlog || list.tasks.some(t => t.size))
   const cards = (col: Col, only?: string) =>
     list.tasks
       .filter(t => columnOf(s, t) === col && (only === undefined || phaseNo(t) === only))
-      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0, only === undefined, live ? { at: only === undefined ? 'b' : `l${only}`, due: t === due } : null))
+      .map(t => cardHtml(s, t, col, phaseNo(t), phases.length > 0, only === undefined, live ? { at: only === undefined ? 'b' : `l${only}`, due: t === due, sizing, deferable: sizing && isDeferable(t, list.tasks) } : null, !!inSprint?.has(t.id)))
       .join('')
   const column = (c: { key: Col; label: string }, body: string, inLane: boolean, idPrefix = 'col') => {
     const n = (body.match(/ data-task="/g) ?? []).length
@@ -76,7 +81,7 @@ ${rows ? `<label>Branches <select id="board-branches">${option('', 'This branch'
 <label>Phase <select id="board-phase">${option('', 'All phases')}${phases.map((p, i) => option(String(i + 1), p)).join('')}</select></label>
 <label>State <select id="board-state">${option('', 'All states')}${(acrossCols && acrossCols.length > cols.length ? acrossCols : cols).map(c => option(c.key, c.label)).join('')}</select></label>
 ${owners.length ? `<label>Person <select id="board-owner">${option('', 'Everyone')}${owners.map(o => option(ownerKey(o), o)).join('')}${option('-', 'No owner')}</select></label>` : ''}
-${phases.length ? '<label class="check"><input type="checkbox" id="board-group"> Lanes by phase</label>' : ''}
+${phases.length ? '<label class="check"><input type="checkbox" id="board-group"> Lanes by phase</label>' : ''}${inSprint ? '\n<label class="check"><input type="checkbox" id="board-sprint"> This sprint only</label>' : ''}
 </div>`
   const lanes = phases.length
     ? `<div class="swim js-only">${phases
@@ -88,7 +93,7 @@ ${phases.length ? '<label class="check"><input type="checkbox" id="board-group">
     ? `\n<div class="across js-only">
 <p class="b-across">${acrossHead(s)}</p>
 <div class="cols5" style="--cols:${acrossCols.length}">${acrossCols
-        .map(c => column(c, rows.filter(r => acrossColumn(r, local.get(r.id), s) === c.key).map(r => acrossCardHtml(s, r, local.get(r.id), phaseNo)).join(''), false, 'across'))
+        .map(c => column(c, rows.filter(r => acrossColumn(r, local.get(r.id), s) === c.key).map(r => acrossCardHtml(s, r, local.get(r.id), phaseNo, !!inSprint?.has(r.id))).join(''), false, 'across'))
         .join('')}</div>
 </div>
 <!-- /across -->`
@@ -123,13 +128,19 @@ function clashHtml(s: State, id: string): { cls: string; flag: string; line: str
   return { cls: ' clash', flag: '<span class="c-flag" role="img" aria-label="Collision">!</span> ', line: `\n<p class="c-clash">${esc(collisionLine(c, s.branches?.here ?? null))}</p>` }
 }
 
-function acrossCardHtml(s: State, r: BranchRow, t: Task | undefined, phaseNo: (t: Task) => string): string {
+/** ` data-sprint="1"` on a card in the sprint, for #board?sprint=1; nothing otherwise, so a plan without a sprint is as before. */
+const sprintAttr = (on: boolean) => (on ? ' data-sprint="1"' : '')
+
+/** Defer (ceremonies T12) only where it can work: not started, and nothing depends on it. */
+const isDeferable = (t: Task, tasks: Task[]) => !isUnderWay(t) && t.state?.status !== 'blocked' && !tasks.some(x => x.deps.includes(t.id))
+
+function acrossCardHtml(s: State, r: BranchRow, t: Task | undefined, phaseNo: (t: Task) => string, inSprint = false): string {
   const col = acrossColumn(r, t, s)
   const phase = t ? phaseNo(t) : ''
   const k = clashHtml(s, r.id)
   const where = r.ref === null ? 'not started on any branch' : `on <code>${esc(r.ref)}</code>`
   const owner = r.owner ? `<span class="c-owner">${esc(r.owner)}</span>` : ''
-  return `<li class="card c-${col}${k.cls}" data-task="${esc(r.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(r.owner ?? undefined))}">
+  return `<li class="card c-${col}${k.cls}" data-task="${esc(r.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(r.owner ?? undefined))}"${sprintAttr(inSprint)}>
 <p class="c-title">${k.flag}<span class="id">${esc(r.id)}</span> ${inline(r.title)}</p>
 <p class="c-meta"><span class="c-ref">${where}</span>${owner}</p>${k.line}
 </li>`
@@ -148,8 +159,10 @@ const ownerKey = (owner: string | undefined) => (owner ?? '').replace(/^@/, '').
  * A card's buttons on the live page (T11): what can happen to it next from where
  * it is. Claim only when nobody owns it; a done task has none (its boxes still toggle).
  */
-function cardActions(t: Task, col: Col, at: LiveAt): string {
+function cardActions(t: Task, col: Col, at: LiveAt, sizing = false, deferable = false): string {
   const id = t.id
+  // ceremonies (T12): the size, and Defer for a task not yet started that nothing waits on.
+  const more = sizing ? [...(deferable ? [actButton('defer', { id }, 'Defer', `Defer ${id} to the backlog`, id)] : []), sizePicker(id, t.size)] : []
   const btn = (act: string, label: string) => actButton(act, { id }, label, `${label} ${id}`, id)
   const block = actForm('block', { id }, { label: 'Block', name: `Block ${id}`, submit: `Block ${id}`, fields: [{ name: 'why', label: `Why is ${id} blocked?`, hint: 'Upstash or self-hosted?' }], subject: id, at })
   const handoff = actForm('handoff', { id }, {
@@ -163,10 +176,10 @@ function cardActions(t: Task, col: Col, at: LiveAt): string {
   const assign = actForm('assign', { id }, { label: 'Assign', name: `Assign ${id}`, submit: `Assign ${id}`, fields: [{ name: 'who', label: `Who takes ${id}?`, hint: '@sara' }], subject: id, at })
   const claim = t.owner ? [] : [btn('claim', 'Claim')]
   if (col === 'done') return ''
-  if (col === 'blocked') return actRow([btn('unblock', 'Unblock'), ...claim])
-  if (col === 'review') return actRow([btn('done', 'Done'), ...claim, handoff, block])
-  if (col === 'doing') return actRow([btn('done', 'Done'), btn('review', 'Review'), ...claim, handoff, block])
-  return actRow([btn('start', 'Start'), ...claim, assign, block])
+  if (col === 'blocked') return actRow([btn('unblock', 'Unblock'), ...claim, ...more])
+  if (col === 'review') return actRow([btn('done', 'Done'), ...claim, handoff, block, ...more])
+  if (col === 'doing') return actRow([btn('done', 'Done'), btn('review', 'Review'), ...claim, handoff, block, ...more])
+  return actRow([btn('start', 'Start'), ...claim, assign, block, ...more])
 }
 
 /** A card's boxes on the live page, folded: each a toggle that ticks or unticks it. */
@@ -179,7 +192,7 @@ function boxesHtml(t: Task): string {
 }
 
 /** A card; `anchor` gives it the id other tabs link to (`#card-T4`), on this branch's plain columns only. */
-function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean, anchor: boolean, live: { at: LiveAt; due: boolean } | null = null): string {
+function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean, anchor: boolean, live: { at: LiveAt; due: boolean; sizing?: boolean; deferable?: boolean } | null = null, inSprint = false): string {
   const open = t.boxes.filter(b => !b.isDone).length
   const n = t.boxes.length
   const boxes = n === 0 ? 'no boxes' : open === 0 ? (n === 1 ? '1 box done' : `all ${n} done`) : `${open} of ${n} open`
@@ -199,14 +212,14 @@ function cardHtml(s: State, t: Task, col: Col, phase: string, showPhase: boolean
   // ceremonies (C1): a sized task says its size; an unsized one says nothing, as before.
   const sizeTag = t.size ? `<span class="c-size" title="Size ${t.size}: ${pointsText(WEIGHT[t.size])}">size ${t.size}</span>` : ''
   const k = clashHtml(s, t.id)
-  const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${anchor ? ` id="card-${esc(t.id)}"` : ''}>
+  const card = `<li class="card c-${col}${k.cls}" data-task="${esc(t.id)}" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${sprintAttr(inSprint)}${anchor ? ` id="card-${esc(t.id)}"` : ''}>
 <p class="c-title">${k.flag}<span class="id">${esc(t.id)}</span> ${inline(t.title)}</p>
-<p class="c-meta">${meta}${sizeTag}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}${live ? `${boxesHtml(t)}${cardActions(t, col, live.at)}` : ''}
+<p class="c-meta">${meta}${sizeTag}${col === 'review' ? '' : ownerTag}${phaseTag}</p>${noteHtml(t)}${k.line}${live ? `${boxesHtml(t)}${cardActions(t, col, live.at, live.sizing, live.deferable)}` : ''}
 </li>`
   const cp = t.checkpoint
   if (!cp) return card
   const cpOpen = cp.items.filter(b => !b.isDone).length
   const signoff = live?.due ? actRow([actButton('signoff', {}, 'Sign off', `Sign off checkpoint ${cp.title}`, 'checkpoint')]) : ''
   return `${card}
-<li class="cp" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"><span aria-hidden="true">◆</span> Checkpoint: ${esc(cp.title)} · ${cpOpen ? `${cpOpen} of ${cp.items.length} open` : '✓ signed off'}${signoff}</li>`
+<li class="cp" data-phase="${phase}" data-state="${col}" data-owner="${esc(ownerKey(t.owner))}"${sprintAttr(inSprint)}><span aria-hidden="true">◆</span> Checkpoint: ${esc(cp.title)} · ${cpOpen ? `${cpOpen} of ${cp.items.length} open` : '✓ signed off'}${signoff}</li>`
 }

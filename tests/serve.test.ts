@@ -370,6 +370,36 @@ test("the Inbox tab's Answer and Sign change the markdown; a stale page gets 409
   expect(p.writes).toEqual(['tasks/plan.md', 'SPEC.md'])
 })
 
+// ceremonies T12: the Sprint tab's Pull and the Board's Size and Defer post the actions their buttons carry.
+test("the live page's Pull, Defer and Size change the markdown; a stale page gets 409 and writes nothing", async () => {
+  const sprint = `---\nsprint: 2026-10-05..2026-10-16\ncommit: T3\n---\n${TODO_TEMPLATE}`
+  const p = project({ 'tasks/todo.md': sprint, 'tasks/backlog.md': '# Backlog\n\n## B1: Quotas\n**Size:** L\n- [ ] per tenant\n' })
+  const page = async () => {
+    const s = await buildState({ cwd: '/p', now: Date.parse('2026-10-11T10:00:00Z'), read: p.io.read, list: p.io.list })
+    return dashboardHtml(s, { live: { rev: (await readRev(p.io)).rev } })
+  }
+  const args = (html: string, act: string, label: string) => {
+    const m = new RegExp(`data-act="${act}" data-args="([^"]*)"[^>]*aria-label="${label}"`).exec(html)
+    return JSON.parse(m![1]!.replace(/&quot;/g, '"'))
+  }
+  let html = await page()
+  const pull = args(html, 'pull', 'Pull B1 into the plan')
+  const stale = await handle(post({ action: 'pull', args: pull, rev: 'not-the-rev' }), p.io)
+  expect([stale.status, p.writes]).toEqual([409, []])
+  let r = await run(p, 'pull', pull)
+  expect([r.status, r.json.reply]).toEqual([200, 'B1 Quotas is T5 in tasks/todo.md now, after the last task.'])
+  expect(p.disk['tasks/todo.md']).toContain('## Task 5: Quotas\n')
+  html = await page()
+  r = await run(p, 'size', args(html, 'size', 'M size for T4'))
+  expect([r.status, r.json.reply]).toEqual([200, 'T4 Rate limit per key is size M (1 point).'])
+  expect(p.disk['tasks/todo.md']).toContain('## Task 4: Rate limit per key\n**Size:** M\n')
+  html = await page()
+  r = await run(p, 'defer', args(html, 'defer', 'Defer T5 to the backlog'))
+  expect([r.status, r.json.reply]).toEqual([200, 'T5 Quotas is deferred: it is B1 in tasks/backlog.md now, and /progress pull B1 brings it back as T5.'])
+  expect(p.disk['tasks/todo.md']).not.toContain('Task 5: Quotas')
+  expect(p.writes).toEqual(['tasks/todo.md', 'tasks/backlog.md', 'tasks/todo.md', 'tasks/todo.md', 'tasks/backlog.md'])
+})
+
 test('serveArgv runs --serve on a free port and unopened for the plugin, and as a person types it otherwise', () => {
   expect(serveArgv('/plug/scripts/agent-skills-progress.mjs', '/p', 'child')).toEqual([
     'node', '--experimental-strip-types', '/plug/scripts/agent-skills-progress.mjs', '/p', '--serve', '--port', '0', '--no-open',

@@ -43,7 +43,7 @@ import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
 import { BACKLOG_FILE, backlogText } from '../packages/core/backlog'
-import { gatherRetro, retro, retroText } from '../packages/core/retro'
+import { gatherRetro, retro, retroText, type Retro } from '../packages/core/retro'
 import { readyText, sprintLine, sprintNow, sprintPlan, sprintPlanText, sprintReportText, sprintReview, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
 import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
@@ -805,13 +805,18 @@ async function sprintReport($: $, p: AsmProject, day: string | null): Promise<st
  */
 async function retroCommand($: $, p: AsmProject): Promise<string> {
   if (!p.list || p.list.total === 0 || p.listFile !== 'tasks/todo.md') return 'No tasks/todo.md here, so there is nothing to look back on.'
+  return retroText(await retroOf($, p))
+}
+
+/** The retro of the running or last ended sprint (ceremonies T9), for `/progress retro` and the Sprint tab. Reads only. */
+async function retroOf($: $, p: AsmProject): Promise<Retro> {
   const cwd = p.cwd
   const io = {
     read: (rel: string) => readText($, `${cwd}/${rel}`),
     dirs: (rel: string) => $.fs.list(`${cwd}/${rel}`).then(es => es.filter(e => e.kind === 'dir').map(e => e.name), () => [] as string[]),
     run: (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 }),
   }
-  return retroText(retro(await gatherRetro(io, p.list, p.snapshots, dayOf(await $.clock.now()), sprintCache)))
+  return retro(await gatherRetro(io, p.list!, p.snapshots, dayOf(await $.clock.now()), sprintCache))
 }
 
 /** `/progress sprint plan [days]` (C1): what fits `days` working days (default 10) at the recent pace. Writes nothing. */
@@ -1082,6 +1087,11 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
   const now = await $.clock.now()
   // The Board's All branches (team-view T5): read from git objects already here, never fetched.
   const board = await readBoard($, p).catch(() => null)
+  // The Sprint tab (ceremonies T12): the backlog, the sprint with its copies since the start, and its retro once it has ended.
+  const backlogText = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
+  await readSprint($, p).catch(() => undefined)
+  const sprint = await currentSprint($, p)
+  const sprintTab = sprint && p.list ? { sprint, sprintCopies: (await read($, sprintCopies))?.versions ?? [], retro: sprint.phase === 'ended' ? await retroOf($, p).catch(() => null) : null } : {}
   const state = toState({
     cwd: p.cwd,
     today: dayOf(now),
@@ -1101,6 +1111,8 @@ async function writeDashboard($: $, p: AsmProject, view: string): Promise<string
     modules: await projectModules($, p, specs),
     branches: board,
     collisions: board ? collisions(board, now) : null,
+    backlog: backlogText === null ? null : parseBacklog(backlogText),
+    ...sprintTab,
   })
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`

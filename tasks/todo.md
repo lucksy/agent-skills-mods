@@ -294,7 +294,7 @@ Commits count when their subject starts with a plan task id followed by `:` or a
 ## Phase 4: Dashboard
 
 ## Task 12: The Sprint tab
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** A Sprint tab (`#sprint`) has these parts:
 - The sprint's dates and days left.
@@ -307,13 +307,13 @@ Commits count when their subject starts with a plan task id followed by `:` or a
 With no sprint, the tab shows the backlog and the `sprint plan` proposal as text. The Board gains `?sprint=1` to show only committed and added tasks. `/progress dashboard sprint` opens the tab.
 
 **Acceptance criteria:**
-- [ ] The tab renders with a sprint, after one ended, and with none; with no sprint and no backlog the other tabs are byte-identical
-- [ ] On the live page, Pull, Defer and Size change the markdown, and a stale page gets a 409
-- [ ] Light and dark at 360 px and desktop, keyboard reachable, with no chart wider than the page
+- [x] The tab renders with a sprint, after one ended, and with none; with no sprint and no backlog the other tabs are byte-identical
+- [x] On the live page, Pull, Defer and Size change the markdown, and a stale page gets a 409
+- [x] Light and dark at 360 px and desktop, keyboard reachable, with no chart wider than the page
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .` (dashboard and serve tests)
-- [ ] Manual check: in Chrome, static and live
+- [x] Tests pass: `claude plugin test .` (dashboard and serve tests)
+- [x] Manual check: in Chrome, static and live
 
 **Dependencies:** T4, T8, T9
 

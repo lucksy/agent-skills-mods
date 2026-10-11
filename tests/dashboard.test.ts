@@ -11,6 +11,7 @@ import { collisions } from '../packages/core/collisions'
 import { parseTasks } from '../packages/core/parse'
 import { teamView } from '../packages/core/dashboard/team'
 import { LIVE_SCRIPT, LIVE_STALE } from '../packages/core/dashboard/live'
+import { hashText } from '../packages/core/serve'
 import { GOOD_SPEC, SPEC, TODO_T2_DONE, TODO_T3_DONE, TODO_NONE_DONE, TODO_TEMPLATE, gitOutput } from './fixtures'
 
 // The dashboard (K1–K6): one self-contained page built from State v1.
@@ -246,7 +247,7 @@ describe('Board (K2)', () => {
 
   test('a tab of its own, after the Overview, in the order of the spec', async () => {
     const html = dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })))
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'sprint', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
     expect(dashboardHtml(await buildState(io({ 'tasks/todo.md': todo })), { view: 'board' })).toContain('data-view="board"')
   })
 
@@ -462,7 +463,7 @@ describe('Team (team-view T6)', () => {
 
   test('a Team tab after the Board, and /progress dashboard team opens on it', async () => {
     const html = dashboardHtml(await state(), { view: 'team' })
-    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
+    expect([...html.matchAll(/role="tab" id="tab-(\w+)"/g)].map(m => m[1])).toEqual(['overview', 'board', 'sprint', 'team', 'inbox', 'roadmap', 'flow', 'spec'])
     expect(html).toContain('data-view="team"')
   })
 
@@ -758,6 +759,155 @@ describe('the Inbox tab (ceremonies T13)', () => {
     // Its forms don't share ids with the Overview's.
     const ids = [...page.matchAll(/ id="(f-[^"]+)"/g)].map(m => m[1])
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('the Sprint tab (ceremonies T12)', () => {
+  // Today is Fri 9 Oct. T2 (M) and T3 (L) committed for 5–16 Oct; T2 done on 7 Oct; T5 (S) added since; T4 not started.
+  const status = (todo: string, id: string, title: string, line: string) => todo.replace(`## Task ${id}: ${title}\n`, `## Task ${id}: ${title}\n${line}\n`)
+  const sized = status(status(TODO_TEMPLATE, '2', 'Prisma schema for keys', '**Size:** M'), '3', 'Issue and revoke keys', '**Size:** L')
+  const sprinted = (start: string, end: string, todo: string) => `---\nsprint: ${start}..${end}\ncommit: T2, T3\n---\n${todo}`
+  const base = sprinted('2026-10-05', '2026-10-16', sized)
+  const t2done = base.replace('**Size:** M\n', '**Status:** done · started 2026-10-05 · done 2026-10-07\n**Size:** M\n')
+  const added = '\n## Task 5: Audit log\n**Size:** S\n\n**Acceptance criteria:**\n- [ ] Every key change is logged\n'
+  const now = status(t2done, '3', 'Issue and revoke keys', '**Status:** in progress · started 2026-10-08') + added
+  const BACKLOG = '---\nbacklog: keys\n---\n# Backlog\n\n## B1: Per-tenant quotas\n**Size:** L\n- [ ] Quota per tenant\n\n## B2: Audit export\n**Was:** T9 · deferred 2026-10-02 @amila\n- [ ] CSV export\n'
+  const running = () => buildState(io({ 'SPEC.md': SPEC, 'tasks/todo.md': now, 'tasks/backlog.md': BACKLOG }, git([['2026-10-07', t2done], ['2026-10-05', base]])))
+  // The sprint before: 28 Sep – 2 Oct, T2 blocked 28–30 Sep and done 1 Oct, T3 never started.
+  const old = sprinted('2026-09-28', '2026-10-02', sized)
+  const oldBlocked = old.replace('**Size:** M\n', '**Status:** blocked · started 2026-09-28\n**Size:** M\n')
+  const oldDone = old.replace('**Size:** M\n', '**Status:** done · started 2026-09-28 · done 2026-10-01\n**Size:** M\n')
+  const ended = () => buildState(io({ 'tasks/todo.md': oldDone }, git([['2026-10-01', oldDone], ['2026-09-30', oldBlocked], ['2026-09-28', oldBlocked]])))
+  const tab = (html: string) => section(html, 'sprint')
+  const fig = (html: string, key: string) => text(html.match(new RegExp(`<div class="fig f-${key}"[\\s\\S]*?</div>`))?.[0] ?? '').trim()
+  const card = (html: string, id: string) => html.match(new RegExp(`<section class="card[^"]*" aria-labelledby="${id}">[\\s\\S]*?</section>`))?.[0] ?? ''
+
+  test('a tab after the Board, and /progress dashboard sprint opens on it', async () => {
+    const html = dashboardHtml(await running(), { view: 'sprint' })
+    expect(html).toContain('<a role="tab" id="tab-sprint" href="#sprint" aria-controls="view-sprint">Sprint</a>')
+    expect(html).toContain('<body data-view="sprint">')
+  })
+
+  test('a running sprint: its dates and days left, committed against done, added, and what is still open', async () => {
+    const html = tab(dashboardHtml(await running()))
+    expect(text(html)).toContain('Sprint 5 Oct – 16 Oct · 6 of 10 working days left')
+    expect(fig(html, 'days')).toBe('Days left 6 of 10 ends 16 Oct')
+    expect(fig(html, 'committed')).toBe('Committed done 1 of 2 1 of 3 points')
+    expect(fig(html, 'added')).toBe('Added +1 0 done')
+    expect(fig(html, 'carry')).toBe('Still open 1 T3')
+    // Each task with its size and where it stands in words, linking to its card.
+    expect(text(card(html, 'sp-scope'))).toMatch(/Committed 2 ✓ T2 Prisma schema for keys size M done ● T3 Issue and revoke keys size L in progress Added since the start 1 ○ T5 Audit log size S not started/)
+    expect(html).toContain('<a href="#card-T3">T3</a>')
+    // No owner and nothing per person.
+    expect(html).not.toContain('@amila')
+  })
+
+  test('the burn-down: points left on each working day so far against the ideal line, with its one-line summary for a page without JS', async () => {
+    const s = await running()
+    const html = tab(dashboardHtml(s))
+    const mount = html.match(/<div class="chart" role="img" aria-label="([^"]+)" data-chart="([^"]+)"/)!
+    expect(mount[1]).toBe('2½ points left of 3 committed and ½ added on 9 Oct: 1 behind the ideal line.')
+    expect(html).toContain('<p class="chart-text">2½ points left')
+    const spec = JSON.parse(mount[2]!.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'))
+    const series = (id: string) => spec.data.find((d: { id: string }) => d.id === id).data.map((p: { x: string; y: number }) => [p.x, Math.round(p.y * 100) / 100])
+    expect(series('points left')).toEqual([['2026-10-05', 3], ['2026-10-06', 3], ['2026-10-07', 2], ['2026-10-08', 2], ['2026-10-09', 2.5]])
+    expect(series('ideal').length).toBe(10)
+    expect([series('ideal')[0], series('ideal').at(-1)]).toEqual([['2026-10-05', 3], ['2026-10-16', 0]])
+    expect(spec.dashed).toEqual(['ideal'])
+    expect([spec.props.xScale.min, spec.props.xScale.max]).toEqual(['2026-10-05', '2026-10-16'])
+    expect(dashboardHtml(s)).toContain(CHARTS_JS)
+  })
+
+  test("the demo checklist: the done tasks' acceptance boxes, not their verification", async () => {
+    const demo = text(card(tab(dashboardHtml(await running())), 'sp-demo'))
+    expect(demo).toContain('T2 Prisma schema for keys: Key table with hashed secret')
+    expect(demo).toContain('T2 Prisma schema for keys: Migration runs on a clean database')
+    expect(demo).not.toContain('pnpm test keys')
+  })
+
+  test('the backlog with sizes; no buttons on the static page, Pull on each item on the live one', async () => {
+    const s = await running()
+    const plain = tab(dashboardHtml(s))
+    const bl = text(card(plain, 'sp-backlog'))
+    expect(bl).toContain('2 items in tasks/backlog.md , 3 points')
+    expect(bl).toMatch(/B1 Per-tenant quotas size L .*B2 Audit export · no size · was T9/)
+    expect(plain).not.toContain('<button')
+    const live = tab(dashboardHtml(s, { live: { rev: 'r1' } }))
+    expect([...live.matchAll(/data-act="(\w+)" data-args="([^"]*)"[^>]*aria-label="([^"]*)"/g)].map(m => [m[1], JSON.parse(m[2]!.replace(/&quot;/g, '"')), m[3]])).toEqual([
+      ['pull', { id: 'B1' }, 'Pull B1 into the plan'],
+      ['pull', { id: 'B2' }, 'Pull B2 into the plan'],
+    ])
+  })
+
+  test('after the sprint ended: what carries over, and the retro, with no owner and no figure per person', async () => {
+    const html = tab(dashboardHtml(await ended()))
+    expect(text(html)).toContain('Sprint 28 Sep – 2 Oct · ended 2 Oct')
+    expect(fig(html, 'days')).toBe('Days left 0 of 5 ended 2 Oct')
+    expect(fig(html, 'carry')).toBe('Carry over 1 T3')
+    expect(text(card(html, 'sp-scope'))).toContain('T3 Issue and revoke keys size L carries over')
+    const retro = text(card(html, 'sp-retro'))
+    expect(retro).toContain('Longest blocks T2 Prisma schema for keys blocked 2 d (28 Sep – 30 Sep)')
+    expect(retro).toContain('Scope Nothing added after the start.')
+    expect(retro).not.toMatch(/@\w/)
+    // A running sprint has no retro yet.
+    expect(tab(dashboardHtml(await running()))).not.toContain('sp-retro')
+  })
+
+  test("with no sprint: it says so, then sprint plan's proposal in words, with what isn't ready and why, and the backlog", async () => {
+    const plan = '# Plan\n\n## Open Questions\n\n- Q1 (T4): Redis or in memory?\n'
+    const html = tab(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE, 'tasks/plan.md': plan, 'tasks/backlog.md': BACKLOG }))))
+    const t = text(html)
+    expect(t).toContain('No sprint running')
+    expect(t).toContain('/progress sprint plan')
+    const p = text(card(html, 'sp-plan'))
+    expect(p).toMatch(/Proposed 1 T2 Prisma schema for keys 1 point · total 1/)
+    expect(p).toMatch(/Not ready 2 T3 Issue and revoke keys no verification T4 Rate limit per key no verification, waits on Q1/)
+    expect(p).toMatch(/To start it: \/progress sprint start 2026-10-22 T2/)
+    expect(t).toContain('B1 Per-tenant quotas')
+    expect(html).not.toContain('data-chart=')
+    expect(html).not.toContain('<button')
+  })
+
+  test('with no sprint and no backlog, every other tab is byte for byte what it was, static and live', async () => {
+    // Each panel's hash as T13 left it, before the Sprint tab.
+    const before: Record<string, Record<string, string>> = {
+      'history false': { overview: 'a0e1d0654475c7be', board: 'e4178370f8745b1b', team: '130b6839a5d06ff3', inbox: 'd0da8fd87b03049b', roadmap: '40a4937e4aee8f57', flow: '6e6b9264f6745e95', spec: '11aa3b36d63edb2b' },
+      'history true': { overview: '94103d135d1a822b', board: '9e1019ad387e3cb1', team: '130b6839a5d06ff3', inbox: '7033bf4e9a6861ea', roadmap: '40a4937e4aee8f57', flow: '6e6b9264f6745e95', spec: '117b5efc512ed946' },
+      'template false': { overview: '5d6e8b451ac99f7f', board: '5176bc1e45f2c58b', team: '1c39049675d8a18d', inbox: '18d7f23d4c76cdf0', roadmap: 'dfc5d49e01d4d71b', flow: '4ffc4837a9f48186', spec: '4114ee9b1337af72' },
+      'template true': { overview: '8b3e9c963e85e778', board: 'fef78301e4549977', team: '1c39049675d8a18d', inbox: '18d7f23d4c76cdf0', roadmap: 'dfc5d49e01d4d71b', flow: '4ffc4837a9f48186', spec: '4114ee9b1337af72' },
+    }
+    const states: Record<string, Awaited<ReturnType<typeof project>>> = { history: await project(), template: await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE })) }
+    for (const [name, s] of Object.entries(states))
+      for (const live of [false, true]) {
+        const html = dashboardHtml(s, live ? { live: { rev: 'r1' } } : {})
+        const want = before[`${name} ${live}`]!
+        expect(Object.fromEntries(Object.keys(want).map(id => [id, hashText(section(html, id))]))).toEqual(want)
+      }
+  })
+
+  test("the Board: #board?sprint=1 shows only the sprint's tasks; the switch is there only while there is a sprint", async () => {
+    const board = section(dashboardHtml(await running()), 'board')
+    expect(board).toContain('<label class="check"><input type="checkbox" id="board-sprint"> This sprint only</label>')
+    expect([...board.matchAll(/<li class="card[^"]*" data-task="(T\d+)"[^>]*data-sprint="1"[^>]*id="card-/g)].map(m => m[1]).sort()).toEqual(['T2', 'T3', 'T5'])
+    expect(DASHBOARD_SCRIPT).toContain("q.set('sprint', 1)")
+    expect(DASHBOARD_SCRIPT).toContain('!el.dataset.sprint')
+    expect(DASHBOARD_SCRIPT.length).toBeLessThan(4096)
+    const none = section(dashboardHtml(await buildState(io({ 'tasks/todo.md': TODO_TEMPLATE }))), 'board')
+    expect(none).not.toContain('board-sprint')
+    expect(none).not.toContain('data-sprint')
+  })
+
+  test('live Board cards: a Size picker with the size pressed, and Defer only on a task not started that nothing waits on', async () => {
+    const html = section(dashboardHtml(await running(), { live: { rev: 'r1' } }), 'board')
+    const of = (id: string) => html.match(new RegExp(`<li class="card[^"]*" data-task="${id}"[^>]*id="card-${id}"[\\s\\S]*?\\n</li>`))?.[0] ?? ''
+    const sizes = (id: string) => [...of(id).matchAll(/data-act="size" data-args="([^"]*)"[^>]*aria-pressed="(\w+)" aria-label="([^"]*)"/g)].map(m => [JSON.parse(m[1]!.replace(/&quot;/g, '"')).size, m[2], m[3]])
+    expect(sizes('T3')).toEqual([['S', 'false', 'S size for T3'], ['M', 'false', 'M size for T3'], ['L', 'true', 'L size for T3'], ['-', 'false', 'No size for T3']])
+    expect(of('T3')).toContain('role="group" aria-label="Size of T3"')
+    expect(sizes('T4').find(x => x[1] === 'true')![0]).toBe('-')
+    // A done card has none; T3 has started; T4 and T5 have not, and nothing waits on them.
+    expect(sizes('T1')).toEqual([])
+    expect(['T3', 'T4', 'T5'].map(id => of(id).includes('data-act="defer"'))).toEqual([false, true, true])
+    expect(of('T4')).toContain('aria-label="Defer T4 to the backlog"')
   })
 })
 

@@ -14,18 +14,21 @@ import { SPEC_STYLE, specHtml } from './spec'
 import { MODULES_STYLE, modulesHtml } from './modules'
 import { TEAM_STYLE, teamHtml } from './team'
 import { INBOX_STYLE, inboxHtml } from './inbox'
+import { SPRINT_STYLE, sprintHtml } from './sprint'
 import { CHARTS_JS } from './charts-bundle'
 import { chartMount, esc, type ChartSpec } from './html'
 import { LIVE_CSP, LIVE_SCRIPT, LIVE_STATUS, LIVE_STYLE } from './live'
 
 export { chartMount, type ChartSpec }
 
-export type ViewId = 'overview' | 'board' | 'team' | 'inbox' | 'roadmap' | 'flow' | 'spec' | 'modules'
+export type ViewId = 'overview' | 'board' | 'sprint' | 'team' | 'inbox' | 'roadmap' | 'flow' | 'spec' | 'modules'
 
 /** The views in tab order. A view joins this list when it is built. */
 const VIEWS: { id: ViewId; label: string; render: (s: State, live: boolean) => string }[] = [
   { id: 'overview', label: 'Overview', render: overviewHtml },
   { id: 'board', label: 'Board', render: boardHtml },
+  // ceremonies (C5): the sprint's burn-down, review and retro, and the backlog; without a sprint, what is ready to plan.
+  { id: 'sprint', label: 'Sprint', render: sprintHtml },
   // team-view (V6): who is on what, and what waits on whom.
   { id: 'team', label: 'Team', render: teamHtml },
   // ceremonies (C7): what waits on a person, `#inbox?who=sara`.
@@ -144,21 +147,22 @@ export const DASHBOARD_SCRIPT = `(() => {
   const ids = tabs.map(t => t.getAttribute('href').slice(1))
   const parse = h => { const [v, q = ''] = h.slice(1).split('?'); return [v, new URLSearchParams(q)] }
   b.classList.add('js')
-  // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase.
-  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner'), br = $('board-branches')
+  // The Board's filters and lanes, read from and written to #board?phase=&state=&group=phase&sprint=1.
+  const ph = $('board-phase'), st = $('board-state'), gr = $('board-group'), ow = $('board-owner'), br = $('board-branches'), sp = $('board-sprint')
   const board = q => {
     if (!ph) return
     ph.value = q.get('phase') || ''
     st.value = q.get('state') || ''
     if (ow) ow.value = q.get('owner') || ''
     if (br) br.value = q.get('branches') === 'all' ? 'all' : ''
+    if (sp) sp.checked = q.get('sprint') == 1
     // All branches has no lanes: its cards are the furthest states, not this branch's phases.
     const all = !!br && br.value === 'all'
     if (gr) { gr.checked = q.get('group') === 'phase'; gr.disabled = all }
     b.classList.toggle('allb', all)
     b.classList.toggle('grouped', !!gr && gr.checked && !all)
     for (const el of $('view-board').querySelectorAll('[data-state]'))
-      el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value) || (!!ow && !!ow.value && el.dataset.owner !== (ow.value === '-' ? '' : ow.value))
+      el.hidden = (!!ph.value && el.dataset.phase !== ph.value) || (!!st.value && el.dataset.state !== st.value) || (!!ow && !!ow.value && el.dataset.owner !== (ow.value === '-' ? '' : ow.value)) || (!!sp && sp.checked && !el.dataset.sprint)
     for (const c of $('view-board').querySelectorAll('.col'))
       c.querySelector('.n').textContent = c.querySelectorAll('[data-task]:not([hidden])').length
   }
@@ -169,9 +173,10 @@ export const DASHBOARD_SCRIPT = `(() => {
     if (ow && ow.value) q.set('owner', ow.value)
     if (gr && gr.checked) q.set('group', 'phase')
     if (br && br.value) q.set('branches', br.value)
+    if (sp && sp.checked) q.set('sprint', 1)
     location.hash = 'board' + (String(q) ? '?' + q : '')
   }
-  for (const c of [ph, st, gr, ow, br]) if (c) c.addEventListener('change', write)
+  for (const c of [ph, st, gr, ow, br, sp]) if (c) c.addEventListener('change', write)
   // #inbox?who=: the items naming that person or nobody.
   const iw = $('inbox-who')
   if (iw) iw.onchange = () => location.hash = 'inbox?who=' + iw.value
@@ -260,6 +265,7 @@ ${SPEC_STYLE}
 ${MODULES_STYLE}
 ${TEAM_STYLE}
 ${INBOX_STYLE}
+${SPRINT_STYLE}
 `
 
 function OVERVIEW_STYLE(): string {

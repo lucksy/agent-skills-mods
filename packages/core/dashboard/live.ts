@@ -44,6 +44,16 @@ export function tickButton(id: string, index: number, done: boolean, html: strin
   return `<button type="button" class="act tick" ${attrs('tick', { id, index })} data-k="${keyOf('tick', `${id}-${index}`)}" aria-pressed="${done}"><span class="g" aria-hidden="true">${done ? '✓' : '☐'}</span><span><span class="vh">${esc(id)}: </span>${html}</span></button>`
 }
 
+/**
+ * A task's size as a group of toggles (ceremonies T12): S, M, L and – (none),
+ * the current one pressed. Each posts `size`; pressing the current one changes nothing.
+ */
+export function sizePicker(id: string, size: string | undefined): string {
+  const opt = (v: string, label: string, name: string) =>
+    `<button type="button" class="act sz-b" ${attrs('size', { id, size: v })} data-k="${keyOf('size', `${id}-${v}`)}" aria-pressed="${(size ?? '-') === v}" aria-label="${esc(name)}">${label}</button>`
+  return `<span class="sz" role="group" aria-label="Size of ${esc(id)}"><span class="sz-l" aria-hidden="true">Size</span>${['S', 'M', 'L'].map(v => opt(v, v, `${v} size for ${id}`)).join('')}${opt('-', '–', `No size for ${id}`)}</span>`
+}
+
 /** The row of buttons under a card or an item. */
 export const actRow = (buttons: string[]) => (buttons.length ? `<div class="acts">${buttons.join('')}</div>` : '')
 
@@ -170,6 +180,8 @@ body{padding-bottom:72px}
 .tick:hover{border-color:var(--line2)}
 .tick[aria-pressed=true]>span:last-child{color:var(--ink3);text-decoration:line-through}.tick[aria-pressed=true] .g{color:var(--done)}
 .c-boxes{margin-top:var(--s2);font-size:12.5px}.c-boxes summary{cursor:pointer;color:var(--ink2)}.c-boxes ul{list-style:none;margin:var(--s1) 0 0;padding:0}
+.sz{display:inline-flex;align-items:center;gap:2px}.sz-l{font-size:12.5px;color:var(--ink2);margin-right:var(--s1)}
+.sz-b{min-width:28px;padding:var(--s1) var(--s2)}.sz-b[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .live-msg{position:fixed;left:50%;bottom:var(--s4);transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);background:var(--ink);color:var(--bg);border-radius:var(--r);padding:var(--s2) var(--s3);font-size:13.5px;z-index:3}
 .live-msg:empty{padding:0}
 `

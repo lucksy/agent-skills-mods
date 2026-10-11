@@ -19,7 +19,8 @@ import { inbox, type InboxItem } from './inbox'
 import type { TaskSize, Was } from './format'
 import { BACKLOG_FILE } from './backlog'
 import { pointsOf } from './size'
-import { sprintNow, versionsOf, type SprintNow } from './sprint'
+import { sprintNow, versionsOf, type SprintNow, type TodoVersion } from './sprint'
+import { gatherRetro, retro, type Retro } from './retro'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -75,6 +76,10 @@ export type StateParts = {
   backlog?: Backlog | null
   /** ceremonies (C5): the sprint in tasks/todo.md's front matter as of today; absent or null without one. */
   sprint?: SprintNow | null
+  /** ceremonies (T12): tasks/todo.md's committed copies since the sprint began, for the Sprint tab's burn-down and review; absent without a sprint. */
+  sprintCopies?: TodoVersion[] | null
+  /** ceremonies (T12): the retro of the sprint once it has ended, for the Sprint tab; absent or null otherwise. */
+  retro?: Retro | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -137,7 +142,10 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
   if (backlogText !== null) parts.backlog = parseBacklog(backlogText)
   // A sprint's scope added comes from tasks/todo.md's copies since it began (ceremonies T6).
   const sprint = todoText !== null ? list?.meta?.sprint : undefined
-  if (list && sprint) parts.sprint = sprintNow(list, versionsOf(io.run ? await readCopiesSince(io.run, 'tasks/todo.md', { since: sprint.start }) : []), today)
+  if (list && sprint) {
+    parts.sprintCopies = versionsOf(io.run ? await readCopiesSince(io.run, 'tasks/todo.md', { since: sprint.start }) : [])
+    parts.sprint = sprintNow(list, parts.sprintCopies, today)
+  }
   if (opts.branches && io.run) {
     const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
     parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
@@ -164,6 +172,8 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
     const n = out && out.exitCode === 0 ? Number(out.stdout.trim()) : NaN
     if (Number.isFinite(n)) parts.commits = n
   }
+  // The Sprint tab's retro (T12), once the sprint has ended: what /progress retro prints, from the same reads.
+  if (parts.sprint?.phase === 'ended') parts.retro = retro(await gatherRetro(io, list, parts.snapshots, today))
   parts.history = src?.gitNote
     ? `history from today: ${src.gitNote}`
     : !src
