@@ -6,7 +6,7 @@
 // read (J3): `agent-skills-progress --json` prints it. Pure.
 
 import { forecast, dayOf, shortDay, snapshotOf, type Forecast, type Snapshot } from './forecast'
-import { combine, earliestDays, gitSources, type Runner } from './history'
+import { combine, earliestDays, gitSources, readCopiesSince, type Runner } from './history'
 import { parseBacklog, parsePlan, parseSpec, parseTasks, withBlockers, type Backlog, type PlanDoc, type Spec, type Task, type TaskList } from './parse'
 import { decisions } from './report'
 import { alerts, specApproval, specFiles, taskDates, type TaskDate } from './view'
@@ -19,6 +19,7 @@ import { inbox, type InboxItem } from './inbox'
 import type { TaskSize, Was } from './format'
 import { BACKLOG_FILE } from './backlog'
 import { pointsOf } from './size'
+import { sprintNow, versionsOf, type SprintNow } from './sprint'
 
 /** How a project is read: the plugin's file system, Node's in the CLI, a fixture in tests. */
 export type ProjectIo = {
@@ -72,6 +73,8 @@ export type StateParts = {
   since?: Since | null
   /** ceremonies (C2): tasks/backlog.md, parsed; absent or null when there is none. */
   backlog?: Backlog | null
+  /** ceremonies (C5): the sprint in tasks/todo.md's front matter as of today; absent or null without one. */
+  sprint?: SprintNow | null
 }
 
 /** State v1: the parts, plus what follows from them. */
@@ -132,6 +135,9 @@ export async function buildState(io: ProjectIo, opts: { specFile?: string; branc
   const parts: StateParts = { cwd: io.cwd, today, specs, specFile, list, listFile, plan, forecast: null, snapshots: [], dates: {}, history: null, team, me: whoIs(team, email), modules: await readModules(io, specs, todoText) }
   const backlogText = await io.read(BACKLOG_FILE)
   if (backlogText !== null) parts.backlog = parseBacklog(backlogText)
+  // A sprint's scope added comes from tasks/todo.md's copies since it began (ceremonies T6).
+  const sprint = todoText !== null ? list?.meta?.sprint : undefined
+  if (list && sprint) parts.sprint = sprintNow(list, versionsOf(io.run ? await readCopiesSince(io.run, 'tasks/todo.md', { since: sprint.start }) : []), today)
   if (opts.branches && io.run) {
     const fetchedAt = (await io.fetchedAt?.().catch(() => null)) ?? null
     parts.branches = await readBranches(io.run, { file: 'tasks/todo.md', now: io.now, here: todoText === null ? null : parseTasks(todoText), fetchedAt })
@@ -233,6 +239,8 @@ export type StateJson = {
   inbox: InboxItem[]
   /** ceremonies (C2): the backlog's items and their points; the key is left out when there is no tasks/backlog.md. */
   backlog?: { file: string; points: number; items: { id: string; title: string; size: TaskSize | null; was: Was | null; deps: string[]; open: string[] }[] }
+  /** ceremonies (C5): the sprint now (dates, days left, committed against done, scope added); the key is left out without a sprint. */
+  sprint?: SprintNow
 }
 
 export function stateJson(s: State): StateJson {
@@ -295,5 +303,6 @@ export function stateJson(s: State): StateJson {
           },
         }
       : {}),
+    ...(s.sprint ? { sprint: s.sprint } : {}),
   }
 }

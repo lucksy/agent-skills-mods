@@ -9,6 +9,7 @@ import {
   earliestDays,
   emptySource,
   gitSources,
+  readCopiesSince,
   snapshotsFromDoneDays,
   type Backfill,
   type GitSources,
@@ -42,6 +43,7 @@ import { checkpointWarning, gateWarning } from '../packages/core/gate'
 import { editorArgvs } from '../packages/core/specedit'
 import { runAction, type ActionName, type ActionResult } from '../packages/core/actions'
 import { BACKLOG_FILE, backlogText } from '../packages/core/backlog'
+import { sprintLine, sprintNow, sprintText, versionsOf, type SprintNow, type TodoVersion } from '../packages/core/sprint'
 import { MIN_NODE, nodeTooOld, serveArgv, servedUrl, shellLine } from '../packages/core/serve'
 import { addAttributes, addDriverConfig, ATTRIBUTE_LINES, driverSection, driverStatus, driverStatusText, removeAttributes, removeDriverConfig } from '../packages/core/mergedriver'
 import { applyEdit, backdateDoc, backdateTodo, driftedSpec, editBetween, FORMAT_RULES, planName, readFrontMatter, setFrontMatter, stampDoc, stampTodo, type TaskState } from '../packages/core/format'
@@ -111,6 +113,8 @@ const chartReveal = atom({ plugin: 'agent-skills-mods', key: 'chartReveal' } as 
 const branchBoard = atom({ plugin: 'agent-skills-mods', key: 'branchBoard' } as const, null as BranchBoard | null)
 /** What the session's first look found (team-view T9); null until then, so the line shows once a session. */
 const sinceLook = atom({ plugin: 'agent-skills-mods', key: 'sinceLook' } as const, null as Since | null)
+/** tasks/todo.md's committed copies since the running sprint began (ceremonies T6), for its scope added; null without a sprint. */
+const sprintCopies = atom({ plugin: 'agent-skills-mods', key: 'sprintCopies' } as const, null as { start: string; versions: TodoVersion[] } | null)
 
 const SPEC_PANE = 'asm-spec'
 const BOARD_PANE = 'asm-board'
@@ -573,6 +577,10 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
 
   const value: AsmProject = { cwd, spec, list, listFile, plan, forecast: fc, history: backfilled, snapshots, dates, specFile, specFiles: files, team: await readTeam($, cwd) }
   await update($, project, () => value)
+  // A sprint's history is read when it is first seen; turn ends keep it up to date (ceremonies T6).
+  const sprint = listFile === 'tasks/todo.md' ? list?.meta?.sprint : undefined
+  if (!sprint) await update($, sprintCopies, () => null)
+  else if ((await read($, sprintCopies))?.start !== sprint.start) await readSprint($, value).catch(() => undefined)
   $.ui.status(statusText(spec, list))
   return value
 }
@@ -729,6 +737,43 @@ async function readBoard($: $, p: AsmProject): Promise<BranchBoard | null> {
   const board = await readBranches(run, { file: 'tasks/todo.md', now, here, fetchedAt: await fetchedAt($, p.cwd), cache: branchCopies })
   await update($, branchBoard, () => board)
   return board
+}
+
+/** Each commit's copy of tasks/todo.md read for the sprint, once a session (ceremonies T6). */
+const sprintCache = new Map<string, string | null>()
+
+/**
+ * tasks/todo.md's committed copies since the running sprint began, kept for the
+ * band and the board pane (ceremonies T6). One `git log`, and `cat-file` only
+ * for commits not read before. Nothing without a sprint.
+ */
+async function readSprint($: $, p: AsmProject): Promise<void> {
+  const sprint = p.listFile === 'tasks/todo.md' ? p.list?.meta?.sprint : undefined
+  if (!sprint) return void (await update($, sprintCopies, () => null))
+  const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
+  const versions = versionsOf(await readCopiesSince(run, 'tasks/todo.md', { since: sprint.start, cache: sprintCache }))
+  await update($, sprintCopies, () => ({ start: sprint.start, versions }))
+}
+
+/** The sprint now (ceremonies C5), from the list and the copies last read; null without a sprint. */
+async function currentSprint($: $, p: AsmProject | null): Promise<SprintNow | null> {
+  const sprint = p?.listFile === 'tasks/todo.md' ? p.list?.meta?.sprint : undefined
+  if (!p?.list || !sprint) return null
+  const copies = await read($, sprintCopies)
+  return sprintNow(p.list, copies?.start === sprint.start ? copies.versions : [], dayOf(await $.clock.now()))
+}
+
+/**
+ * `/progress sprint` (C5): the sprint now. `/progress sprint start 2026-10-24 T4 T5`
+ * (C1): writes `sprint:` and `commit:`, starting today.
+ */
+async function sprintCommand($: $, words: string[]): Promise<string> {
+  const p = await load($)
+  const sub = words[0]?.toLowerCase()
+  if (sub === 'start') return (await act($, p, 'sprint-start', { end: words[1] ?? '', ids: words.slice(2) })).reply
+  if (sub) return 'Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).'
+  await readSprint($, p)
+  return sprintText(await currentSprint($, p), p.list, dayOf(await $.clock.now()))
 }
 
 /** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
@@ -1556,13 +1601,14 @@ export const register: Register = (on, options) => {
       if (verb === 'size') return reply(await sizeCommand($, words))
       if (verb === 'backlog') return reply(await backlogCommand($, e.args.trim().replace(/^\S+\s*/, '')))
       if ((verb === 'pull' || verb === 'defer') && words.length <= 1) return reply((await act($, await load($), verb, { id: words[0] ?? '' })).reply)
+      if (verb === 'sprint') return reply(await sprintCommand($, words))
     }
     if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|sprint [start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1650,6 +1696,8 @@ export const register: Register = (on, options) => {
     if (e.agentId === undefined) {
       // A commit, checkout or fetch this turn changes the other branches; unchanged copies are not read again.
       if (p && (await read($, branchBoard))) await readBoard($, p).catch(() => undefined)
+      // A commit this turn moves the sprint's scope added; unchanged copies are not read again.
+      if (p && (await read($, sprintCopies))) await readSprint($, p).catch(() => undefined)
       if (p) await keepSeen($, p).catch(() => undefined)
       await update($, allowOverwrite, () => false)
       await update($, step, () => null)
@@ -1737,7 +1785,9 @@ export const register: Register = (on, options) => {
     const list = p?.list ?? null
     const t = list?.current
     const ask = p?.history?.logs === 'ask'
-    if ((!list || !t) && !ask) return next(e)
+    // The running sprint's line (ceremonies T6), after the task's own; alone once every task is done.
+    const sprint = await currentSprint($, p)
+    if ((!list || !t) && !ask && !sprint) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
     // The current task under way on another branch too, or with another owner (team-view T4).
@@ -1761,7 +1811,17 @@ export const register: Register = (on, options) => {
               {openCounts(t)}
             </Text>
             {t.checkpoint && <Text dimColor>checkpoint after this task</Text>}
+            {sprint && (
+              <Text dimColor wrap="truncate-end">
+                {sprintLine(sprint)}
+              </Text>
+            )}
           </Box>
+        )}
+        {sprint && !(list && t) && (
+          <Text dimColor wrap="truncate-end">
+            {sprintLine(sprint)}
+          </Text>
         )}
         {warnings.map(w => (
           <Text color="warning" wrap="truncate-end">
@@ -2007,6 +2067,7 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
     const color = { done: 'success', now: 'warning', muted: 'subtle', blocked: 'error', accent: 'claude', needsYou: 'permission', text: undefined } as const
     const pct = Math.round((list.done / list.total) * 100)
     const where = phaseOf(list)
+    const sprint = await currentSprint($, p)
     // A row: what it is on the left, its state on the right.
     const line = (key: string, left: unknown, right: unknown, opts: { isCurrent?: boolean } = {}) => (
       <Box key={key} flexDirection="row" justifyContent="space-between" gap={1}>
@@ -2033,6 +2094,11 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
           </Text>,
         )}
         <Text color="subtle">{'─'.repeat(width)}</Text>
+        {sprint && (
+          <Text dimColor wrap="truncate-end">
+            {sprintLine(sprint)}
+          </Text>
+        )}
         {rows.map((row, i) =>
           row.kind === 'phase' ? (
             <Box key={`p${i}`} marginTop={i === 0 ? 0 : 1}>

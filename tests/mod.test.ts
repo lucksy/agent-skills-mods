@@ -1425,6 +1425,39 @@ test('/progress size writes and clears the Size line and says so; a bad size or 
   expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
 })
 
+// ceremonies T6 (C1, C5): starting a sprint, and the sprint now in the reply, the band and the board pane.
+test('/progress sprint start writes sprint: and commit:; /progress sprint, the band and the board pane show it', async ($, on) => {
+  // Yesterday's commit had no T4: added since, it is scope added.
+  const yesterday = TODO_TEMPLATE.slice(0, TODO_TEMPLATE.indexOf('## Task 4'))
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  world(on, files, gitOutput([['2026-10-08', yesterday]]))
+  expect((await $.command.run(run('sprint'))).text).toBe('No sprint running. To start one that ends in two weeks: /progress sprint start 2026-10-22 T2 T3 T4')
+  const props = { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props })
+  expect(await band.find({ text: /^sprint/ })).toBeUndefined()
+
+  expect((await $.command.run(run('sprint start 2026-10-01 T2'))).text).toBe('2026-10-01 is before today (2026-10-09): a sprint starts today and ends on or after it.')
+  expect((await $.command.run(run('sprint start 2026-10-16'))).text).toBe('Say which tasks it commits to: /progress sprint start 2026-10-16 T4 T5 T7.')
+  expect((await $.command.run(run('sprint start 2026-10-16 T1'))).text).toBe('T1 Monorepo scaffold is done already: a sprint commits to work still to do.')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
+
+  expect((await $.command.run(run('sprint start 2026-10-16 T2 t3'))).text).toBe('Sprint started: 9 Oct – 16 Oct, 6 working days. Committed T2, T3 (2 points).')
+  expect(files[`${CWD}/tasks/todo.md`]).toBe(`---\nsprint: 2026-10-09..2026-10-16\ncommit: T2, T3\n---\n${TODO_TEMPLATE}`)
+  expect((await $.command.run(run('sprint'))).text!.split('\n')).toEqual([
+    'Sprint · 9 Oct – 16 Oct · 6 of 6 working days left',
+    'Committed: 0 of 2 done · 0 of 2 points',
+    '  ○ T2 Prisma schema for keys',
+    '  ○ T3 Issue and revoke keys',
+    'Added since the start: +1, 0 done',
+    '  ○ T4 Rate limit per key',
+  ])
+  await band.redraw(props)
+  expect(await band.find({ text: /^sprint · 6d left · 0\/2 committed · \+1$/ })).toBeDefined()
+  const board = await mountBoard($)
+  expect(await board.find({ text: /^sprint · 6d left · 0\/2 committed · \+1$/ })).toBeDefined()
+  expect((await $.command.run(run('sprint stop'))).text).toBe('Use: /progress sprint, or /progress sprint start 2026-10-24 T4 T5 (it starts today and ends that day).')
+})
+
 // ceremonies T3: the backlog, listed and added to; the file is made on the first add.
 test('/progress backlog lists the items with sizes; backlog add appends the next B id, making the file first', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }

@@ -202,6 +202,25 @@ export function setSize(text: string, id: string, size: TaskSize | null): string
   return lines.join(eol)
 }
 
+/**
+ * A sprint (ceremonies, C1 and C5): `sprint: 2026-10-13..2026-10-24` and
+ * `commit: T4, T5, T7` in tasks/todo.md's front matter, written by `/progress sprint start`.
+ */
+export type Sprint = { start: string; end: string; commit: string[] }
+
+/** The sprint a front matter's fields name, or null without a well-formed `sprint:` line. */
+export function parseSprint(fields: Record<string, string>): Sprint | null {
+  const m = /^(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})$/.exec(fields.sprint ?? '')
+  if (!m) return null
+  const commit = [...new Set((fields.commit ?? '').split(/[\s,]+/).map(id => id.toUpperCase()).filter(id => /^T\d+$/.test(id)))]
+  return { start: m[1]!, end: m[2]!, commit }
+}
+
+/** `/progress sprint start` (ceremonies T6): the text with `sprint:` and `commit:` set, replacing a previous sprint. Every other byte is kept. */
+export function setSprint(text: string, s: Sprint): string {
+  return setFrontMatter(text, { sprint: `${s.start}..${s.end}`, commit: s.commit.join(', ') })
+}
+
 /** A backlog item's old task number (ceremonies, C2): `**Was:** T9 · deferred 2026-10-14 @amila`. */
 export type Was = { id: string; day: string | null; by: string | null }
 
@@ -545,6 +564,7 @@ export const FORMAT_RULES = [
   '- A checkpoint the person has reviewed has `**Signed off:** @handle YYYY-MM-DD` on the line below its heading, and its review box ticked (`/progress signoff`). Never sign off for anyone.',
   '- A task may have a size on its own line under its Status line: `**Size:** S`, `M` or `L` (S = ½ point, M = 1, L = 2; a task without one counts as 1). Sizes are set by people (`/progress size T4 M`); keep the line when you rewrite the section, and don\'t add or change one unless asked.',
   '- tasks/backlog.md, when there is one, holds work not yet scheduled: `## B<N>: title` items in the task shape (boxes, `**Size:**`, `**Dependencies:**` naming T ids). An item deferred from tasks/todo.md keeps its old number on a `**Was:** T9 · deferred YYYY-MM-DD @handle` line. B numbers are stable ids too; add items with `/progress backlog add "title" [S|M|L]`. The next free task number counts those `Was:` numbers as well, so a deferred number is never given to a new task. Tasks move between the two files with `/progress pull B3` and `/progress defer T9`; don\'t move them by hand unless asked.',
+  '- A running sprint is two lines in tasks/todo.md\'s front matter: `sprint: YYYY-MM-DD..YYYY-MM-DD` (start and end) and `commit: T4, T5, T7` (the tasks committed to). Only `/progress sprint start` writes them; keep both lines when you rewrite the front matter, and never start, change or end a sprint unless asked.',
 ].join('\n')
 
 // ------------------------------------------------------------------ the person's own changes

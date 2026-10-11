@@ -163,7 +163,7 @@ describe('bad requests', () => {
       [[1, 2], 'Send JSON: { action, args, rev }.'],
       [{ action: 'start', args: { id: 'T3' } }, 'Send the rev the page was loaded with.'],
       [{ action: 'start', args: 'T3', rev }, 'Send args as an object.'],
-      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add, pull, defer.'],
+      [{ action: 'rename', args: {}, rev }, 'No action "rename". Actions: start, done, block, unblock, tick, claim, assign, unassign, review, handoff, sign, signoff, answer, size, backlog-add, pull, defer, sprint-start.'],
       [{ action: 'start', args: { id: 4 }, rev }, 'Say which task: /progress start T4.'],
       [{ action: 'start', args: { id: 'T9' }, rev }, 'No "## Task 9:" section in tasks/todo.md. Tasks: T1, T2, T3, T4.'],
       [{ action: 'tick', args: { id: 'T3', index: 7 }, rev }, 'No box 8 in T3.'],
@@ -187,7 +187,7 @@ describe('bad requests', () => {
 
 describe('each action, through POST /action', () => {
   test('the 17 actions are the table\'s', () => {
-    expect(ACTION_NAMES.length).toBe(17)
+    expect(ACTION_NAMES.length).toBe(18)
   })
 
   test('pull and defer write both files; a page loaded before either changed gets a 409 and writes neither (ceremonies T4)', async () => {
@@ -208,6 +208,18 @@ describe('each action, through POST /action', () => {
     const back = await run(p, 'pull', { id: 'B2' })
     expect([back.status, back.json.reply]).toEqual([200, 'B2 Rate limit per key is T4 in tasks/todo.md now, its old number, after the last task.'])
     expect(p.disk['tasks/backlog.md']).toBe('# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n')
+  })
+
+  test('sprint-start writes sprint: and commit: into the front matter; a stale page gets a 409 (ceremonies T6)', async () => {
+    const p = project()
+    const r = await run(p, 'sprint-start', { end: '2026-10-23', ids: ['T3', 'T4'] })
+    expect([r.status, r.json.reply]).toEqual([200, 'Sprint started: 11 Oct – 23 Oct, 10 working days. Committed T3, T4 (2 points).'])
+    expect(p.disk['tasks/todo.md']).toBe(`---\nsprint: 2026-10-11..2026-10-23\ncommit: T3, T4\n---\n${TODO_TEMPLATE}`)
+    const q = project()
+    const { rev } = await readRev(q.io)
+    q.disk['tasks/todo.md'] += '\n'
+    expect((await handle(post({ action: 'sprint-start', args: { end: '2026-10-23', ids: ['T3'] }, rev }), q.io)).status).toBe(409)
+    expect(q.writes).toEqual([])
   })
 
   test('backlog-add appends to tasks/backlog.md, which is part of the rev (ceremonies T3)', async () => {

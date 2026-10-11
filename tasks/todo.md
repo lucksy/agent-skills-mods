@@ -131,18 +131,18 @@ created: 2026-10-11
 **Estimated scope:** Small
 
 ## Task 6: Starting a sprint, and the sprint now
-**Status:** todo
+**Status:** done · started 2026-10-11 · done 2026-10-11
 
 **Description:** The `sprint-start` action writes `sprint: <today>..<end>` and `commit: T4, T5, …` into `todo.md`'s front matter, replacing a previous sprint. It refuses unknown or done tasks and an end date before today. `sprintNow` works out the working days left (Mon–Fri), committed against done (as tasks and points), and the scope added: tasks not in `commit:` that first appear in `todo.md`'s history after the start. That history comes from `history.ts`'s reader, limited to commits since the start. The band and the board pane show `sprint · 4d left · 5/8 committed · +1`. `/progress sprint` and `--sprint` print the full view, and `sprint` joins `--json`. With no `sprint:`, nothing shows.
 
 **Acceptance criteria:**
-- [ ] `sprint start` writes exactly the two front-matter lines and keeps every other byte; each refusal is tested
-- [ ] Scope added is right for a task added before the start, one added after, and one pulled after, in a fixture history
-- [ ] With no sprint, the band, the board pane and `--json` are unchanged; after the end date the line reads `sprint ended <date>`
+- [x] `sprint start` writes exactly the two front-matter lines and keeps every other byte; each refusal is tested
+- [x] Scope added is right for a task added before the start, one added after, and one pulled after, in a fixture history
+- [x] With no sprint, the band, the board pane and `--json` are unchanged; after the end date the line reads `sprint ended <date>`
 
 **Verification:**
-- [ ] Tests pass: `claude plugin test .`
-- [ ] Tests pass: `bash scripts/test.sh` (a temporary repo with commits before and after a start)
+- [x] Tests pass: `claude plugin test .`
+- [x] Tests pass: `bash scripts/test.sh` (a temporary repo with commits before and after a start)
 
 **Dependencies:** T1
 

@@ -334,3 +334,41 @@ export async function gitSources(run: Runner, file: string, list: TaskList): Pro
     return none('git is not available')
   }
 }
+
+// ------------------------------------------------------------ copies for sprints (ceremonies T6)
+
+/** A committed copy of a file: its commit, the day it was committed (UTC) and its text. */
+export type Copy = { hash: string; day: string; text: string }
+
+/**
+ * The committed copies of `file`, the last of each day, newest first: those on
+ * or after `since`, and the newest one before it (what the file held when that
+ * day began). Without `since`, every copy back to where the file began. `cache`
+ * maps a commit to its copy, so a commit already read is not read again.
+ * Reads git objects already here; empty outside a repository.
+ */
+export async function readCopiesSince(run: Runner, file: string, opts: { since?: string; cache?: Map<string, string | null> } = {}): Promise<Copy[]> {
+  try {
+    const log = await run(logArgv(file))
+    if (log.exitCode !== 0) return []
+    const all = lastPerDay(parseLog(log.stdout))
+    const from = opts.since ? all.findIndex(c => dayOf(c.ms) < opts.since!) : -1
+    const commits = from < 0 ? all : all.slice(0, from + 1)
+    const cache = opts.cache ?? new Map<string, string | null>()
+    const wanted = commits.filter(c => !cache.has(c.hash))
+    if (wanted.length) {
+      const texts = await readCopies(run, wanted, file)
+      texts.forEach((t, i) => cache.set(wanted[i]!.hash, t))
+    }
+    const out: Copy[] = []
+    for (const c of commits) {
+      const text = cache.get(c.hash)
+      // A commit without the file, or one past where the read stopped, ends the walk back.
+      if (text === null || text === undefined) break
+      out.push({ hash: c.hash, day: dayOf(c.ms), text })
+    }
+    return out
+  } catch {
+    return []
+  }
+}

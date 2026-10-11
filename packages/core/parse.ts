@@ -1,7 +1,7 @@
 // Parsers for the files agent-skills writes: SPEC.md, tasks/plan.md and tasks/todo.md.
 // Pure functions over text, so the mod, its tests and any other tool can share them.
 
-import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseSizeLine, parseStatusLine, parseWasLine, readFrontMatter, type Answer, type Handoff, type SignOff, type TaskSize, type TaskState, type Was } from './format'
+import { parseAnswerLine, parseHandoffLine, parseSignedOffLine, parseSizeLine, parseStatusLine, parseSprint, parseWasLine, readFrontMatter, type Answer, type Handoff, type SignOff, type Sprint, type TaskSize, type TaskState, type Was } from './format'
 import { parseApprovals, type Signature } from './approvals'
 
 export type Box = { text: string; isDone: boolean }
@@ -59,8 +59,8 @@ export type TaskList = {
   total: number
   /** The first task marked in progress, else the first that is neither done, waiting nor blocked. */
   current: Task | null
-  /** The task list's front matter (the progress format): its plan name and the day it was created. */
-  meta?: { plan?: string; created?: string }
+  /** The task list's front matter (the progress format): its plan name, the day it was created and its sprint (ceremonies, C5). */
+  meta?: { plan?: string; created?: string; sprint?: Sprint }
 }
 
 /** `[ ]` open, `[x]` done, `[~]` under way (counted as open in a section, as under way in the index). */
@@ -247,7 +247,11 @@ function readList(text: string, heading: RegExp, prefix: 'T' | 'B'): TaskList {
 function withMeta(list: TaskList, text: string): TaskList {
   const { fields, hasFrontMatter } = readFrontMatter(text)
   if (!hasFrontMatter) return list
-  return { ...list, meta: { plan: fields.plan || undefined, created: /^\d{4}-\d{2}-\d{2}$/.test(fields.created ?? '') ? fields.created : undefined } }
+  const meta: NonNullable<TaskList['meta']> = { plan: fields.plan || undefined, created: /^\d{4}-\d{2}-\d{2}$/.test(fields.created ?? '') ? fields.created : undefined }
+  // The key only when there is a sprint (ceremonies T6), so a list without one reads as before.
+  const sprint = parseSprint(fields)
+  if (sprint) meta.sprint = sprint
+  return { ...list, meta }
 }
 
 /**
