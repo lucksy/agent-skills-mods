@@ -200,4 +200,6 @@ export function mergeTodo(base: string, ours: string, theirs: string): { text: s
 
 - Q1: Can a mod start a long-running process? If it can, `/progress dashboard live` starts `--serve` itself. If it can't, the command prints the exact `node … --serve` line to run (or `! node …` for Claude Code). The first task checks this against the mods API.
 - Q2: Which refs count as "the team"? This spec reads local branches plus `refs/remotes/*` with a commit in the last 30 days, up to 25 refs, skipping refs that point at the same commit as the current branch. Should the limit or the window be a setting?
+  → A: No setting yet, until someone actually needs a different window or limit · @lucksy 2026-10-11
 - Q3: For the merge driver's "later Status wins", should *blocked* beat a later *in progress*? A block is usually news the other side needs. This spec uses the later stamp only.
+  → A: Keep "later stamp wins". A blocked Status line has no date of its own to compare against, and the blocking question stays in plan.md either way, so that news isn't lost · @lucksy 2026-10-11
