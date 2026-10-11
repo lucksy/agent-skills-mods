@@ -92,7 +92,7 @@ Tasks are tracked in [tasks/todo.md](todo.md).
 - [x] Task 13: Docs, rules, README, 0.39.0 and final checks
 
 ### Checkpoint: Complete
-- [ ] Every success criterion in the spec is met; review with human
+- [x] Every success criterion in the spec is met; review with human
 
 ## Risks and Mitigations
 

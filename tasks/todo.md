@@ -56,9 +56,10 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Checkpoint: Foundation
+**Signed off:** @lucksy 2026-10-11
 - [x] All tests pass: `claude plugin test .`, `bash scripts/test.sh`, `bash statusline/test.sh`
 - [x] Every existing command replies and writes exactly as before
-- [ ] Review with human before proceeding
+- [x] Review with human before proceeding
 
 ## Phase 2: The team across branches
 
@@ -159,9 +160,10 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Checkpoint: Branches
+**Signed off:** @lucksy 2026-10-11
 - [x] All tests pass
 - [x] On this repo with two real branches, `/progress branches` shows both, and starting the same task on both shows the collision in the band
-- [ ] Review with human before proceeding
+- [x] Review with human before proceeding
 
 ## Phase 3: Merge driver
 
@@ -211,9 +213,10 @@ created: 2026-10-11
 **Estimated scope:** Medium
 
 ## Checkpoint: Merge
+**Signed off:** @lucksy 2026-10-11
 - [x] All tests pass
 - [x] On a scratch clone of this repo, install the driver and merge two branches that each edited `tasks/todo.md`: the result is clean
-- [ ] Review with human before proceeding
+- [x] Review with human before proceeding
 
 ## Phase 4: Since you last looked
 
@@ -321,10 +324,11 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Small
 
 ## Checkpoint: Live
+**Signed off:** @lucksy 2026-10-11
 - [x] All tests pass
 - [x] In Chrome, Sign, Answer and Claim change the markdown and the page reloads; a stale tab gets the 409
 - [x] Two people (two git emails) sign a spec that needs two roles, through the live dashboard (carried over from format-v2's Approvals checkpoint)
-- [ ] Review with human before proceeding
+- [x] Review with human before proceeding
 
 ## Phase 6: Close
 
@@ -353,6 +357,7 @@ A small script, under 4 KB, sends each action, shows the reply, reloads the page
 **Estimated scope:** Medium
 
 ## Checkpoint: Complete
+**Signed off:** @lucksy 2026-10-11
 - [x] All tests pass
 - [x] Every success criterion in the spec is met
-- [ ] Review with human before proceeding
+- [x] Review with human before proceeding
