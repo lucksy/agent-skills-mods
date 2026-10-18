@@ -128,12 +128,12 @@ const DASHBOARD_FILE = 'tasks/progress-dashboard.html'
 const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/](plan|todo)\.md)$/
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
-type $ = EngineInterface
+type Engine = EngineInterface
 
 /** Text cut to a column width with an ellipsis, then padded to it. */
 const fitTo = (text: string, w: number) => (text.length > w ? `${text.slice(0, w - 1)}…` : text.padEnd(w))
 
-async function readText($: $, path: string): Promise<string | null> {
+async function readText($: Engine, path: string): Promise<string | null> {
   try {
     if (!(await $.fs.exists(path))) return null
     const text = await $.fs.read(path)
@@ -152,12 +152,12 @@ type Sources = GitSources & { logs: SourceData; logsChoice: LogsChoice }
 const sourcesKey = (cwd: string) => `sources:v5:${cwd}`
 
 /** Git's two sources for the task list (F5), through the session's process runner. */
-function fromGit($: $, file: string, list: TaskList): Promise<GitSources> {
+function fromGit($: Engine, file: string, list: TaskList): Promise<GitSources> {
   return gitSources((argv, opts) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 }), file, list)
 }
 
 /** Every session log of this project that writes the task list, as text. */
-async function readLogs($: $, cwd: string, file: string): Promise<string[]> {
+async function readLogs($: Engine, cwd: string, file: string): Promise<string[]> {
   const home = await $.env.get('HOME')
   const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home ? `${home}/.claude` : null)
   if (!configDir) return []
@@ -170,7 +170,7 @@ async function readLogs($: $, cwd: string, file: string): Promise<string[]> {
 }
 
 /** The answer to the session-log question (band button or /progress history logs on|off). */
-async function chooseLogs($: $, allow: boolean): Promise<string> {
+async function chooseLogs($: Engine, allow: boolean): Promise<string> {
   const p = await read($, project)
   const sources = p ? ((await $.store.get(sourcesKey(p.cwd))) as Sources | undefined) : undefined
   if (!p || !p.list || !p.listFile || !sources) return 'No task list here, so there is no history to read.'
@@ -188,7 +188,7 @@ async function chooseLogs($: $, allow: boolean): Promise<string> {
 }
 
 /** The build loop in plan terms (H3, F1): what the spinner says, and × for a failed test run. */
-async function trackStep($: $, e: { tool: unknown }, result: { isError?: boolean }) {
+async function trackStep($: Engine, e: { tool: unknown }, result: { isError?: boolean }) {
   try {
     const s = stepOf(String(e.tool), e as never)
     if (!s) return
@@ -225,13 +225,13 @@ function began(p: AsmProject, today: string): string {
 
 type Facts = { commits?: number; commitsDay?: string; commitsSince?: string; tests?: { passed: number; failed: number }; reviewed?: string }
 const factsKey = (cwd: string) => `facts:${cwd}`
-async function setFacts($: $, cwd: string, fn: (f: Facts) => Facts) {
+async function setFacts($: Engine, cwd: string, fn: (f: Facts) => Facts) {
   const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
   await $.store.set(factsKey(cwd), fn(f))
 }
 
 /** Commits since `since`, once a day (and after each commit the agent makes). */
-async function countCommits($: $, cwd: string, since: string, force = false) {
+async function countCommits($: Engine, cwd: string, since: string, force = false) {
   const today = dayOf(await $.clock.now())
   const f = ((await $.store.get(factsKey(cwd))) as Facts | undefined) ?? {}
   if (!force && f.commitsDay === today && f.commitsSince === since) return
@@ -247,7 +247,7 @@ async function countCommits($: $, cwd: string, since: string, force = false) {
 let notifyOn = true
 
 /** A native notification through the person's own channel, for the moments that need them. Never throws. */
-function notify($: $, title: string, text: string) {
+function notify($: Engine, title: string, text: string) {
   if (!notifyOn) return
   void $.ui.notify(text, { title: `agent-skills · ${title}` }).catch(() => undefined)
 }
@@ -257,7 +257,7 @@ let keepFormat = true
 
 /** Task state changes seen since the task list was last written, by task id (E1). */
 const pendingKey = (cwd: string) => `pending:${cwd}`
-async function readPending($: $, cwd: string): Promise<Record<string, Partial<TaskState>>> {
+async function readPending($: Engine, cwd: string): Promise<Record<string, Partial<TaskState>>> {
   return ((await $.store.get(pendingKey(cwd))) as Record<string, Partial<TaskState>> | undefined) ?? {}
 }
 
@@ -278,7 +278,7 @@ const SPEC_DOC = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md)$/
  * Spec drift: an agent edit that changes an approved spec puts it back to
  * draft, with a toast for the person and a note for the agent.
  */
-async function drift($: $, path: string, before: string | null, after: string): Promise<{ text: string; note: string | null }> {
+async function drift($: Engine, path: string, before: string | null, after: string): Promise<{ text: string; note: string | null }> {
   if (!keepFormat || before === null || !SPEC_DOC.test(path)) return { text: after, note: null }
   const next = driftedSpec(before, after)
   if (next === null) return { text: after, note: null }
@@ -291,7 +291,7 @@ async function drift($: $, path: string, before: string | null, after: string): 
 }
 
 /** A file's new text with the progress format kept: Status lines and front matter (E1). */
-async function formatted($: $, path: string, text: string): Promise<string> {
+async function formatted($: Engine, path: string, text: string): Promise<string> {
   if (!keepFormat) return text
   const today = dayOf(await $.clock.now())
   if (TODO_FILE.test(path)) {
@@ -306,7 +306,7 @@ async function formatted($: $, path: string, text: string): Promise<string> {
 }
 
 /** Writes the state changes nobody wrote into tasks/todo.md this turn (E1). */
-async function flushPending($: $): Promise<void> {
+async function flushPending($: Engine): Promise<void> {
   if (!keepFormat) return
   const cwd = await $.session.cwd()
   const pending = await readPending($, cwd)
@@ -326,7 +326,7 @@ async function flushPending($: $): Promise<void> {
  * writes: each file's first commit, the spec's approval (the plan's first
  * commit), each task's first done day. Empty where there is no git.
  */
-async function pastOf($: $, p: AsmProject): Promise<DoctorPast> {
+async function pastOf($: Engine, p: AsmProject): Promise<DoctorPast> {
   const files: DoctorPast['files'] = {}
   const first = async (file: string) => {
     try {
@@ -358,7 +358,7 @@ const stampTodoPast = (text: string, today: string, past: DoctorPast, changes?: 
     doneDays: past.doneDays,
   })
 
-async function applyFormat($: $): Promise<string> {
+async function applyFormat($: Engine): Promise<string> {
   const cwd = await $.session.cwd()
   const today = dayOf(await $.clock.now())
   const done: string[] = []
@@ -409,7 +409,7 @@ const FORMAT_BEGIN = '<!-- agent-skills-mods:progress-format -->'
 const FORMAT_END = '<!-- /agent-skills-mods:progress-format -->'
 
 /** The spec pane's Approve and Back to draft buttons (A1): the status in front matter. */
-async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
+async function setApproval($: Engine, status: 'approved' | 'draft'): Promise<void> {
   const p = await read($, project)
   if (!p?.specFile) return
   const path = `${p.cwd}/${p.specFile}`
@@ -428,7 +428,7 @@ async function setApproval($: $, status: 'approved' | 'draft'): Promise<void> {
 }
 
 /** The spec pane's Open in editor button: a windowed $VISUAL/$EDITOR, else the default app. */
-async function openInEditor($: $): Promise<void> {
+async function openInEditor($: Engine): Promise<void> {
   const p = await read($, project)
   if (!p?.specFile) return
   const path = `${p.cwd}/${p.specFile}`
@@ -444,7 +444,7 @@ async function openInEditor($: $): Promise<void> {
 /** The charts' draw-in: eight frames, about a third of a second, then the whole chart. */
 const SWEEP_FRAMES = 8
 let sweep: { cancel: () => void } | null = null
-async function sweepCharts($: $): Promise<void> {
+async function sweepCharts($: Engine): Promise<void> {
   sweep?.cancel()
   await update($, chartReveal, () => 0)
   let frame = 0
@@ -459,7 +459,7 @@ async function sweepCharts($: $): Promise<void> {
 }
 
 /** The spec pane's picker (A3): show another spec file. */
-async function pick($: $, file: string) {
+async function pick($: Engine, file: string) {
   await update($, specChoice, () => file)
   await load($)
 }
@@ -469,7 +469,7 @@ async function pick($: $, file: string) {
  * `xdg-open`, Windows `start`. Only where someone sits at this machine: a
  * terminal, VS Code or the desktop app, never a print run or a phone.
  */
-async function openFile($: $, path: string): Promise<boolean> {
+async function openFile($: Engine, path: string): Promise<boolean> {
   const surfaces = await $.session.surfaces().catch(() => [] as const)
   if (!surfaces.some(s => s === 'terminal' || s === 'vscode' || s === 'desktop')) return false
   for (const argv of [['open', path], ['xdg-open', path], ['cmd', '/c', 'start', '', path]]) {
@@ -484,7 +484,7 @@ async function openFile($: $, path: string): Promise<boolean> {
 const backfilling = new Set<string>()
 
 /** Re-reads the three files, records today's snapshot and updates the status entry. */
-async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProject> {
+async function load($: Engine, opts: { recheckLogs?: boolean } = {}): Promise<AsmProject> {
   const cwd = await $.session.cwd()
   const names = await $.fs.list(cwd).then(
     entries => entries.filter(f => f.kind === 'file').map(f => f.name),
@@ -592,7 +592,7 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
  * The spec gate (D2): a source edit while the spec awaits approval. The model is
  * told on every such edit; the person gets one toast a turn. Never blocks.
  */
-async function specGate<R extends { context?: readonly string[] }>($: $, path: string, result: R): Promise<R> {
+async function specGate<R extends { context?: readonly string[] }>($: Engine, path: string, result: R): Promise<R> {
   try {
     const p = (await read($, project)) ?? (await load($))
     const warning = gateWarning({ cwd: p.cwd, path, spec: p.spec, specFile: p.specFile, hasPlan: !!p.list })
@@ -608,7 +608,7 @@ async function specGate<R extends { context?: readonly string[] }>($: $, path: s
 }
 
 /** `/progress digest` and the panes' Copy digest button (G2). */
-async function copyDigest($: $, p: AsmProject): Promise<string> {
+async function copyDigest($: Engine, p: AsmProject): Promise<string> {
   const text = digestText(p)
   const copied = await $.ui.copy({ text }).catch(() => ({ isCopied: false as const, reason: 'refused' as const }))
   return `${text}\n\n${copied.isCopied ? 'Copied to the clipboard.' : `Not copied (${copied.reason}); select the lines above.`}`
@@ -619,7 +619,7 @@ async function copyDigest($: $, p: AsmProject): Promise<string> {
  * across branches and the commits naming tasks since the last working day.
  * Reads git objects already here: `for-each-ref`, `cat-file` and one `log`.
  */
-async function teamStandup($: $, p: AsmProject): Promise<string> {
+async function teamStandup($: Engine, p: AsmProject): Promise<string> {
   const today = dayOf(await $.clock.now())
   const board = await readBoard($, p)
   const commits = board ? await readCommits(argv => $.process.run(argv, { timeoutMs: 20_000 }), board, lastWorkingDay(today)) : []
@@ -633,7 +633,7 @@ async function teamStandup($: $, p: AsmProject): Promise<string> {
  * git email in tasks/team.md), on someone, or on anyone. Reviews on other
  * branches come from the board across branches; nothing is fetched or written.
  */
-async function inboxCommand($: $, p: AsmProject, words: string[]): Promise<string> {
+async function inboxCommand($: Engine, p: AsmProject, words: string[]): Promise<string> {
   const arg = words[0] ?? 'me'
   const who = /^(me|all)$/i.test(arg) ? arg.toLowerCase() : `@${arg.replace(/^@/, '')}`
   const team = await readTeam($, p.cwd)
@@ -659,7 +659,7 @@ async function inboxCommand($: $, p: AsmProject, words: string[]): Promise<strin
 }
 
 /** `/progress report` and the panes' Report button (G1). */
-async function writeReport($: $, p: AsmProject): Promise<string> {
+async function writeReport($: Engine, p: AsmProject): Promise<string> {
   if (!p.list || p.list.total === 0) return 'No task list yet, so there is nothing to report.'
   const path = `${p.cwd}/${REPORT_FILE}`
   const html = reportHtml({
@@ -676,7 +676,7 @@ async function writeReport($: $, p: AsmProject): Promise<string> {
 }
 
 /** Every spec file here, parsed: the one in focus is already. */
-async function allSpecs($: $, p: AsmProject): Promise<{ file: string; spec: Spec }[]> {
+async function allSpecs($: Engine, p: AsmProject): Promise<{ file: string; spec: Spec }[]> {
   const out = await Promise.all(
     p.specFiles.map(async file => {
       if (file === p.specFile && p.spec) return { file, spec: p.spec as Spec }
@@ -688,7 +688,7 @@ async function allSpecs($: $, p: AsmProject): Promise<{ file: string; spec: Spec
 }
 
 /** The capability map's modules (format-v2, F7): their specs, the active plan and the archived ones. */
-async function projectModules($: $, p: AsmProject, specs?: { file: string; spec: Spec }[]): Promise<ModuleRow[] | null> {
+async function projectModules($: Engine, p: AsmProject, specs?: { file: string; spec: Spec }[]): Promise<ModuleRow[] | null> {
   const io = {
     read: (rel: string) => readText($, `${p.cwd}/${rel}`),
     dirs: async (rel: string) => (await $.fs.list(`${p.cwd}/${rel}`).catch(() => [])).filter(e => e.kind === 'dir').map(e => e.name),
@@ -697,7 +697,7 @@ async function projectModules($: $, p: AsmProject, specs?: { file: string; spec:
 }
 
 /** `/progress modules [id]` (F7): every module of the capability map at a glance, or one module's run timeline. */
-async function modulesCommand($: $, id?: string): Promise<string> {
+async function modulesCommand($: Engine, id?: string): Promise<string> {
   const p = await load($)
   const rows = await projectModules($, p)
   if (rows && id) {
@@ -713,14 +713,14 @@ async function modulesCommand($: $, id?: string): Promise<string> {
 const branchCopies = new Map<string, string | null>()
 
 /** The git folder, as an absolute path; null outside a repository. */
-async function gitDir($: $, cwd: string): Promise<string | null> {
+async function gitDir($: Engine, cwd: string): Promise<string | null> {
   const r = await $.process.run(GIT_DIR_ARGV, { timeoutMs: 10_000 }).catch(() => null)
   const dir = r && r.exitCode === 0 ? r.stdout.trim() : ''
   return dir ? (dir.startsWith('/') ? dir : `${cwd}/${dir}`) : null
 }
 
 /** When this clone last fetched: FETCH_HEAD's time in the git folder; null when it never has. */
-async function fetchedAt($: $, cwd: string): Promise<number | null> {
+async function fetchedAt($: Engine, cwd: string): Promise<number | null> {
   const dir = await gitDir($, cwd)
   if (!dir) return null
   const entries = await $.fs.list(dir).catch(() => [])
@@ -733,7 +733,7 @@ async function fetchedAt($: $, cwd: string): Promise<number | null> {
  * (team-view T4). Only `for-each-ref`, `rev-parse` and `cat-file` run, and an
  * unchanged ref's copy is not read twice. Null outside a git repository.
  */
-async function readBoard($: $, p: AsmProject): Promise<BranchBoard | null> {
+async function readBoard($: Engine, p: AsmProject): Promise<BranchBoard | null> {
   const now = await $.clock.now()
   const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
   const here = p.listFile === 'tasks/todo.md' ? p.list : null
@@ -750,7 +750,7 @@ const sprintCache = new Map<string, string | null>()
  * band and the board pane (ceremonies T6). One `git log`, and `cat-file` only
  * for commits not read before. Nothing without a sprint.
  */
-async function readSprint($: $, p: AsmProject): Promise<void> {
+async function readSprint($: Engine, p: AsmProject): Promise<void> {
   const sprint = p.listFile === 'tasks/todo.md' ? p.list?.meta?.sprint : undefined
   if (!sprint) return void (await update($, sprintCopies, () => null))
   const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
@@ -759,7 +759,7 @@ async function readSprint($: $, p: AsmProject): Promise<void> {
 }
 
 /** The sprint now (ceremonies C5), from the list and the copies last read; null without a sprint. */
-async function currentSprint($: $, p: AsmProject | null): Promise<SprintNow | null> {
+async function currentSprint($: Engine, p: AsmProject | null): Promise<SprintNow | null> {
   const sprint = p?.listFile === 'tasks/todo.md' ? p.list?.meta?.sprint : undefined
   if (!p?.list || !sprint) return null
   const copies = await read($, sprintCopies)
@@ -770,7 +770,7 @@ async function currentSprint($: $, p: AsmProject | null): Promise<SprintNow | nu
  * `/progress sprint` (C5): the sprint now. `/progress sprint start 2026-10-24 T4 T5`
  * (C1): writes `sprint:` and `commit:`, starting today.
  */
-async function sprintCommand($: $, words: string[]): Promise<string> {
+async function sprintCommand($: Engine, words: string[]): Promise<string> {
   const p = await load($)
   const sub = words[0]?.toLowerCase()
   if (sub === 'start') return (await act($, p, 'sprint-start', { end: words[1] ?? '', ids: words.slice(2) })).reply
@@ -789,7 +789,7 @@ async function sprintCommand($: $, words: string[]): Promise<string> {
  * last ended sprint, or of the one `day` fell in, rebuilt from tasks/todo.md's
  * committed copies (nothing new is committed), and copied to the clipboard.
  */
-async function sprintReport($: $, p: AsmProject, day: string | null): Promise<string> {
+async function sprintReport($: Engine, p: AsmProject, day: string | null): Promise<string> {
   if (!p.list || p.list.total === 0 || p.listFile !== 'tasks/todo.md') return 'No tasks/todo.md here, so there is no sprint to review.'
   if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Use: /progress report sprint, or /progress report sprint 2026-10-13 for the sprint that day fell in.'
   const run = (argv: string[], opts?: { stdin?: string }) => $.process.run(argv, { stdin: opts?.stdin, timeoutMs: 20_000 })
@@ -805,13 +805,13 @@ async function sprintReport($: $, p: AsmProject, day: string | null): Promise<st
  * plan) looked back on: slow against size, blocks, scope added, ETA drift. Reads
  * tasks/todo.md's committed copies and the archived plans; writes nothing.
  */
-async function retroCommand($: $, p: AsmProject): Promise<string> {
+async function retroCommand($: Engine, p: AsmProject): Promise<string> {
   if (!p.list || p.list.total === 0 || p.listFile !== 'tasks/todo.md') return 'No tasks/todo.md here, so there is nothing to look back on.'
   return retroText(await retroOf($, p))
 }
 
 /** The retro of the running or last ended sprint (ceremonies T9), for `/progress retro` and the Sprint tab. Reads only. */
-async function retroOf($: $, p: AsmProject): Promise<Retro> {
+async function retroOf($: Engine, p: AsmProject): Promise<Retro> {
   const cwd = p.cwd
   const io = {
     read: (rel: string) => readText($, `${cwd}/${rel}`),
@@ -822,7 +822,7 @@ async function retroOf($: $, p: AsmProject): Promise<Retro> {
 }
 
 /** `/progress sprint plan [days]` (C1): what fits `days` working days (default 10) at the recent pace. Writes nothing. */
-async function sprintPlanCommand($: $, p: AsmProject, arg: string | undefined): Promise<string> {
+async function sprintPlanCommand($: Engine, p: AsmProject, arg: string | undefined): Promise<string> {
   const days = arg === undefined ? 10 : /^\d+$/.test(arg) ? Number(arg) : NaN
   if (!(days >= 1 && days <= 60)) return `"${arg}" is not a number of working days. Use: /progress sprint plan 10 (1 to 60; 10 by default).`
   const text = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
@@ -833,20 +833,20 @@ async function sprintPlanCommand($: $, p: AsmProject, arg: string | undefined): 
 }
 
 /** `/progress branches` (team-view V1): each task's furthest state across the branches git already has. */
-async function branchesCommand($: $): Promise<string> {
+async function branchesCommand($: Engine): Promise<string> {
   const board = await readBoard($, await load($))
   return board ? branchesText(board, await $.clock.now()) : 'Not a git repository: the board across branches reads the other branches from git.'
 }
 
 /** The band's collision line for a task (team-view T4), from the board last read; null when it collides with nothing. */
-async function collisionText($: $, t: Task): Promise<string | null> {
+async function collisionText($: Engine, t: Task): Promise<string | null> {
   const board = await read($, branchBoard)
   const c = collisionOf(t, board, await $.clock.now())
   return c ? collisionLine(c, board?.here ?? null) : null
 }
 
 /** The plan as a look remembers it (team-view T9): every spec, the plan, and the collisions on the board last read. */
-async function seenNow($: $, p: AsmProject): Promise<Seen> {
+async function seenNow($: Engine, p: AsmProject): Promise<Seen> {
   const board = await read($, branchBoard)
   const now = await $.clock.now()
   return seenOf({ list: p.list, specs: await allSpecs($, p), plan: p.plan, collisions: board ? collisions(board, now) : null, branches: board }, now)
@@ -858,7 +858,7 @@ async function seenNow($: $, p: AsmProject): Promise<Seen> {
  * session's first look is kept, so /progress since lists all it found (the line
  * had room for six) plus anything since. Null outside a git repository.
  */
-async function lookSince($: $, p: AsmProject): Promise<Since | null> {
+async function lookSince($: Engine, p: AsmProject): Promise<Since | null> {
   const dir = await gitDir($, p.cwd)
   if (!dir) return null
   const path = `${dir}/${SEEN_FILE}`
@@ -872,7 +872,7 @@ async function lookSince($: $, p: AsmProject): Promise<Since | null> {
 }
 
 /** After each turn of a session that has looked, seen.json follows: what you saw happen is not news next time. */
-async function keepSeen($: $, p: AsmProject): Promise<void> {
+async function keepSeen($: Engine, p: AsmProject): Promise<void> {
   if (!(await read($, sinceLook))) return
   const dir = await gitDir($, p.cwd)
   if (!dir) return
@@ -881,13 +881,13 @@ async function keepSeen($: $, p: AsmProject): Promise<void> {
 }
 
 /** `/progress since` (team-view V4): everything that changed since you last looked, with who did it. */
-async function sinceCommand($: $): Promise<string> {
+async function sinceCommand($: Engine): Promise<string> {
   const s = await lookSince($, await load($))
   return s ? sinceText(s) : 'Not a git repository: "since you last looked" keeps its snapshot in the git folder.'
 }
 
 /** Your git email, which tasks/team.md maps to a handle (format-v2); null when git has none. */
-async function gitEmail($: $): Promise<string | null> {
+async function gitEmail($: Engine): Promise<string | null> {
   const r = await $.process.run(['git', 'config', 'user.email'], { timeoutMs: 10_000 }).catch(() => null)
   return r && r.exitCode === 0 ? r.stdout.trim() || null : null
 }
@@ -896,7 +896,7 @@ async function gitEmail($: $): Promise<string | null> {
 const emails = new Map<string, Promise<string | null>>()
 
 /** Who runs this session, as tasks/team.md names them; null without the file or a matching email. */
-async function sessionHandle($: $, cwd: string): Promise<string | null> {
+async function sessionHandle($: Engine, cwd: string): Promise<string | null> {
   const team = await readTeam($, cwd)
   if (!team) return null
   if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
@@ -904,7 +904,7 @@ async function sessionHandle($: $, cwd: string): Promise<string | null> {
 }
 
 /** tasks/team.md, parsed; null when there is none. */
-async function readTeam($: $, cwd: string): Promise<Team | null> {
+async function readTeam($: Engine, cwd: string): Promise<Team | null> {
   const text = await readText($, `${cwd}/${TEAM_FILE}`)
   return text === null ? null : parseTeam(text)
 }
@@ -914,7 +914,7 @@ async function readTeam($: $, cwd: string): Promise<Team | null> {
  * `/progress team init [force]`: a first tasks/team.md drafted from the git
  * authors, never over an existing one without `force`.
  */
-async function teamCommand($: $, arg: string): Promise<string> {
+async function teamCommand($: Engine, arg: string): Promise<string> {
   const cwd = await $.session.cwd()
   const words = arg.split(/\s+/).slice(1)
   if (words[0] !== 'init') return teamText(await readTeam($, cwd), await gitEmail($))
@@ -941,7 +941,7 @@ async function teamCommand($: $, arg: string): Promise<string> {
  * (format-v2, F2 and F3): the owner on the task's Status line, every other
  * byte kept. Anyone may assign: roles are shown, never enforced.
  */
-async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: string[]): Promise<string> {
+async function ownerCommand($: Engine, verb: 'assign' | 'claim' | 'unassign', words: string[]): Promise<string> {
   return (await act($, await load($), verb, { id: words[0] ?? '', who: words[1] })).reply
 }
 
@@ -950,7 +950,7 @@ async function ownerCommand($: $, verb: 'assign' | 'claim' | 'unassign', words: 
  * task's new owner, and a dated note under it from the old owner (else you), which
  * the next person's agent reads with the current task.
  */
-async function handoffCommand($: $, rest: string): Promise<string> {
+async function handoffCommand($: Engine, rest: string): Promise<string> {
   const m = /^(\S+)?\s*(@[\w.-]+)?\s*([\s\S]*)$/.exec(rest)!
   const note = (m[3] ?? '').trim().replace(/^["'“”]|["'“”]$/g, '').trim()
   return (await act($, await load($), 'handoff', { id: m[1] ?? '', to: m[2], note })).reply
@@ -961,7 +961,7 @@ async function handoffCommand($: $, rest: string): Promise<string> {
  * review, with its PR and reviewer; owner and dates kept. A done task, or one
  * with nothing ticked yet, is refused with why.
  */
-async function reviewCommand($: $, words: string[]): Promise<string> {
+async function reviewCommand($: Engine, words: string[]): Promise<string> {
   return (await act($, await load($), 'review', { id: words[0] ?? '', refs: words.slice(1) })).reply
 }
 
@@ -969,18 +969,18 @@ async function reviewCommand($: $, words: string[]): Promise<string> {
  * `/progress answer Q2 "Upstash"` (team-view): your answer under the question in
  * tasks/plan.md, with your name and the date, in place of an earlier one.
  */
-async function answerCommand($: $, rest: string): Promise<string> {
+async function answerCommand($: Engine, rest: string): Promise<string> {
   const m = /^(\S+)?\s*([\s\S]*)$/.exec(rest)!
   return (await act($, await load($), 'answer', { q: m[1] ?? '', text: m[2] ?? '' })).reply
 }
 
 /** `/progress size T4 M` (ceremonies T1): the task's Size line set to S, M or L, or cleared with `-`. */
-async function sizeCommand($: $, words: string[]): Promise<string> {
+async function sizeCommand($: Engine, words: string[]): Promise<string> {
   return (await act($, await load($), 'size', { id: words[0] ?? '', size: words[1] })).reply
 }
 
 /** `/progress ready` (ceremonies C4): every task not yet started that isn't ready, and why. Writes nothing. */
-async function readyCommand($: $, p: AsmProject): Promise<string> {
+async function readyCommand($: Engine, p: AsmProject): Promise<string> {
   const text = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
   return readyText(p.list, p.plan, text === null ? null : parseBacklog(text))
 }
@@ -989,7 +989,7 @@ async function readyCommand($: $, p: AsmProject): Promise<string> {
  * `/progress backlog` (ceremonies T3): tasks/backlog.md's items with their sizes.
  * `/progress backlog add "title" [S|M|L]`: an item appended as the next B id.
  */
-async function backlogCommand($: $, rest: string): Promise<string> {
+async function backlogCommand($: Engine, rest: string): Promise<string> {
   const p = await load($)
   const add = /^add\b\s*([\s\S]*)$/i.exec(rest)
   if (!add) {
@@ -1006,7 +1006,7 @@ async function backlogCommand($: $, rest: string): Promise<string> {
 }
 
 /** `/progress signoff` (team-view): sign off the checkpoint that is due, and tick its review box. */
-async function signoffCommand($: $): Promise<string> {
+async function signoffCommand($: Engine): Promise<string> {
   return (await act($, await load($), 'signoff', {})).reply
 }
 
@@ -1017,7 +1017,7 @@ async function signoffCommand($: $): Promise<string> {
  * go in .gitattributes (committed) and the driver, with this copy's absolute
  * script path, in .git/config (each clone). Every other byte of both is kept.
  */
-async function mergeDriverCommand($: $, words: string[]): Promise<string> {
+async function mergeDriverCommand($: Engine, words: string[]): Promise<string> {
   const cwd = await $.session.cwd()
   const verb = (words[0] ?? 'status').toLowerCase()
   const yes = words[1]?.toLowerCase() === 'yes'
@@ -1083,7 +1083,7 @@ async function mergeDriverCommand($: $, words: string[]): Promise<string> {
  * has them), opened on `view`. Written even without a task list, since the page
  * then says how to start.
  */
-async function writeDashboard($: $, p: AsmProject, view: string): Promise<string> {
+async function writeDashboard($: Engine, p: AsmProject, view: string): Promise<string> {
   if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
   const specs = await allSpecs($, p)
   const now = await $.clock.now()
@@ -1140,7 +1140,7 @@ const SERVE_START_MS = 15_000
  * reopens the running one. It stops when the session ends; when it can't start,
  * the reply says why and gives the command to run by hand.
  */
-async function liveDashboard($: $, cwd: string): Promise<string> {
+async function liveDashboard($: Engine, cwd: string): Promise<string> {
   const script = `${$.plugin.root}/scripts/agent-skills-progress.mjs`
   const byHand = `! ${shellLine(serveArgv(script, cwd, 'person'))}\nIt serves this folder until Ctrl-C stops it.`
   const running = liveServers.get(cwd)
@@ -1167,7 +1167,7 @@ async function liveDashboard($: $, cwd: string): Promise<string> {
  * reading it: it ends with the session (the module unloads, or `stop`), and when
  * it exits on its own the entry goes, so the next call starts another.
  */
-async function startServe($: $, cwd: string, argv: string[]): Promise<{ url: string } | { error: string }> {
+async function startServe($: Engine, cwd: string, argv: string[]): Promise<{ url: string } | { error: string }> {
   let settle: (r: { url: string } | { error: string }) => void = () => {}
   const started = new Promise<{ url: string } | { error: string }>(done => (settle = done))
   const child = $.process.spawn({ argv, cwd })
@@ -1206,7 +1206,7 @@ async function startServe($: $, cwd: string, argv: string[]): Promise<{ url: str
 }
 
 /** The board's and charts' Report and Copy digest buttons: the command's work, its outcome as a toast. */
-async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
+async function paneAction($: Engine, what: 'report' | 'digest'): Promise<void> {
   const p = await load($)
   const text = what === 'report' ? await writeReport($, p) : await copyDigest($, p)
   $.ui.toast(what === 'report' ? text : (text.split('\n').at(-1) ?? text))
@@ -1217,7 +1217,7 @@ async function paneAction($: $, what: 'report' | 'digest'): Promise<void> {
  * moved into tasks/archive/<date>-<plan>/ with their history, so the next /plan
  * starts clean. An unfinished plan needs `/progress archive force`.
  */
-async function archivePlan($: $, force: boolean): Promise<string> {
+async function archivePlan($: Engine, force: boolean): Promise<string> {
   const p = await load($)
   const cwd = p.cwd
   const todo = await readText($, `${cwd}/tasks/todo.md`)
@@ -1266,7 +1266,7 @@ async function archivePlan($: $, force: boolean): Promise<string> {
 }
 
 /** `/progress doctor [fix]`: problems in the task files, plan and specs; `fix` applies the fixable ones. */
-async function doctor($: $, fix: boolean): Promise<string> {
+async function doctor($: Engine, fix: boolean): Promise<string> {
   const p = await load($)
   const cwd = p.cwd
   const today = dayOf(await $.clock.now())
@@ -1305,7 +1305,7 @@ async function doctor($: $, fix: boolean): Promise<string> {
  * `/progress start|done|block|unblock T4 ["why"]`: the person sets a task's
  * state, written into tasks/todo.md (and a blocking question into plan.md).
  */
-async function setTask($: $, verb: 'start' | 'done' | 'block' | 'unblock', rawId: string, why: string): Promise<string> {
+async function setTask($: Engine, verb: 'start' | 'done' | 'block' | 'unblock', rawId: string, why: string): Promise<string> {
   const r = await act($, await load($), verb, { id: rawId, why }, { clearPending: true })
   if (!r.ok || verb !== 'start') return r.reply
   // Starting a task someone has under way on another branch says so at once (team-view T4).
@@ -1324,7 +1324,7 @@ async function setTask($: $, verb: 'start' | 'done' | 'block' | 'unblock', rawId
  * pending state changes are written with it, so they are dropped.
  */
 async function act(
-  $: $,
+  $: Engine,
   p: AsmProject,
   name: ActionName,
   args: Record<string, unknown>,
@@ -1366,7 +1366,7 @@ async function act(
  * signing when the team names approvals, signing off and answering read it
  * afresh; start and handoff use the session's.
  */
-async function actionEmail($: $, cwd: string, name: ActionName, args: Record<string, unknown>, team: Team): Promise<string | null> {
+async function actionEmail($: Engine, cwd: string, name: ActionName, args: Record<string, unknown>, team: Team): Promise<string | null> {
   if (name === 'claim' || (name === 'assign' && args.who === 'me') || (name === 'sign' && team.approvals.length) || name === 'signoff' || name === 'answer') return gitEmail($)
   if (name === 'start' || name === 'handoff' || name === 'defer') {
     if (!emails.has(cwd)) emails.set(cwd, gitEmail($))
@@ -1379,7 +1379,7 @@ async function actionEmail($: $, cwd: string, name: ActionName, args: Record<str
  * `/spec-view diff`: what changed in the spec since it was approved (the last
  * commit of it on or before the approval day), or since its last commit.
  */
-async function specChanges($: $): Promise<string> {
+async function specChanges($: Engine): Promise<string> {
   const p = await load($)
   if (!p.spec || !p.specFile) return `No SPEC.md in ${p.cwd}.`
   const file = p.specFile
@@ -1411,7 +1411,7 @@ async function specChanges($: $): Promise<string> {
 }
 
 /** The checkpoint gate: a source edit while a reached checkpoint waits for review. Never blocks. */
-async function checkpointGate<R extends { context?: readonly string[] }>($: $, path: string, result: R): Promise<R> {
+async function checkpointGate<R extends { context?: readonly string[] }>($: Engine, path: string, result: R): Promise<R> {
   try {
     const p = (await read($, project)) ?? (await load($))
     const warning = checkpointWarning({ cwd: p.cwd, path, list: p.list })
@@ -1427,7 +1427,7 @@ async function checkpointGate<R extends { context?: readonly string[] }>($: $, p
 }
 
 /** A box ticked or unticked from the board: written to tasks/todo.md, Status line and toast as for any edit. */
-async function pressBox($: $, id: string, index: number) {
+async function pressBox($: Engine, id: string, index: number) {
   const p = await read($, project)
   if (!p) return
   const before = p.list
@@ -1438,7 +1438,7 @@ async function pressBox($: $, id: string, index: number) {
 }
 
 /** `build T4` while building or testing, the stage alone otherwise. */
-async function stageLabel($: $): Promise<string | null> {
+async function stageLabel($: Engine): Promise<string | null> {
   const s = await read($, stage)
   if (!s) return null
   const t = (await read($, project))?.list?.current
@@ -1451,7 +1451,7 @@ const reply = (text: string) => ({ text })
 const REPLY_COMMANDS = new Set(['progress', 'spec-view'])
 
 /** A reply as kinds of line (lib/reply.ts), drawn at the transcript's width. */
-function drawReply($: $, e: Parameters<$['ui']['resolve']>[0], lines: ReplyLine[]) {
+function drawReply($: Engine, e: Parameters<Engine['ui']['resolve']>[0], lines: ReplyLine[]) {
   const { Box, Text } = $.ui.resolve(e)
   const words = (parts: Inline[], props: { bold?: boolean; dim?: boolean } = {}) =>
     parts.map((x, i) =>
@@ -1616,9 +1616,7 @@ export const register: Register = (on, options) => {
       const id = /^\d+$/.test(one[1]!) ? `T${one[1]}` : one[1]!.toUpperCase()
       if (!p.list?.tasks.some(t => t.id === id)) return reply(`No ${id} in ${p.listFile ?? 'tasks/todo.md'}.${p.list?.tasks.length ? ` Tasks: ${p.list.tasks.map(t => t.id).join(', ')}.` : ''}`)
       const n = id.slice(1)
-      const log = await $.process
-        .run(['git', 'log', '--max-count=300', '--format=%h %as %s', `--grep=T${n}`, `--grep=Task ${n}`, '-i'], { timeoutMs: 10_000 })
-        .catch(() => null)
+      const log = await $.process.run(['git', 'log', '--max-count=300', '--format=%h %as %s', `--grep=T${n}`, `--grep=Task ${n}`, '-i'], { timeoutMs: 10_000 }).catch(() => null)
       const commits = log && log.exitCode === 0 ? commitsNaming(log.stdout, id) : []
       await update($, focus, () => id)
       await showTab($, 'tasks')
@@ -1867,13 +1865,13 @@ export const register: Register = (on, options) => {
     if (clash) warnings.unshift(clash)
     // ▸ between turns; a turning marker while the agent works, where surface modules run.
     const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
-    const Client = working ? $.ui.resolve(e as typeof e & { surface: 'terminal' }).Client : null
+    const { Client } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         {list && t && (
           <Box flexDirection="row" gap={3}>
             <Box flexDirection="row" gap={1}>
-              {Client ? <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: true, color: 'claude' }} width={1} height={1} /> : <Text color="claude">▸</Text>}
+              {working ? <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: true, color: 'claude' }} width={1} height={1} /> : <Text color="claude">▸</Text>}
               <Text wrap="truncate-end">
                 <Text color="claude">{t.id}</Text> <Text bold>{t.title}</Text>
                 {t.owner && <Text dimColor> · {t.owner}</Text>}
@@ -2075,8 +2073,8 @@ type PaneEvent = any
  * beside them, then the timeline, the charts or the task board. `forced`
  * pins a tab, for the charts pane earlier versions opened.
  */
-async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
-  const { Box, Button, Text } = $.ui.resolve(e) as any
+async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
+  const { Box, Button, Text } = $.ui.resolve(e)
   const p = await read($, project)
   const active: Tab = forced ?? (await read($, tab))
   // A short terminal seats the pane in a few rows: the tabs on one line, then
@@ -2094,16 +2092,16 @@ async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
           : await tasksView($, e, p)
   if (forced) return view
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
-  const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
+  const { Client } = $.ui.resolve(e)
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
-        {Client ? (
+        {hasClient ? (
           <Client key="tabs" module="./ui/tabs.tsx" props={{ active }} />
         ) : (
           TABS.map(t => <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} dimColor={t !== active} onPress={() => void showTab($, t)} />)
         )}
-        {Client && !tight && <Text dimColor>←/→ switch ·</Text>}
+        {hasClient && !tight && <Text dimColor>←/→ switch ·</Text>}
         <Button key="report" label="report" hotkey="r" plain dimColor onPress={() => void paneAction($, 'report')} />
         <Text dimColor>·</Text>
         <Button key="digest" label={tight ? 'digest' : 'copy digest'} hotkey="c" plain dimColor onPress={() => void paneAction($, 'digest')} />
@@ -2119,8 +2117,8 @@ async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
  * one line each around the current task, with what is out of view counted;
  * the other tabs, which need the room, say so rather than draw half.
  */
-async function tightView($: $, e: PaneEvent, p: AsmProject | null, active: Tab, rows: number) {
-  const { Box, Text } = $.ui.resolve(e) as any
+async function tightView($: Engine, e: PaneEvent, p: AsmProject | null, active: Tab, rows: number) {
+  const { Box, Text } = $.ui.resolve(e)
   if (rows <= 0) return null
   const list = p?.list
   if (active !== 'tasks') {
@@ -2168,12 +2166,12 @@ async function tightView($: $, e: PaneEvent, p: AsmProject | null, active: Tab, 
 }
 
 /** The plan pane's tab, from a tab button, the tabs row or a command. The charts sweep in when shown. */
-async function showTab($: $, t: Tab) {
+async function showTab($: Engine, t: Tab) {
   if (t === 'charts') await sweepCharts($)
   await update($, tab, () => t)
 }
 
-async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
+async function tasksView($: Engine, e: PaneEvent, p: AsmProject | null) {
     const { Box, Button, Text } = $.ui.resolve(e)
     const picked = await read($, expanded)
     const list = p?.list
@@ -2298,8 +2296,8 @@ async function tasksView($: $, e: PaneEvent, p: AsmProject | null) {
     )
 }
 
-async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
-  const { Box, Text } = $.ui.resolve(e) as any
+async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
+  const { Box, Text } = $.ui.resolve(e)
   const snaps = p?.snapshots ?? []
   const body = Math.max(24, Math.min(240, e.props.bodyColumns))
   // Side by side when there is room for two charts of 50 columns, as mockup 12 lays them out.
@@ -2317,7 +2315,7 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
   const reveal = await read($, chartReveal)
   const picture = (key: 'burnup' | 'flow', c: { columns: number; rows: number }, pic: PixelChart | null) => {
     if (e.surface !== 'terminal' || !pic) return null
-    const { Image } = $.ui.resolve(e) as any
+    const { Image } = $.ui.resolve(e)
     const plotCols = Math.min(255, c.columns - 4)
     const plotRows = c.rows - 1
     const labelAt = new Map(pic.ticks.map((t, i) => [Math.round((i * (plotRows - 1)) / (pic.ticks.length - 1)), t]))
@@ -2347,12 +2345,12 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
         const drawn = picture(key, c, pic)
         if (drawn) return drawn
       }
-      const { Raster } = $.ui.resolve(e) as any
+      const { Raster } = $.ui.resolve(e)
       return <Raster key={key} columns={c.columns} rows={c.rows} cells={revealCells(c.cells, c.columns, c.rows, reveal)} />
     }
     const svg = key === 'burnup' ? burnupSvg(snaps, p?.forecast ?? null) : flowSvg(snaps)
     if (!svg) return null
-    const { Svg } = $.ui.resolve(e) as any
+    const { Svg } = $.ui.resolve(e)
     return <Svg source={svg.source} alt={svg.alt} isInteractive />
   }
   const legends = chartLegends(snaps, p?.forecast ?? null)
@@ -2392,7 +2390,7 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
   const labelW = Math.min(28, Math.max(0, ...phases.map(x => phaseLabel(x.name).length)))
   const barW = Math.max(8, Math.min(28, body - labelW - 10))
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
-  const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
+  const { Client } = $.ui.resolve(e)
   const pace = throughput(snaps)
   // The desktop mockup's figures, now-bar and days per task, on every surface.
   const figures = p ? headline(p) : []
@@ -2453,7 +2451,7 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
               <Box width={labelW}>
                 <Text wrap="truncate-end">{phaseLabel(ph.name)}</Text>
               </Box>
-              {Client ? (
+              {hasClient ? (
                 <Client key={`phase-${i}`} module="./ui/meter.tsx" props={{ done: ph.done, total: ph.total }} width={barW} height={1} />
               ) : (
                 <Text color="success">{bar(ph.done, ph.total, barW)}</Text>
@@ -2494,8 +2492,8 @@ async function chartsView($: $, e: PaneEvent, p: AsmProject | null) {
   )
 }
 
-async function graphView($: $, e: PaneEvent, p: AsmProject | null) {
-  const { Box, Text } = $.ui.resolve(e) as any
+async function graphView($: Engine, e: PaneEvent, p: AsmProject | null) {
+  const { Box, Text } = $.ui.resolve(e)
   const list = p?.list
   if (!list || list.total === 0) return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
   const color = { text: undefined, strong: undefined, muted: 'subtle', done: 'success', run: 'warning', bad: 'error', needsYou: 'permission', accent: 'claude' } as const
@@ -2535,8 +2533,8 @@ async function graphView($: $, e: PaneEvent, p: AsmProject | null) {
   )
 }
 
-async function timelineView($: $, e: PaneEvent, p: AsmProject | null) {
-  const { Box, Text } = $.ui.resolve(e) as any
+async function timelineView($: Engine, e: PaneEvent, p: AsmProject | null) {
+  const { Box, Text } = $.ui.resolve(e)
   const list = p?.list
   if (!p || !list || list.total === 0) return <Text dimColor>{nextText(list ?? null, p?.plan ?? null)}</Text>
   const today = dayOf(await $.clock.now())
