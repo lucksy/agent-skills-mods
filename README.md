@@ -166,8 +166,11 @@ For `SPEC.md`, optional `status: draft | approved` front matter decides approval
 Mods can't change the status line, which is your own script. One ships here:
 
 ```
-✓spec ✓plan ●build 4/9 ○review ○ship · T4 Rate limit per key
+agent-skills-mods · build 4/9 · T4 Rate limit per key · Opus 5.5
+agent-skills-mods · ✓ built 9/9 → /review · Opus 5.5
 ```
+
+One calm line: the folder, the current stage only (the ones behind it are implied) with the task or the next command, and the model, dim. What needs you is the mod's status entry, which Claude Code draws with a ⚠ just above it, and only then: a spec awaiting approval (`♦ SPEC.md awaiting approval → /spec-view`) or no task able to start. While all is well that entry is cleared.
 
 Copy it somewhere stable and point `statusLine` at it in `~/.claude/settings.json`:
 
@@ -175,7 +178,7 @@ Copy it somewhere stable and point `statusLine` at it in `~/.claude/settings.jso
 "statusLine": { "type": "command", "command": "bash ~/.claude/agent-skills-status.sh" }
 ```
 
-It prints `user@host:dir [model]` first. Set `ASM_STATUS_PREFIX=0` to print only the stage, so you can append it to a status line you already have. Projects without these files get the plain line. It needs `jq`.
+Set `ASM_STATUS_PREFIX=0` to print only the stage, so you can append it to a status line you already have. Projects without these files get `dir · model`. It needs `jq`.
 
 ## Progress format (E1)
 
@@ -248,7 +251,7 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 ```sh
 claude plugin validate .     # manifest, marketplace and hooks module
-claude plugin test .         # 478 tests: parser, guard, forecast, state, team and approvals, modules, branches and collisions, the merge, since, the live server, the dashboard's views, and the mod on terminal and desktop
+claude plugin test .         # 652 tests: parser, guard, forecast, state, team and approvals, modules, branches and collisions, the merge, since, the live server, the dashboard's views, and the mod on terminal and desktop
 bash statusline/test.sh      # status line against sample projects
 bash scripts/test.sh         # agent-skills-progress under Node (real git merges with the driver, --branches, --since, --serve), and that packages/core imports only itself
 claude --plugin-dir .        # run a session with the plugin loaded from this folder

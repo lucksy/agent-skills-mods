@@ -582,7 +582,7 @@ async function load($: $, opts: { recheckLogs?: boolean } = {}): Promise<AsmProj
   const sprint = listFile === 'tasks/todo.md' ? list?.meta?.sprint : undefined
   if (!sprint) await update($, sprintCopies, () => null)
   else if ((await read($, sprintCopies))?.start !== sprint.start) await readSprint($, value).catch(() => undefined)
-  $.ui.status(statusText(spec, list))
+  $.ui.status(statusText(spec, list, specFile ?? undefined))
   return value
 }
 
@@ -1608,7 +1608,7 @@ export const register: Register = (on, options) => {
       await update($, allowOverwrite, () => true)
       return reply('The next turn may overwrite tasks/plan.md or tasks/todo.md even with unfinished tasks.')
     }
-    if (arg === 'refresh') return reply(statusText(p.spec, p.list) ?? 'No SPEC.md or tasks files here.')
+    if (arg === 'refresh') return reply(statusText(p.spec, p.list, p.specFile ?? undefined) ?? (p.spec || p.list ? 'Nothing needs you.' : 'No SPEC.md or tasks files here.'))
     const one = /^task\s+#?(t?\d+)$/i.exec(e.args.trim())
     if (one) {
       const id = /^\d+$/.test(one[1]!) ? `T${one[1]}` : one[1]!.toUpperCase()

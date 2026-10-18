@@ -518,8 +518,12 @@ describe('forecast', () => {
 describe('views', () => {
   test('status entry and band', async () => {
     const list = parseTasks(TODO_TEMPLATE)
-    expect(statusText(parseSpec(SPEC), list)).toBe('spec ♦ awaiting approval · plan ██░░░░░░░ 1/4')
-    expect(statusText(parseSpec(SPEC.replace('draft', 'approved')), list)).toBe('spec ✓ approved · plan ██░░░░░░░ 1/4')
+    // The status entry speaks only when something needs the person; all well, it clears.
+    expect(statusText(parseSpec(SPEC), list)).toBe('♦ SPEC.md awaiting approval → /spec-view')
+    expect(statusText(parseSpec(SPEC), list, 'specs/api.md')).toBe('♦ specs/api.md awaiting approval → /spec-view')
+    expect(statusText(parseSpec(SPEC.replace('draft', 'approved')), list)).toBe(undefined)
+    expect(statusText(null, parseTasks('## Task 1: A\n- [x] a\n'))).toBe(undefined)
+    expect(statusText(null, parseTasks('## Task 1: A\n**Dependencies:** Task 2\n- [ ] a\n## Task 2: B\n**Dependencies:** Task 1\n- [ ] b\n'))).toBe('nothing can start: T1 waits on T2 (+1 more) → /progress next')
     expect(statusText(null, null)).toBe(undefined)
     expect(bandText(list)).toBe('● T2 Prisma schema for keys · 2 criteria left · 1/4 done · checkpoint after this task')
     expect(bandText(null)).toBe(undefined)

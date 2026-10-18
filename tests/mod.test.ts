@@ -604,7 +604,7 @@ test('/progress next answers from the parser and sets the status entry', async (
   const seen = world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/SPEC.md`]: SPEC })
   const out = await $.command.run(run('next'))
   expect(out.text).toMatch(/^Next: T2 Prisma schema for keys/)
-  expect(JSON.stringify(seen.status)).toMatch(/spec ♦ awaiting approval · plan ██░░░░░░░ 1\/4/)
+  expect(JSON.stringify(seen.status)).toMatch(/♦ SPEC.md awaiting approval → \/spec-view/)
 })
 
 test('writing todo.md opens the board, writing SPEC.md opens the spec pane', async ($, on) => {
@@ -739,7 +739,8 @@ test('the spec pane approves the spec in front matter, and can put it back to dr
   expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: approved\napproved: 2026-10-09\ncreated: 2026-10-09\n---\n# Spec: API keys/)
   expect(seen.toasts).toContain('✓ SPEC.md approved · planning can start')
   expect(await pane.find({ text: /^approved 9 Oct$/ })).toBeDefined()
-  expect(JSON.stringify(seen.status.at(-1))).toMatch(/spec ✓ approved/)
+  // Approved, nothing needs the person: the ⚠ entry clears.
+  expect(seen.status.at(-1)).toEqual({ text: undefined })
 
   await pane.press({ key: 'spec-draft' })
   expect(files[`${CWD}/SPEC.md`]).toMatch(/^---\nstatus: draft\ncreated: 2026-10-09\n---/)

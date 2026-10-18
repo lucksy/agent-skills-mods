@@ -1,25 +1,34 @@
 #!/usr/bin/env bash
-# Claude Code status line: user@host:dir [model] · agent-skills stage of the project.
+# Claude Code status line: one calm line, where the work is and what comes next.
 #
-#   ✓spec ✓plan ●build 2/4 ○review ○ship · T2 Prisma schema for keys
+#   agent-skills-mods · build 4/9 · T4 Rate limit per key · Opus 5.5
+#   agent-skills-mods · ✓ built 9/9 → /review · Opus 5.5
 #
-# Reads SPEC.md, tasks/plan.md and tasks/todo.md (agent-skills conventions) from the
-# session's folder. Projects without any of them get the plain line. Needs jq.
-# Set ASM_STATUS_PREFIX=0 to print the stage alone (to append to your own line).
+# Only the current stage: the ones behind it are implied. What needs you (a spec
+# awaiting approval, nothing able to start) is the mod's status entry, drawn with
+# a ⚠ only then. Reads SPEC.md, tasks/plan.md and tasks/todo.md (agent-skills
+# conventions) from the session's folder; other projects get `dir · model`.
+# Needs jq. Set ASM_STATUS_PREFIX=0 to print the stage alone (to append to your own line).
 
 IFS=$'\t' read -r dir model < <(jq -r '[.workspace.current_dir // .cwd // "", .model.display_name // ""] | @tsv')
 [[ -z $dir ]] && dir=$PWD
 
 G=$'\033[32m'; B=$'\033[34m'; M=$'\033[35m'; Y=$'\033[33m'; D=$'\033[2m'; R=$'\033[0m'
+SEP=" ${D}·${R} "
 
-line=""
-if [[ ${ASM_STATUS_PREFIX:-1} != 0 ]]; then
-  line="${G}$(whoami)@$(hostname -s)${R}:${B}$(basename "$dir")${R} [${M}${model}${R}]"
-fi
+# Folder first, model last and dim: the stage between them is what changes.
+out() { # stage
+  local parts=()
+  [[ ${ASM_STATUS_PREFIX:-1} != 0 ]] && parts+=("${B}$(basename "$dir")${R}")
+  [[ -n $1 ]] && parts+=("$1")
+  [[ ${ASM_STATUS_PREFIX:-1} != 0 && -n $model ]] && parts+=("${D}${model}${R}")
+  local IFS=$'\x1f'; local joined="${parts[*]}"
+  printf '%s' "${joined//$'\x1f'/$SEP}"
+}
 
 spec="$dir/SPEC.md"; plan="$dir/tasks/plan.md"; todo="$dir/tasks/todo.md"
 if [[ ! -f $spec && ! -f $plan && ! -f $todo ]]; then
-  printf '%s' "$line"; exit 0
+  out ""; exit 0
 fi
 
 # Same rules as packages/core/parse.ts:
@@ -89,27 +98,29 @@ read -r done total next_id next_title < <(
 # means the spec gate was passed (planning only starts after approval).
 fm=""
 [[ -f $spec ]] && fm=$(awk 'NR==1 && $0!="---" {exit} NR>1 && $0=="---" {exit} NR>1 && /^status:/ {sub(/^status:[ \t]*/, ""); gsub(/["\047]/, ""); print; exit}' "$spec")
-if   [[ $fm == approved ]];          then s="${G}✓spec${R}"
-elif [[ $fm == draft && -f $spec ]]; then s="${M}♦spec${R}"
-elif [[ -f $plan || -f $todo ]];     then s="${G}✓spec${R}"
-elif [[ -f $spec ]];                 then s="${M}♦spec${R}"
-else                                      s="${D}○spec${R}"; fi
+if   [[ $fm == approved ]];          then approved=1
+elif [[ $fm == draft && -f $spec ]]; then approved=0
+elif [[ -f $plan || -f $todo ]];     then approved=1
+else                                      approved=0; fi
 
-if [[ -f $todo || -f $plan ]]; then p="${G}✓plan${R}"; else p="${D}○plan${R}"; fi
-
-if (( total == 0 )); then
-  b="${D}○build${R}"; rv="${D}○review${R}"
+# The one stage that matters now, and the step after it.
+if (( ! approved )); then
+  stage="${M}♦ spec draft${R}"
+elif [[ ! -f $todo && ! -f $plan ]]; then
+  stage="${G}✓ spec${R} ${D}→ /plan${R}"
+elif (( total == 0 )); then
+  stage="${G}✓ plan${R} ${D}→ /build${R}"
 elif (( done < total )); then
-  b="${Y}●build ${done}/${total}${R}"; rv="${D}○review${R}"
+  stage="${Y}build ${done}/${total}${R}"
+  if [[ $next_id != "-" ]]; then
+    t=${next_title//_/ }
+    (( ${#t} > 28 )) && t="${t:0:27}…"
+    stage+="${SEP}${next_id} ${t}"
+  else
+    stage+="${SEP}${M}blocked${R}"
+  fi
 else
-  b="${G}✓build ${done}/${total}${R}"; rv="${Y}●review${R}"
+  stage="${G}✓ built ${done}/${total}${R} ${D}→ /review${R}"
 fi
 
-stage="$s $p $b $rv ${D}○ship${R}"
-if [[ $next_id != "-" ]]; then
-  t=${next_title//_/ }
-  (( ${#t} > 28 )) && t="${t:0:27}…"
-  stage+=" ${D}·${R} ${next_id} ${t}"
-fi
-
-if [[ -n $line ]]; then printf '%s %s·%s %s' "$line" "$D" "$R" "$stage"; else printf '%s' "$stage"; fi
+out "$stage"

@@ -49,14 +49,19 @@ export function specApproval(spec: Spec | null, hasPlan: boolean): 'approved' | 
   return hasPlan ? 'approved' : 'awaiting'
 }
 
-/** The status line entry: `spec ✓ approved · plan 4/9`, or undefined to clear it. */
-export function statusText(spec: Spec | null, list: TaskList | null): string | undefined {
-  const approval = specApproval(spec, list !== null)
-  const parts: string[] = []
-  if (approval === 'approved') parts.push('spec ✓ approved')
-  else if (approval === 'awaiting') parts.push('spec ♦ awaiting approval')
-  if (list && list.total > 0) parts.push(`plan ${bar(list.done, list.total, 9)} ${list.done}/${list.total}`)
-  return parts.length ? parts.join(' · ') : undefined
+/**
+ * The status entry, which the host draws with a ⚠: only what needs the person,
+ * so it is undefined (cleared) while all is well. The status line script shows
+ * where the work is; this says when to stop and look.
+ */
+export function statusText(spec: Spec | null, list: TaskList | null, specFile = 'SPEC.md'): string | undefined {
+  if (specApproval(spec, list !== null) === 'awaiting') return `${GLYPH.needsYou} ${specFile} awaiting approval → /spec-view`
+  if (!list || list.total === 0 || list.current) return undefined
+  const stuck = list.tasks.filter(t => t.status === 'blocked' || t.status === 'waiting')
+  if (stuck.length === 0) return undefined
+  const first = stuck[0]!
+  const why = first.status === 'blocked' ? `${first.id} blocked by ${first.blockedBy}` : `${first.id} waits on ${first.deps.join(', ')}`
+  return `nothing can start: ${why}${stuck.length > 1 ? ` (+${stuck.length - 1} more)` : ''} → /progress next`
 }
 
 const remaining = (t: Task) => t.boxes.filter(b => !b.isDone).length
