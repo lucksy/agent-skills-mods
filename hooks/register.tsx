@@ -1870,7 +1870,7 @@ export const register: Register = (on, options) => {
         {list && t && (
           <Box flexDirection="row" gap={3}>
             <Box flexDirection="row" gap={1}>
-              {working ? <Client key="pulse" module="./ui/pulse.tsx" props={{ isActive: true, color: 'claude' }} width={1} height={1} /> : <Text color="claude">▸</Text>}
+              {working ? Client({ key: 'pulse', module: './ui/pulse.tsx', props: { isActive: true, color: 'claude' }, width: 1, height: 1 }) : <Text color="claude">▸</Text>}
               <Text wrap="truncate-end">
                 <Text color="claude">{t.id}</Text> <Text bold>{t.title}</Text>
                 {t.owner && <Text dimColor> · {t.owner}</Text>}
@@ -2095,7 +2095,7 @@ async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
     <Box flexDirection="column">
       <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
         {hasClient ? (
-          <Client key="tabs" module="./ui/tabs.tsx" props={{ active }} />
+          Client({ key: 'tabs', module: './ui/tabs.tsx', props: { active } })
         ) : (
           TABS.map(t => <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} dimColor={t !== active} onPress={() => void showTab($, t)} />)
         )}
@@ -2449,7 +2449,7 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
                 <Text wrap="truncate-end">{phaseLabel(ph.name)}</Text>
               </Box>
               {hasClient ? (
-                <Client key={`phase-${i}`} module="./ui/meter.tsx" props={{ done: ph.done, total: ph.total }} width={barW} height={1} />
+                Client({ key: `phase-${i}`, module: './ui/meter.tsx', props: { done: ph.done, total: ph.total }, width: barW, height: 1 })
               ) : (
                 <Text color="success">{bar(ph.done, ph.total, barW)}</Text>
               )}
