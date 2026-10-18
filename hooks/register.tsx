@@ -2334,11 +2334,11 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
   const chart = (key: 'burnup' | 'flow', c: { columns: number; rows: number; cells: string }) => {
     if (e.surface === 'terminal') {
       if (usePixels) {
-        const w = Math.min(255, c.columns - 4) * CELL_PX.w
-        const h = (c.rows - 1) * CELL_PX.h
+        const wPx = Math.min(255, c.columns - 4) * CELL_PX.w
+        const hPx = (c.rows - 1) * CELL_PX.h
         const fc = p?.forecast ?? null
-        const pic = cachedPixels(key, JSON.stringify([snaps, key === 'burnup' ? fc : null, w, h]), () =>
-          key === 'burnup' ? burnupPixels(snaps, fc, w, h) : flowPixels(snaps, w, h),
+        const pic = cachedPixels(key, JSON.stringify([snaps, key === 'burnup' ? fc : null, wPx, hPx]), () =>
+          key === 'burnup' ? burnupPixels(snaps, fc, wPx, hPx) : flowPixels(snaps, wPx, hPx),
         )
         const drawn = picture(key, c, pic)
         if (drawn) return drawn
