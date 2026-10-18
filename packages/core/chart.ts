@@ -77,6 +77,21 @@ export function toBase64(bytes: Uint8Array): string {
   return out
 }
 
+/** The bytes `toBase64` wrote, without the browser's atob (not among a mod's calls). */
+export function fromBase64(text: string): Uint8Array {
+  const clean = text.replace(/=+$/, '')
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4))
+  let o = 0
+  for (let i = 0; i < clean.length; i += 4) {
+    const [a, b, c, d] = [0, 1, 2, 3].map(k => (i + k < clean.length ? B64.indexOf(clean[i + k]!) : 0)) as [number, number, number, number]
+    const n = (a << 18) | (b << 12) | (c << 6) | d
+    if (o < out.length) out[o++] = (n >> 16) & 255
+    if (o < out.length) out[o++] = (n >> 8) & 255
+    if (o < out.length) out[o++] = n & 255
+  }
+  return out
+}
+
 /** Y labels on the gutter, the x axis and first, middle and last dates under it. */
 function frame(g: Grid, plotRows: number, ymax: number, days: { label: string; col: number }[]) {
   for (let r = 0; r < plotRows; r++) g.text(0, r, '   │', COLOR.axis)
@@ -215,8 +230,7 @@ export function flow(history: Snapshot[], columns: number, rows: number): Chart 
  */
 export function revealCells(cells: string, columns: number, rows: number, fraction: number): string {
   if (fraction >= 1) return cells
-  const bin = atob(cells)
-  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
+  const bytes = fromBase64(cells)
   const view = new DataView(bytes.buffer)
   const cut = GUTTER + Math.round(Math.max(0, fraction) * (columns - GUTTER))
   // The last two rows are the x axis and its dates.

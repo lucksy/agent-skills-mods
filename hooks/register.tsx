@@ -1025,9 +1025,9 @@ async function mergeDriverCommand($: Engine, words: string[]): Promise<string> {
     return 'Use: /progress merge-driver [install|uninstall|status]. install and uninstall ask first.'
   }
   const r = await $.process.run(['git', 'rev-parse', '--git-common-dir'], { timeoutMs: 10_000 }).catch(() => null)
-  const gitDir = r && r.exitCode === 0 ? r.stdout.trim() : ''
-  if (!gitDir) return 'Not a git repository here, so there is no merge for the driver to run.'
-  const configPath = `${gitDir.startsWith('/') ? gitDir : `${cwd}/${gitDir}`}/config`
+  const gitPath = r && r.exitCode === 0 ? r.stdout.trim() : ''
+  if (!gitPath) return 'Not a git repository here, so there is no merge for the driver to run.'
+  const configPath = `${gitPath.startsWith('/') ? gitPath : `${cwd}/${gitPath}`}/config`
   const attrPath = `${cwd}/.gitattributes`
   const [attrs, config] = [await readText($, attrPath), await readText($, configPath)]
   const script = `${$.plugin.root}/scripts/agent-skills-progress.mjs`
@@ -1858,14 +1858,13 @@ export const register: Register = (on, options) => {
     // The running sprint's line (ceremonies T6), after the task's own; alone once every task is done.
     const sprint = await currentSprint($, p)
     if ((!list || !t) && !ask && !sprint) return next(e)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Text, Client } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
     // The current task under way on another branch too, or with another owner (team-view T4).
     const clash = t ? await collisionText($, t) : null
     if (clash) warnings.unshift(clash)
     // ▸ between turns; a turning marker while the agent works, where surface modules run.
     const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
-    const { Client } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         {list && t && (
@@ -2074,7 +2073,7 @@ type PaneEvent = any
  * pins a tab, for the charts pane earlier versions opened.
  */
 async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
-  const { Box, Button, Text } = $.ui.resolve(e)
+  const { Box, Button, Text, Client } = $.ui.resolve(e)
   const p = await read($, project)
   const active: Tab = forced ?? (await read($, tab))
   // A short terminal seats the pane in a few rows: the tabs on one line, then
@@ -2092,7 +2091,6 @@ async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
           : await tasksView($, e, p)
   if (forced) return view
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
-  const { Client } = $.ui.resolve(e)
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
@@ -2297,7 +2295,7 @@ async function tasksView($: Engine, e: PaneEvent, p: AsmProject | null) {
 }
 
 async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
-  const { Box, Text } = $.ui.resolve(e)
+  const { Box, Text, Client } = $.ui.resolve(e)
   const snaps = p?.snapshots ?? []
   const body = Math.max(24, Math.min(240, e.props.bodyColumns))
   // Side by side when there is room for two charts of 50 columns, as mockup 12 lays them out.
@@ -2390,7 +2388,6 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
   const labelW = Math.min(28, Math.max(0, ...phases.map(x => phaseLabel(x.name).length)))
   const barW = Math.max(8, Math.min(28, body - labelW - 10))
   const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
-  const { Client } = $.ui.resolve(e)
   const pace = throughput(snaps)
   // The desktop mockup's figures, now-bar and days per task, on every surface.
   const figures = p ? headline(p) : []

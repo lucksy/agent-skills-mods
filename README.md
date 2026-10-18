@@ -247,6 +247,32 @@ The merge driver is set up with `/progress merge-driver install` (see [docs/prog
 
 It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type stripping) and nothing else.
 
+## What it runs, reads, writes and sends
+
+Everything stays on your machine. The plugin makes no network requests and sends nothing anywhere; the live dashboard listens on 127.0.0.1 only.
+
+**Programs it starts**, each as a fixed command with fixed arguments, never through a shell:
+- `git`, read-only, for history, branches and who you are: `rev-parse`, `log`, `rev-list`, `diff`, `cat-file`, `for-each-ref`, `config user.email`. It never fetches, commits, pushes or checks out.
+- `node scripts/agent-skills-progress.mjs --serve`, from the plugin's own folder, only when you run `/progress dashboard live`. Its address and token are printed for you; Ctrl-C or the session's end stops it.
+- `open` (macOS), `xdg-open` (Linux) or `start` (Windows), to open the report or dashboard you asked for in your browser, and your `$VISUAL` / `$EDITOR` to open a spec when you press its edit button.
+- `rm`, only on files it wrote itself: the originals after `/progress archive` copies them into `tasks/archive/`, and `.gitattributes` when `/progress merge-driver uninstall` leaves it empty.
+
+**Files it writes**, all in your project:
+- `SPEC.md`, `SPEC-<id>.md`, `specs/<id>.md`, `tasks/plan.md`, `tasks/todo.md`, `tasks/backlog.md` and `tasks/team.md`: the progress format's Status lines and front matter, and what you ask for (`/progress start T4`, `size`, `pull`, `answer`, a ticked box in the pane, approve in the spec pane).
+- `tasks/progress-report.html` and `tasks/progress-dashboard.html` when you ask for them, and `tasks/archive/<date>-<plan>/` when you archive a plan.
+- `.gitattributes` and `.git/config`, only for `/progress merge-driver install`, which shows what it will write and asks first. After that, `git merge` runs the plugin's script to merge `tasks/todo.md`, `tasks/backlog.md` and specs' approvals.
+
+**What it reads:** those files, your git history, and the environment variables `HOME`, `CLAUDE_CONFIG_DIR`, `VISUAL`, `EDITOR`, `TERM`, `TERM_PROGRAM`, `KITTY_WINDOW_ID` and `TMUX` (where to find things, which editor to open, whether the terminal draws pictures). They hold no credentials, and none of them leaves your machine. Claude Code's session logs for this project (`~/.claude/projects/…`) are read only after you say yes to the band's question, to date tasks git can't, and only lines that write the task list are used.
+
+**Hooks that change what Claude Code does:**
+- `tool.call` on `Write` and `Edit` of a spec or task file: adds or updates its Status lines and front matter (the progress format), puts an approved spec that the edit changed back to `status: draft`, and refuses a Write that would overwrite `tasks/plan.md` or `tasks/todo.md` while they have unfinished tasks (`/progress allow-overwrite` lets the next one through). With the spec gate or checkpoint gate on, an edit of other files gets a warning, never a refusal.
+- `prompt.compose`: adds the plan's current state (spec status, tasks, the next task) and the progress format's rules as the last section of the system prompt, so Claude answers from the files.
+- `skill.prompt`: appends the progress format's rules to the agent-skills spec, plan, build and test skills.
+- `prompt.submit`: reads which task your prompt names, to open the board on it, and once a session prints what changed since you last looked. It never changes or sends your prompt.
+- `ui.render`: draws the band, the panes, the stage in the footer and the styled `/progress` replies. It copies to the clipboard only when you press copy.
+
+`packages/core/dashboard/charts-bundle.ts` is generated from `packages/charts/` (Nivo, bundled by esbuild; see Development). The dashboard page embeds it, and the plugin itself never loads it as code.
+
 ## Development
 
 ```sh

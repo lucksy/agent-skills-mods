@@ -34,7 +34,7 @@ import { historyFromLogs, logsDir, textAfter } from '../packages/core/logs'
 import { spinnerWord, stepOf } from '../packages/core/steps'
 import { decisions, digestText, headline, nowCounts, sparkline } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
-import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../packages/core/chart'
+import { burnup, COLOR, daily, flow, fromBase64, revealCells, toBase64 } from '../packages/core/chart'
 import { meterCells } from '../hooks/ui/meter'
 import { tightBoard, boardRows, bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../packages/core/view'
 import {
@@ -516,6 +516,13 @@ describe('forecast', () => {
 })
 
 describe('views', () => {
+  test('base64 both ways without the browser globals', () => {
+    for (const n of [0, 1, 2, 3, 4, 5, 12, 13]) {
+      const bytes = Uint8Array.from({ length: n }, (_, i) => (i * 37 + 11) & 255)
+      expect([...fromBase64(toBase64(bytes))]).toEqual([...bytes])
+    }
+  })
+
   test('the board in a few rows: a window around the current task, the rest counted', async () => {
     const rows = boardRows(parseTasks(TODO_TEMPLATE))
     const ids = (w: ReturnType<typeof tightBoard>) => w.tasks.map(t => t.id)

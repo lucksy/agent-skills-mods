@@ -19,6 +19,8 @@ function world(
   git: Git = 'no-repo',
   stored: Record<string, unknown> = {},
   surfaces: readonly ('terminal' | 'desktop' | 'vscode' | 'mobile')[] = ['terminal'],
+  /** A file's text read by read, for one that changes between reads; undefined falls back to `files`. */
+  readOverride: (path: string) => string | undefined = () => undefined,
 ) {
   const seen = { status: [] as unknown[], opened: [] as string[], toasts: [] as string[], logs: [] as string[], git: [] as string[], copied: [] as string[], launched: [] as string[], calls: [] as Record<string, unknown>[], notified: [] as string[],
     // /progress dashboard live (T12): `node --version`'s answer (null: no node), what --serve prints, the children started and a way to end them.
@@ -95,7 +97,7 @@ function world(
     return { value: [...names.map(name => ({ name, kind: 'file', size: files[dir + name]!.length })), ...dirs.map(name => ({ name, kind: 'dir', size: 0 }))] as never }
   })
   on('fs.read', (_$, e) => {
-    const text = files[e.path]
+    const text = readOverride(e.path) ?? files[e.path]
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: text }
   })
@@ -1597,11 +1599,10 @@ test('/progress ready lists each task not ready with its reasons, and writes not
 
 test('/progress pull writes neither file when one changed while it ran', async ($, on) => {
   const backlog = '# Backlog\n\n## B1: Quotas\n- [ ] per tenant\n'
-  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE }
+  const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/backlog.md`]: backlog }
   // The backlog as the action reads it, then changed by someone else before the write.
   let reads = 0
-  Object.defineProperty(files, `${CWD}/tasks/backlog.md`, { enumerable: true, configurable: true, get: () => (++reads > 1 ? `${backlog}\n## B2: Theirs\n` : backlog) })
-  world(on, files)
+  world(on, files, 'no-repo', {}, ['terminal'], path => (path === `${CWD}/tasks/backlog.md` ? (++reads > 1 ? `${backlog}\n## B2: Theirs\n` : backlog) : undefined))
   expect((await $.command.run(run('pull B1'))).text).toBe('tasks/backlog.md changed while this ran, so nothing was written. Run it again.')
   expect(files[`${CWD}/tasks/todo.md`]).toBe(TODO_TEMPLATE)
 })
