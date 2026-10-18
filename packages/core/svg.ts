@@ -31,7 +31,9 @@ function axes(box: Box, ymax: number, dates: { x: number; text: string }[]): str
   const ticks = [...new Set([0, Math.round(ymax / 2), ymax])]
     .map(v => `<line class="grid" x1="${box.l}" x2="${W - box.r}" y1="${r1(y(v))}" y2="${r1(y(v))}"/><text x="${box.l - 6}" y="${r1(y(v)) + 4}" text-anchor="end">${v}</text>`)
     .join('')
-  const xs = dates.map(d => `<text x="${r1(d.x)}" y="${box.h - box.b + 16}" text-anchor="middle">${esc(d.text)}</text>`).join('')
+  // A date centred near an edge would be cut by the frame; it hangs inward from that edge instead.
+  const anchor = (x: number) => (x + 22 > W ? 'end' : x < 22 ? 'start' : 'middle')
+  const xs = dates.map(d => `<text x="${r1(d.x)}" y="${box.h - box.b + 16}" text-anchor="${anchor(d.x)}">${esc(d.text)}</text>`).join('')
   return ticks + xs
 }
 

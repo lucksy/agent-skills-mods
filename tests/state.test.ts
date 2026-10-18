@@ -127,7 +127,8 @@ describe('no sizes, no change (ceremonies T2)', () => {
       flow: flow(s.snapshots, 40, 8),
       legends: chartLegends(s.snapshots, fc),
       pace: throughput(s.snapshots),
-      svg: [burnupSvg(s.snapshots, fc), flowSvg(s.snapshots)],
+      // A date at a chart's edge hangs inward since 0.40.1 (text-anchor start/end); every other byte is as before.
+      svg: [burnupSvg(s.snapshots, fc), flowSvg(s.snapshots)].map(c => c && { ...c, source: c.source.replace(/text-anchor="(start|end)">(\d+ \w{3})</g, 'text-anchor="middle">$2<') }),
       dashboard: flowCharts(s),
     })
   }

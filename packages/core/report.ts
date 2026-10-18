@@ -164,13 +164,15 @@ export function reportHtml(p: ReportInput): string {
 :root{--bg:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--line:#e6e5e0;--done:#0ca30c;--doing:#c98a00;--blocked:#d03b3b;--todo:#d9d8d3;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--line:#33332f;--done:#3fbf5a;--doing:#fab219;--blocked:#ff6b5e;--todo:#4a4a46}}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+main{padding:32px clamp(16px,3vw,48px) 64px}
+/* Full width: the charts, and the two lists below them, side by side where there is room, stacked where not. */
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr));gap:0 clamp(24px,3vw,48px);align-items:start}
 h1{font-size:1.6rem;margin:0}h2{font-size:1.05rem;margin:32px 0 8px}.muted,.s,figcaption{color:var(--ink2)}
 .figs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.fig{display:grid;gap:2px;min-width:0}
 .k{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2)}.v{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}.s{font-size:.8rem}
 .now{display:flex;height:14px;border-radius:4px;overflow:hidden;gap:2px}.f-done{background:var(--done)}.f-doing{background:var(--doing)}.f-blocked{background:var(--blocked)}.f-todo{background:var(--todo)}
 .legend{font-size:.85rem}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}.sw:first-child{margin-left:0}
-figure{margin:0}svg{max-width:100%;height:auto}figcaption{font-size:.8rem;margin-top:4px}
+figure{margin:0}svg{width:100%;height:auto}figcaption{font-size:.8rem;margin-top:4px}
 .per{border-collapse:collapse;width:100%;font-size:.9rem}.per th,.per td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
 .per .t{width:40%}.per .bar{width:30%}.per .bar span{display:block;height:8px;border-radius:2px;background:var(--done);min-width:2px}.per .n,.per .d{white-space:nowrap;color:var(--ink2);font-variant-numeric:tabular-nums}
 ul{padding-left:20px}footer{margin-top:40px;font-size:.8rem;color:var(--ink2)}
@@ -184,11 +186,11 @@ ${nowBar}
 ${current}
 ${
   p.charts.burnup || p.charts.flow
-    ? chart('Burn-up', 'scope vs done, dashed = forecast', p.charts.burnup) + chart('Flow', 'tasks by state, per day', p.charts.flow)
+    ? `<div class="pair">${chart('Burn-up', 'scope vs done, dashed = forecast', p.charts.burnup)}${chart('Flow', 'tasks by state, per day', p.charts.flow)}</div>`
     : `<section><h2>Charts</h2><p class="muted">The burn-up and flow charts need two days of history${first ? `; tracking began ${shortDay(first.day)}` : ''}.</p></section>`
 }
-<section><h2>Days per task</h2>${perRows}</section>
-<section><h2>Needs a decision</h2>${asks.length ? `<ul>${asks.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '<p class="muted">Nothing.</p>'}</section>
+<div class="pair"><section><h2>Days per task</h2>${perRows}</section>
+<section><h2>Needs a decision</h2>${asks.length ? `<ul>${asks.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : '<p class="muted">Nothing.</p>'}</section></div>
 <footer>Written by agent-skills-mods from ${esc(p.specFile ?? 'SPEC.md')} and the task list.${p.historyLine ? ` ${esc(p.historyLine)}` : ''}${p.charts.burnup ? " Hover a chart for each day's numbers." : ''}</footer>
 </main></body></html>
 `

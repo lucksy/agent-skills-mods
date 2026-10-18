@@ -418,6 +418,25 @@ export type BoardRow =
   | { kind: 'task'; id: string; title: string; glyph: string; tone: Tone; right: string; rightTone: Tone; isCurrent: boolean; under: { text: string; tone: Tone }[] }
   | { kind: 'checkpoint'; label: string; glyph: string; tone: Tone; right: string; rightTone: Tone }
 
+/** A pane with fewer body rows than this draws the compact board (`tightBoard`). */
+export const TIGHT_ROWS = 12
+
+/**
+ * The board in a few rows, for a pane seated in a short terminal: one line per
+ * task, the window around the current task (the last one once all are done),
+ * and how many are out of view on either side. `slots` is the rows for tasks
+ * and that count together.
+ */
+export function tightBoard(rows: BoardRow[], slots: number): { tasks: Extract<BoardRow, { kind: 'task' }>[]; above: number; below: number } {
+  const all = rows.filter((r): r is Extract<BoardRow, { kind: 'task' }> => r.kind === 'task')
+  if (slots <= 0 || all.length === 0) return { tasks: [], above: 0, below: all.length }
+  const show = all.length <= slots ? all.length : Math.max(1, slots - 1)
+  const current = all.findIndex(r => r.isCurrent)
+  const anchor = current >= 0 ? current : all.findIndex(r => r.tone !== 'done') >= 0 ? all.findIndex(r => r.tone !== 'done') : all.length - 1
+  const start = Math.min(Math.max(0, anchor - Math.floor((show - 1) / 2)), all.length - show)
+  return { tasks: all.slice(start, start + show), above: start, below: all.length - start - show }
+}
+
 /** `Phase 1: Foundation` → `Phase 1 · Foundation`, as the board writes a phase. */
 export const phaseLabel = (p: string) => p.replace(/^(Phase\s+\d+)\s*[:.\-–—]\s*/i, '$1 · ')
 

@@ -74,6 +74,8 @@ import {
   specOfPath,
   stageOfSkill,
   statusText,
+  tightBoard,
+  TIGHT_ROWS,
   timelineRows,
   type Stage,
 } from '../packages/core/view'
@@ -2077,8 +2079,13 @@ async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
   const { Box, Button, Text } = $.ui.resolve(e) as any
   const p = await read($, project)
   const active: Tab = forced ?? (await read($, tab))
-  const view =
-    active === 'timeline'
+  // A short terminal seats the pane in a few rows: the tabs on one line, then
+  // what fits, so the first rows are the board and not its chrome.
+  const room: number = e.props.scroll?.bodyRows ?? 40
+  const tight = room < TIGHT_ROWS
+  const view = tight
+    ? await tightView($, e, p, active, forced ? room : room - 1)
+    : active === 'timeline'
       ? await timelineView($, e, p)
       : active === 'charts'
         ? await chartsView($, e, p)
@@ -2090,19 +2097,72 @@ async function drawPlan($: $, e: PaneEvent, forced: Tab | null) {
   const Client = hasClient ? ($.ui.resolve(e) as any).Client : null
   return (
     <Box flexDirection="column">
-      <Box flexDirection="row" gap={1} flexWrap="wrap">
+      <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
         {Client ? (
           <Client key="tabs" module="./ui/tabs.tsx" props={{ active }} />
         ) : (
           TABS.map(t => <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} dimColor={t !== active} onPress={() => void showTab($, t)} />)
         )}
-        {Client && <Text dimColor>←/→ switch ·</Text>}
+        {Client && !tight && <Text dimColor>←/→ switch ·</Text>}
         <Button key="report" label="report" hotkey="r" plain dimColor onPress={() => void paneAction($, 'report')} />
         <Text dimColor>·</Text>
-        <Button key="digest" label="copy digest" hotkey="c" plain dimColor onPress={() => void paneAction($, 'digest')} />
+        <Button key="digest" label={tight ? 'digest' : 'copy digest'} hotkey="c" plain dimColor onPress={() => void paneAction($, 'digest')} />
       </Box>
-      <Text color="subtle">{'─'.repeat(Math.max(10, e.props.bodyColumns))}</Text>
+      {!tight && <Text color="subtle">{'─'.repeat(Math.max(10, e.props.bodyColumns))}</Text>}
       {view}
+    </Box>
+  )
+}
+
+/**
+ * The plan pane in `rows` rows (a short terminal's inline seat): the tasks as
+ * one line each around the current task, with what is out of view counted;
+ * the other tabs, which need the room, say so rather than draw half.
+ */
+async function tightView($: $, e: PaneEvent, p: AsmProject | null, active: Tab, rows: number) {
+  const { Box, Text } = $.ui.resolve(e) as any
+  if (rows <= 0) return null
+  const list = p?.list
+  if (active !== 'tasks') {
+    return (
+      <Text dimColor wrap="truncate-end">
+        {active[0]!.toUpperCase() + active.slice(1)} needs more rows than this pane has: ← → to Tasks, a taller terminal, or /progress dashboard.
+      </Text>
+    )
+  }
+  if (!list || list.total === 0) return <Text dimColor wrap="truncate-end">{nextText(list ?? null, p?.plan ?? null).split('\n')[0]}</Text>
+  const color = { done: 'success', now: 'warning', muted: 'subtle', blocked: 'error', accent: 'claude', needsYou: 'permission', text: undefined } as const
+  const pct = Math.round((list.done / list.total) * 100)
+  const t = list.current
+  const where = list.done === list.total ? ' · all done → /review' : t ? ` · now ${t.id}` : ' · nothing can start'
+  const win = tightBoard(boardRows(list, { failed: await read($, failed) }), rows - 1)
+  const out = [win.above && `↑ ${win.above} more`, win.below && `↓ ${win.below} more`].filter(Boolean).join(' · ')
+  return (
+    <Box flexDirection="column">
+      <Text wrap="truncate-end">
+        <Text bold color="claude">
+          tasks
+        </Text>
+        <Text dimColor>
+          {' '}
+          {list.done}/{list.total} · {pct}%{where}
+        </Text>
+      </Text>
+      {win.tasks.map(r => (
+        <Box key={r.id} flexDirection="row" justifyContent="space-between" gap={1}>
+          <Text wrap="truncate-end" bold={r.isCurrent}>
+            <Text color={color[r.tone]}>{r.glyph}</Text> {r.id} <Text dimColor={r.tone === 'muted' && !r.isCurrent}>{r.title}</Text>
+          </Text>
+          <Box flexShrink={0}>
+            <Text color={color[r.rightTone]}>{r.right}</Text>
+          </Box>
+        </Box>
+      ))}
+      {out && (
+        <Text dimColor wrap="truncate-end">
+          {out} · /progress dashboard shows every task
+        </Text>
+      )}
     </Box>
   )
 }

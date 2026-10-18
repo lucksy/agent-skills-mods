@@ -228,7 +228,7 @@ const STYLE = `
 --done:#4cc76a;--doing:#f2b233;--blocked:#ff7b6e;--todo:#4a4a46;--needs:#f08cc8;--focus:#7fb0ff}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{max-width:1120px;margin:0 auto;padding:0 var(--s4)}
+.wrap{padding:0 clamp(16px,3vw,48px)}
 h1,h2,h3{margin:0;line-height:1.25}
 code{font:12.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace}
 a{color:inherit}
@@ -280,8 +280,8 @@ function OVERVIEW_STYLE(): string {
 .fig.f-needs .s{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fig.f-needs .v{color:var(--needs)}.fig.f-needs.zero .v{color:var(--done)}
 .basis{margin:var(--s2) 0 0;color:var(--ink3);font-size:12.5px}
-.health{border:1px solid var(--line);border-left:3px solid;border-radius:var(--r);background:var(--surface);padding:var(--s3) var(--s4);margin-bottom:var(--s4)}
-.health p{margin:0}.h-ok{border-left-color:var(--done)}.h-risk{border-left-color:var(--doing)}
+.health{--t:var(--line2);border:1px solid color-mix(in srgb,var(--t) 35%,var(--line));border-radius:var(--r);background:color-mix(in srgb,var(--t) 9%,var(--surface));padding:var(--s3) var(--s4);margin-bottom:var(--s4)}
+.health p{margin:0}.h-ok{--t:var(--done)}.h-risk{--t:var(--doing)}
 .h-head{font-weight:650;font-size:15px}.h-ok .g{color:var(--done)}.h-risk .g{color:var(--doing)}
 .h-n{font-weight:400;color:var(--ink2);font-size:13px}
 .h-why{margin:var(--s1) 0 0;color:var(--ink2);font-size:13px}
@@ -332,15 +332,18 @@ function BOARD_STYLE(): string {
 .col .n{color:var(--ink3);font-weight:500;margin-left:2px}
 .col ul{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}
 .none{margin:var(--s1);color:var(--ink3);font-size:13px}
-.card.c-todo,.card.c-waiting,.card.c-doing,.card.c-review,.card.c-blocked,.card.c-done{padding:var(--s2) var(--s3);border-left:3px solid var(--line2)}
-.c-doing{border-left-color:var(--doing)!important}.c-blocked{border-left-color:var(--blocked)!important}.c-done{border-left-color:var(--done)!important}.c-waiting{border-left-style:dashed!important}
+/* The column names the state; on the card the id takes its colour, a blocked card is tinted and a waiting one outlined. */
+.card.c-todo,.card.c-waiting,.card.c-doing,.card.c-review,.card.c-blocked,.card.c-done{padding:var(--s2) var(--s3)}
+.c-doing .c-title .id{color:var(--doing)}.c-review .c-title .id{color:var(--focus)}.c-done .c-title .id{color:var(--done)}.c-blocked .c-title .id{color:var(--blocked)}
+.card.c-blocked{background:color-mix(in srgb,var(--blocked) 8%,var(--surface));border-color:color-mix(in srgb,var(--blocked) 40%,var(--line))}
+.card.c-waiting{background:transparent;border-style:dashed;border-color:var(--line2)}
 .c-title{margin:0;font-weight:550;line-height:1.35}.c-title .id{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
 .c-done .c-title{color:var(--ink2)}
 .c-meta{margin:var(--s1) 0 0;font-size:12.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:2px var(--s2);justify-content:space-between}
 .c-meta .why{color:var(--blocked)}
 .c-phase{color:var(--ink3);white-space:nowrap}.c-owner{color:var(--ink);font-weight:550;white-space:nowrap}
 .c-note{margin:var(--s1) 0 0;padding-top:var(--s1);border-top:1px dashed var(--line2);font-size:12.5px;color:var(--ink2)}
-.c-review{border-left-color:var(--focus)!important}.lane .c-phase{display:none}
+.lane .c-phase{display:none}
 .cp{font-size:12.5px;color:var(--ink2);padding:var(--s1) var(--s2);border:1px dashed var(--line2);border-radius:var(--r)}
 .cp span{color:var(--needs)}
 /* All branches (team-view): its columns replace this branch's once the switch says so. */

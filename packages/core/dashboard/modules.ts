@@ -49,9 +49,11 @@ export function modulesHtml(s: State): string {
 /** This view's CSS, added to the page's stylesheet. */
 export const MODULES_STYLE = `
 .mods{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}
-.mod{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,1fr);gap:var(--s1) var(--s4);align-items:center;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:var(--r);padding:var(--s3) var(--s4)}
-.mod p{margin:0}.mod-h{white-space:nowrap}.mod-s{color:var(--ink2);font-size:12.5px;margin-left:var(--s1)}
-.m-done{border-left-color:var(--done)}.m-done .g{color:var(--done)}.m-doing{border-left-color:var(--doing)}.m-doing .g{color:var(--doing)}.m-needs .g{color:var(--needs)}.m-todo .g{color:var(--ink3)}
+.mod{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,1fr);gap:var(--s1) var(--s4);align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3) var(--s4)}
+/* The state is the glyph and a pill in its colour; a module not started is drawn quieter, outlined, not filled. */
+.mod p{margin:0}.mod-h{white-space:nowrap}.mod-s{--t:var(--ink2);color:var(--t);background:color-mix(in srgb,var(--t) 14%,transparent);font-size:12px;font-weight:550;border-radius:999px;padding:1px var(--s2);margin-left:var(--s1)}
+.m-done .g,.m-done .mod-s{--t:var(--done);color:var(--done)}.m-doing .g,.m-doing .mod-s{--t:var(--doing);color:var(--doing)}.m-needs .g,.m-needs .mod-s{--t:var(--needs);color:var(--needs)}
+.m-todo{background:transparent;border-style:dashed;border-color:var(--line2)}.m-todo .g{color:var(--ink3)}.m-todo .mod-h b,.m-todo .mod-h strong{color:var(--ink2)}
 .mod-r{color:var(--ink2);font-size:13px}
 .mod-p{display:flex;align-items:center;gap:var(--s2)}.mod-bar{flex:1;height:8px;border-radius:3px;background:var(--line);overflow:hidden}.mod-bar span{display:block;height:100%}
 .mod-n{font-size:12.5px;color:var(--ink2);font-variant-numeric:tabular-nums}

@@ -36,7 +36,7 @@ import { decisions, digestText, headline, nowCounts, sparkline } from '../packag
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { burnup, COLOR, daily, flow, revealCells, toBase64 } from '../packages/core/chart'
 import { meterCells } from '../hooks/ui/meter'
-import { bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../packages/core/view'
+import { tightBoard, boardRows, bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../packages/core/view'
 import {
   CHECKLIST,
   GOOD_SPEC,
@@ -516,6 +516,22 @@ describe('forecast', () => {
 })
 
 describe('views', () => {
+  test('the board in a few rows: a window around the current task, the rest counted', async () => {
+    const rows = boardRows(parseTasks(TODO_TEMPLATE))
+    const ids = (w: ReturnType<typeof tightBoard>) => w.tasks.map(t => t.id)
+    // Every task fits: no count line.
+    expect(tightBoard(rows, 9)).toMatchObject({ above: 0, below: 0 })
+    expect(ids(tightBoard(rows, 9))).toEqual(['T1', 'T2', 'T3', 'T4'])
+    // Two rows: the current task (T2) and the count.
+    expect(tightBoard(rows, 2)).toMatchObject({ above: 1, below: 2 })
+    expect(ids(tightBoard(rows, 2))).toEqual(['T2'])
+    expect(ids(tightBoard(rows, 3))).toEqual(['T2', 'T3'])
+    // All done: the window ends on the last task.
+    const done = boardRows(parseTasks('## Task 1: A\n- [x] a\n## Task 2: B\n- [x] b\n## Task 3: C\n- [x] c\n'))
+    expect(ids(tightBoard(done, 2))).toEqual(['T3'])
+    expect(tightBoard(rows, 0)).toMatchObject({ tasks: [], below: 4 })
+  })
+
   test('status entry and band', async () => {
     const list = parseTasks(TODO_TEMPLATE)
     // The status entry speaks only when something needs the person; all well, it clears.

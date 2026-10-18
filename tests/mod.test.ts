@@ -272,6 +272,26 @@ const mountBoard = ($: Parameters<TestBody>[0]) =>
     props: { title: 'x', isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never,
   })
 
+test('a pane seated in a few rows shows the board first: tabs on one line, the current task, what is out of view', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
+  await $.command.run(run('refresh'))
+  // A short terminal: the inline seat gives the body 4 rows.
+  const pane = await $.ui.mount({
+    plugin: 'agent-skills-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'asm-board',
+    props: { title: 'x', isFocused: false, bodyColumns: 96, placement: 'inline', scroll: { offset: 0, bodyRows: 4 } } as never,
+  })
+  expect(await pane.find({ text: /←\/→ switch/ })).toBeUndefined()
+  expect(await pane.find({ text: /^tasks 1\/4 · 25% · now T2$/ })).toBeDefined()
+  expect(await pane.find({ text: /T2 Prisma schema for keys/ })).toBeDefined()
+  expect(await pane.find({ text: /^↑ 1 more · ↓ 2 more · \/progress dashboard shows every task$/ })).toBeDefined()
+  // Room enough: the full board, as before.
+  await pane.redraw({ title: 'x', isFocused: false, bodyColumns: 96, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never)
+  expect(await pane.find({ text: /←\/→ switch/ })).toBeDefined()
+})
+
 test('history is rebuilt from git once, so the first day already has an ETA', async ($, on) => {
   const git = gitOutput([
     ['2026-10-08', TODO_T3_DONE],
