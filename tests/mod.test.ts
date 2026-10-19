@@ -875,8 +875,11 @@ test('the plan pane: tabs switch by their digit or a click, with report and copy
   await $.command.run(run(''))
   const pane = await mountBoard($)
   expect(await pane.find({ type: 'Client' })).toBeUndefined()
-  expect((await pane.find({ type: 'Button', key: 'tab-tasks' }))?.props).toMatchObject({ hotkey: '3', plain: true, dimColor: false })
-  expect((await pane.find({ type: 'Button', key: 'tab-charts' }))?.props).toMatchObject({ hotkey: '2', dimColor: true })
+  expect((await pane.find({ type: 'Button', key: 'tab-tasks' }))?.props).toMatchObject({ hotkey: '2', plain: true, dimColor: false })
+  expect((await pane.find({ type: 'Button', key: 'tab-charts' }))?.props).toMatchObject({ hotkey: '4', dimColor: true })
+  // Eight tabs, the dashboard's order: Overview first, then the plan's own, then the team's.
+  const keys = ['overview', 'tasks', 'timeline', 'charts', 'graph', 'sprint', 'inbox', 'team']
+  for (const [i, k] of keys.entries()) expect((await pane.find({ type: 'Button', key: `tab-${k}` }))?.props).toMatchObject({ hotkey: String(i + 1) })
   // The active tab in the accent colour and bold, the others dim.
   expect((await pane.find({ type: 'Text', text: /^Tasks$/ }))?.props).toMatchObject({ color: 'claude', bold: true })
   expect(await pane.find({ type: 'Text', text: /^Charts$/ })).toBeUndefined()
@@ -1261,18 +1264,67 @@ test('/progress graph opens the Graph tab with the tree and the critical path', 
   expect(await pane.find({ text: /^Critical path T2 → T3 · 2 unfinished tasks in a row bound the finish date$/ })).toBeDefined()
 })
 
-test('the charts tab opens with the four figures, the now-bar and days per task', async ($, on) => {
+test('the Overview tab: health, the four figures, the now-bar, what needs you and the task under way', async ($, on) => {
   const todo = TODO_T3_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** done · started 2026-10-04 · done 2026-10-06').replace('## Task 4: Rate limit per key', '## Task 4: Rate limit per key\n**Status:** in progress · started 2026-10-08')
   world(on, { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/plan.md`]: '# Plan\n## Open Questions\n- Q2 (T9): later?\n' }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
-  await $.command.run(run('charts'))
-  const pane = await mountCharts($, 100)
+  await $.command.run(run(''))
+  const pane = await mountBoard($)
+  await pane.press({ key: 'tab-overview' })
   for (const label of ['DONE', 'FORECAST', 'SCOPE CHANGE', 'NEEDS A DECISION']) expect(await pane.find({ text: new RegExp(`^${label}$`) })).toBeDefined()
   expect(await pane.find({ text: /^3 of 4$/ })).toBeDefined()
-  expect(await pane.find({ text: /^Q2 \(T9\): later\?$/ })).toBeDefined()
   expect(await pane.find({ text: /^done 3 · in progress 1 · blocked 0 · to do 0$/ })).toBeDefined()
+  expect(await pane.find({ text: /On track|At risk/ })).toBeDefined()
+  expect(await pane.find({ text: /^Needs you$/ })).toBeDefined()
+  expect(await pane.find({ text: /^♦ Q2 \(T9\): later\?/ })).toBeDefined()
+  expect(await pane.find({ text: /^▸ T4 Rate limit per key/ })).toBeDefined()
+})
+
+test('the charts tab: the charts, phases and days per task, the figures left to the Overview', async ($, on) => {
+  const todo = TODO_T3_DONE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** done · started 2026-10-04 · done 2026-10-06').replace('## Task 4: Rate limit per key', '## Task 4: Rate limit per key\n**Status:** in progress · started 2026-10-08')
+  world(on, { [`${CWD}/tasks/todo.md`]: todo }, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($, 100)
+  expect(await pane.find({ text: /^DONE$/ })).toBeUndefined()
+  expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
   expect(await pane.find({ text: /^Days per task$/ })).toBeDefined()
   expect(await pane.find({ text: /^T3 Issue and revoke keys +█+ 2d$/ })).toBeDefined()
   expect(await pane.find({ text: /^T4 Rate limit per key +█+ 1d so far$/ })).toBeDefined()
+})
+
+test('the charts tab: a history where nothing moved says so instead of flat charts, and a same-day task is <1d', async ($, on) => {
+  const done = '## Task 1: A\n**Status:** done · started 2026-10-01 · done 2026-10-01\n- [x] a\n## Task 2: B\n**Status:** done · started 2026-10-01 · done 2026-10-01\n- [x] b\n'
+  const still = [{ day: '2026-10-01', done: 2, total: 2, doing: 0, blocked: 0 }, { day: '2026-10-05', done: 2, total: 2, doing: 0, blocked: 0 }]
+  world(on, { [`${CWD}/tasks/todo.md`]: done }, 'no-repo', { [`history:${CWD}`]: still })
+  await $.command.run(run('charts'))
+  const pane = await mountCharts($, 100)
+  expect(await pane.find({ text: /^Burn-up and flow: no change to chart\. 2 of 2 tasks were done on 1 Oct/ })).toBeDefined()
+  expect(await pane.find({ type: 'Raster' })).toBeUndefined()
+  expect(await pane.find({ text: /^T1 A +█+ <1d$/ })).toBeDefined()
+})
+
+test('the Sprint and Inbox tabs draw what /progress sprint and /progress inbox reply', async ($, on) => {
+  world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE, [`${CWD}/tasks/plan.md`]: '# Plan\n## Open Questions\n- Q2 (T3): Upstash or self-hosted?\n' })
+  await $.command.run(run(''))
+  const pane = await mountBoard($)
+  await pane.press({ key: 'tab-sprint' })
+  expect(await pane.find({ text: /No sprint running/ })).toBeDefined()
+  await pane.press({ key: 'tab-inbox' })
+  expect(await pane.find({ text: /Q2 \(T3\): Upstash or self-hosted\?/ })).toBeDefined()
+})
+
+test('the Team tab: one line per person with their task and step, then the review queue', async ($, on) => {
+  const todo = TODO_TEMPLATE.replace('## Task 3: Issue and revoke keys', '## Task 3: Issue and revoke keys\n**Status:** in progress · @sara · started 2026-10-08 · step test').replace(
+    '## Task 4: Rate limit per key',
+    '## Task 4: Rate limit per key\n**Status:** in review · @amila · started 2026-10-07 · PR #7 · reviewer @sara',
+  )
+  world(on, { [`${CWD}/tasks/todo.md`]: todo, [`${CWD}/tasks/team.md`]: TEAM_MD }, asPerson('sara@example.com'))
+  await $.command.run(run(''))
+  const pane = await mountBoard($)
+  await pane.press({ key: 'tab-team' })
+  expect(await pane.find({ text: /^@sara \(design\) · ▸ T3 Issue and revoke keys · test · 1 review waiting$/ })).toBeDefined()
+  expect(await pane.find({ text: /^@amila \(lead, eng\) · nothing under way · \+1 under way$|^@amila \(lead, eng\) · / })).toBeDefined()
+  expect(await pane.find({ text: /^Review queue$/ })).toBeDefined()
+  expect(await pane.find({ text: /^T4 Rate limit per key · PR #7 · by @amila · reviewer @sara/ })).toBeDefined()
 })
 
 test('the current task row is shaded with a theme colour', async ($, on) => {

@@ -117,7 +117,7 @@ declare module 'claude-code' {
       specSection: string | null
       pixels: boolean
       chartReveal: number
-      tab: 'timeline' | 'charts' | 'tasks' | 'graph'
+      tab: 'overview' | 'tasks' | 'timeline' | 'charts' | 'graph' | 'sprint' | 'inbox' | 'team'
       specDiff: { file: string; since: string; diff: string } | null
       /** team-view: the board across branches last read, for the band, the board pane and the dashboard. */
       branchBoard: AsmBranchBoard | null

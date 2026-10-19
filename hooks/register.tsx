@@ -20,8 +20,9 @@ import { historyFromLogs, logsDir, mentions } from '../packages/core/logs'
 import { burnup, chartLegends, COLOR, flow, hex, revealCells, throughput } from '../packages/core/chart'
 import { timeline, type Seg } from '../packages/core/timeline'
 import { criticalPath, graphLines } from '../packages/core/graph'
-import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
+import { digestText, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
+import { overviewTab, teamTab } from './tabs'
 import { readModules, toState } from '../packages/core/state'
 import { modulesText, type ModuleRow } from '../packages/core/modules'
 import { moduleFiles, moduleTimeline } from '../packages/core/module-timeline'
@@ -130,7 +131,7 @@ const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 type Engine = EngineInterface
 
 /** The plan pane's tabs, in order: each one's digit is its place here. */
-const TABS = ['timeline', 'charts', 'tasks', 'graph'] as const
+const TABS = ['overview', 'tasks', 'timeline', 'charts', 'graph', 'sprint', 'inbox', 'team'] as const
 type Tab = (typeof TABS)[number]
 
 /** Text cut to a column width with an ellipsis, then padded to it. */
@@ -1086,18 +1087,23 @@ async function mergeDriverCommand($: Engine, words: string[]): Promise<string> {
  * has them), opened on `view`. Written even without a task list, since the page
  * then says how to start.
  */
-async function writeDashboard($: Engine, p: AsmProject, view: string): Promise<string> {
-  if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
+/**
+ * The project as State v1, what the dashboard page and the plan pane's
+ * Overview, Sprint, Inbox and Team tabs draw from. `fresh` reads the branches
+ * and the sprint's copies from git, as the page does; the pane uses what the
+ * session already read, so drawing never runs git.
+ */
+async function projectState($: Engine, p: AsmProject, fresh: boolean) {
   const specs = await allSpecs($, p)
   const now = await $.clock.now()
   // The Board's All branches (team-view T5): read from git objects already here, never fetched.
-  const board = await readBoard($, p).catch(() => null)
+  const board = fresh ? await readBoard($, p).catch(() => null) : await read($, branchBoard)
   // The Sprint tab (ceremonies T12): the backlog, the sprint with its copies since the start, and its retro once it has ended.
   const backlogText = await readText($, `${p.cwd}/${BACKLOG_FILE}`)
-  await readSprint($, p).catch(() => undefined)
+  if (fresh) await readSprint($, p).catch(() => undefined)
   const sprint = await currentSprint($, p)
-  const sprintTab = sprint && p.list ? { sprint, sprintCopies: (await read($, sprintCopies))?.versions ?? [], retro: sprint.phase === 'ended' ? await retroOf($, p).catch(() => null) : null } : {}
-  const state = toState({
+  const sprintTab = sprint && p.list ? { sprint, sprintCopies: (await read($, sprintCopies))?.versions ?? [], retro: fresh && sprint.phase === 'ended' ? await retroOf($, p).catch(() => null) : null } : {}
+  return toState({
     cwd: p.cwd,
     today: dayOf(now),
     specs,
@@ -1119,6 +1125,11 @@ async function writeDashboard($: Engine, p: AsmProject, view: string): Promise<s
     backlog: backlogText === null ? null : parseBacklog(backlogText),
     ...sprintTab,
   })
+}
+
+async function writeDashboard($: Engine, p: AsmProject, view: string): Promise<string> {
+  if (view && !VIEW_IDS.includes(view as ViewId)) return `No view "${view}". Views: ${VIEW_IDS.join(', ')}.`
+  const state = await projectState($, p, true)
   const html = dashboardHtml(state, { view: (view || undefined) as ViewId | undefined })
   const path = `${p.cwd}/${DASHBOARD_FILE}`
   await $.fs.write(path, html)
@@ -2082,7 +2093,11 @@ async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
         ? await chartsView($, e, p)
         : active === 'graph'
           ? await graphView($, e, p)
-          : await tasksView($, e, p)
+          : active === 'overview' || active === 'team'
+            ? await stateTab($, e, p, active)
+            : active === 'sprint' || active === 'inbox'
+              ? await replyTab($, e, p, active)
+              : await tasksView($, e, p)
   if (forced) return view
   return (
     <Box flexDirection="column">
@@ -2163,6 +2178,25 @@ async function tightView($: Engine, e: PaneEvent, p: AsmProject | null, active: 
       )}
     </Box>
   )
+}
+
+/** The Overview and Team tabs: State v1 from what the session has read, drawn by ./tabs. */
+async function stateTab($: Engine, e: PaneEvent, p: AsmProject | null, which: 'overview' | 'team') {
+  const { Box, Text } = $.ui.resolve(e)
+  if (!p) return <Text dimColor>{nextText(null, null)}</Text>
+  const s = await projectState($, p, false)
+  return which === 'overview' ? overviewTab({ Box, Text }, s, Math.max(24, e.props.bodyColumns)) : teamTab({ Box, Text }, s)
+}
+
+/** The Sprint and Inbox tabs: the reply `/progress sprint` or `/progress inbox` gives, drawn as the reply row draws it. */
+async function replyTab($: Engine, e: PaneEvent, p: AsmProject | null, which: 'sprint' | 'inbox') {
+  const { Text } = $.ui.resolve(e)
+  if (!p?.list) return <Text dimColor>{nextText(p?.list ?? null, p?.plan ?? null)}</Text>
+  const text =
+    which === 'sprint'
+      ? sprintText(await currentSprint($, p), p.list, dayOf(await $.clock.now()), null)
+      : inboxText(await projectState($, p, false), 'me')
+  return drawReply($, e, replyLines(text))
 }
 
 /** The plan pane's tab, from a tab button or a command. The charts sweep in when shown. */
@@ -2390,11 +2424,9 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
   const labelW = Math.min(28, Math.max(0, ...phases.map(x => phaseLabel(x.name).length)))
   const barW = Math.max(8, Math.min(28, body - labelW - 10))
   const pace = throughput(snaps)
-  // The desktop mockup's figures, now-bar and days per task, on every surface.
-  const figures = p ? headline(p) : []
-  const counts = list ? nowCounts(list) : null
-  const barWidth = Math.max(10, Math.min(60, body - 2))
-  const seg = (n: number) => (counts && list && list.total ? Math.round((n / list.total) * barWidth) : 0)
+  // Days per task, on every surface; the figures and the now-bar are on the Overview tab.
+  // A history in which nothing moved (every task done before the first day, say) charts as flat lines: say so instead.
+  const still = snaps.every(x => x.done === snaps[0]!.done && x.total === snaps[0]!.total)
   const today = dayOf(await $.clock.now())
   const perTask = p ? taskDays({ ...p, today, charts: { burnup: null, flow: null } }) : []
   const maxDays = Math.max(1, ...perTask.map(x => x.days))
@@ -2402,37 +2434,11 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
   const figureW = Math.max(16, Math.floor((body - 6) / 4))
   return (
     <Box flexDirection="column" gap={1}>
-      {figures.length > 0 && (
-        <Box flexDirection="row" gap={2} flexWrap="wrap">
-          {figures.map(f => (
-            <Box key={f.label} flexDirection="column" width={figureW}>
-              <Text dimColor>{f.label.toUpperCase()}</Text>
-              <Text>
-                <Text bold>{f.value}</Text>
-                {f.unit ? <Text dimColor> {f.unit}</Text> : ''}
-              </Text>
-              <Text dimColor wrap="truncate-end">
-                {f.sub}
-              </Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-      {counts && list && list.total > 0 && (
-        <Box flexDirection="column">
-          <Text bold>Now</Text>
-          <Text>
-            <Text color={hex(COLOR.done)}>{'█'.repeat(seg(counts.done))}</Text>
-            <Text color={hex(COLOR.doing)}>{'█'.repeat(seg(counts.doing))}</Text>
-            <Text color={hex(COLOR.blocked)}>{'█'.repeat(seg(counts.blocked))}</Text>
-            <Text color={hex(COLOR.todo)}>{'█'.repeat(Math.max(0, barWidth - seg(counts.done) - seg(counts.doing) - seg(counts.blocked)))}</Text>
-          </Text>
-          <Text dimColor>
-            done {counts.done} · in progress {counts.doing} · blocked {counts.blocked} · to do {counts.todo}
-          </Text>
-        </Box>
-      )}
-      {sideBySide ? (
+      {still ? (
+        <Text dimColor wrap="wrap">
+          {`Burn-up and flow: no change to chart. ${snaps[0]!.done} of ${snaps[0]!.total} tasks were done on ${shortDay(snaps[0]!.day)}, the first day of history, and nothing has moved since. They draw once tasks are added or finished.`}
+        </Text>
+      ) : sideBySide ? (
         <Box flexDirection="row" gap={2}>
           {charts}
         </Box>
@@ -2466,7 +2472,8 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
               <Text color={x.isRunning ? 'warning' : 'success'}>{'█'.repeat(Math.max(1, Math.round((x.days / maxDays) * Math.max(6, Math.min(30, body - nameW - 14)))))}</Text>
               <Text dimColor>
                 {' '}
-                {x.days}d{x.isRunning ? ' so far' : ''}
+                {x.days === 0 ? '<1d' : `${x.days}d`}
+                {x.isRunning ? ' so far' : ''}
               </Text>
             </Text>
           ))}
