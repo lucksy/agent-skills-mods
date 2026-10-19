@@ -1,30 +1,30 @@
-# agent-skills-mods
+# Spec & Plan Board for agent-skills
 
-A Claude Code plugin that makes the [agent-skills](https://github.com/addyosmani/agent-skills) workflow readable inside Claude Code. You see `SPEC.md`, `tasks/plan.md` and `tasks/todo.md` as panes, a band above the prompt and the footer, so you don't have to open them in an editor.
+See where your project stands without leaving Claude Code. If you build with the [agent-skills](https://github.com/addyosmani/agent-skills) workflow (spec, plan, build, review, ship), this plugin reads its `SPEC.md`, `tasks/plan.md` and `tasks/todo.md` and shows them as a task board, a band above the prompt with the task under way, and an ETA range from your real pace. It warns you before a plan with unfinished tasks is overwritten, and it only speaks up below the prompt when something needs you.
 
-It runs next to agent-skills and changes nothing in it. The skills still write plain markdown, and this plugin reads it. For people outside the terminal, `/progress dashboard` writes the same project as one page: Overview, Board, Team, Inbox, Sprint, Roadmap, Flow charts and Spec. `/progress dashboard live` serves it on your own machine with buttons that write back to the markdown.
+For a team, it adds owners, reviews and handoffs, the board across git branches, sprints with planning, review and retro, a standup and a decisions inbox. `/progress dashboard` writes the whole project as one page you can send to anyone; `/progress dashboard live` serves it on your own machine with buttons that write back to the markdown.
+
+Everything is read from the markdown and git history already in your repository, and nothing leaves your machine. It runs next to agent-skills and changes nothing in it. This is an independent plugin, not made by the agent-skills authors or by Anthropic.
 
 ```
 ╭ Plan ─────────────────────────────────────────────╮
-│ 1/4 done ███████░░░░░░░░░░░░░░░░░░░░░             │
+│ 1: Timeline  2: Charts  3: Tasks  4: Graph        │
+│ · r: report · c: copy digest                      │
+│───────────────────────────────────────────────────│
+│ tasks · Phase 1 of 2                   1/4 · 25%  │
+│ Phase 1 · Foundation                              │
+│ ✓ T1 Monorepo scaffold                         ✓  │
+│ ● T2 Prisma schema for keys                  now  │
+│   ✓ Key table · ☐ migration · ☐ tests             │
+│ ◆ Checkpoint: After Tasks 1-2           after T2  │
+│ Phase 2 · Core                                    │
+│ · T3 Issue and revoke keys              waits T2  │
+│ ○ T4 Rate limit per key                           │
 │ ETA 23 Oct (fast 19 Oct, slow 28 Oct)             │
-│   · from 4 tasks in 11 days · +2 added            │
-│                                                   │
-│ Phase 1: Foundation                               │
-│   ✓ T1 Monorepo scaffold · 3/3                    │
-│   ● T2 Prisma schema for keys · 1/3               │
-│   ○ Checkpoint: After Tasks 1-2                   │
-│ Phase 2: Core                                     │
-│   · T3 Issue and revoke keys · waits on T2        │
-│   ○ T4 Rate limit per key                         │
-│                                                   │
-│ ✓ done ● next ○ to do · waits on a dependency     │
-│ ♦ needs you                                       │
 ╰───────────────────────────────────────────────────╯
-● T2 Prisma schema for keys · 2 criteria left · 1/4 done · checkpoint after this task
+▸ T2 Prisma schema for keys · 2 criteria left · 1/4 done · checkpoint after this task
 › _
-macbook@amila:aihqlk [Opus 5.5] · ✓spec ✓plan ●build 1/4 ○review ○ship · T2 Prisma schema for keys
-▸▸ auto mode on (shift+tab to cycle) · build T2                          focus · build
+my-app · build 1/4 · T2 Prisma schema for keys · Opus 5.5
 ```
 
 ## Install
@@ -37,7 +37,7 @@ At a Claude Code terminal prompt:
 /reload-plugins
 ```
 
-Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && claude plugin install agent-skills-mods@agent-skills-mods`. This needs Claude Code with mods (function hooks), and was built and tested on 2.1.295.
+Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && claude plugin install agent-skills-mods@agent-skills-mods`. This needs Claude Code with mods (v2.1.287 or later), and was last tested on 2.1.303.
 
 ## What you get
 

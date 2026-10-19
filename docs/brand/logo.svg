@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262624"/>
+      <stop offset="1" stop-color="#181817"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+  <!-- the path between the stages: done in green, ahead in grey -->
+  <line x1="268" y1="700" x2="512" y2="512" stroke="#4cc76a" stroke-width="44" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="756" y2="324" stroke="#3d3d39" stroke-width="44" stroke-linecap="round"/>
+  <!-- spec: done -->
+  <circle cx="268" cy="700" r="108" fill="#4cc76a"/>
+  <path d="M218 702 L254 738 L322 666" fill="none" stroke="#123a1f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- plan: done -->
+  <circle cx="512" cy="512" r="108" fill="#4cc76a"/>
+  <path d="M462 514 L498 550 L566 478" fill="none" stroke="#123a1f" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- build: under way -->
+  <circle cx="756" cy="324" r="108" fill="#1d1d1b"/>
+  <circle cx="756" cy="324" r="86" fill="none" stroke="#3d3d39" stroke-width="36"/>
+  <circle cx="756" cy="324" r="86" fill="none" stroke="#f2b233" stroke-width="36" stroke-linecap="round"
+          stroke-dasharray="324 541" transform="rotate(-90 756 324)"/>
+  <circle cx="756" cy="324" r="30" fill="#f2b233"/>
+</svg>

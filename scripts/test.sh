@@ -111,7 +111,8 @@ if [[ -n $url ]]; then
   if [[ $code == 409 ]]; then echo "ok   serve-stale-409"; else echo "FAIL serve-stale-409: got $code"; fail=1; fi
   # ceremonies T4: POST pull moves a backlog item into the task list; both files change on disk.
   printf -- '# Backlog\n\n## B1: Docs\n- [ ] docs\n' > "$tmp/live/tasks/backlog.md"
-  rev=$(curl -s -D - -o /dev/null "$url" | tr -d '\r' | sed -n 's/^x-agent-skills-rev: //Ip')
+  curl -s -D "$tmp/rev.headers" -o /dev/null "$url"
+  rev=$(tr -d '\r' < "$tmp/rev.headers" | sed -n 's/^x-agent-skills-rev: //Ip')
   out=$(curl -s -X POST -H "X-Agent-Skills-Token: $token" -H "Origin: $base" -H 'Content-Type: application/json' \
     --data "{\"action\":\"pull\",\"args\":{\"id\":\"B1\"},\"rev\":\"$rev\"}" "$base/action")
   if [[ $out == *'B1 Docs is T4 in tasks/todo.md now'* ]] && grep -q '^## Task 4: Docs' "$tmp/live/tasks/todo.md" && ! grep -q 'B1' "$tmp/live/tasks/backlog.md"; then echo "ok   serve-pull-both-files"; else echo "FAIL serve-pull-both-files: $out"; fail=1; fi
@@ -277,7 +278,7 @@ node "$script" "$repo" --serve --port 0 --no-open > "$tmp/serve-b.out" 2>&1 &
 serve_b=$!
 url=''
 for _ in $(seq 1 100); do url=$(grep -o 'http://127.0.0.1:[0-9]*/?token=[0-9a-f]*' "$tmp/serve-b.out" | head -1); [[ -n $url ]] && break; sleep 0.1; done
-if [[ -n $url ]] && curl -s "$url" | grep -q 'id="board-branches"'; then echo "ok   serve-branches-board"; else echo "FAIL serve-branches-board"; fail=1; fi
+if [[ -n $url ]] && curl -s -o "$tmp/branches.html" "$url" && grep -q 'id="board-branches"' "$tmp/branches.html"; then echo "ok   serve-branches-board"; else echo "FAIL serve-branches-board"; fail=1; fi
 kill "$serve_b" 2>/dev/null; wait "$serve_b" 2>/dev/null
 # Since you last looked (team-view T9): the first look stores a snapshot quietly in the git folder, the next lists what changed with who did it.
 check since-first 'First look here: nothing to compare with yet' node "$script" "$repo" --since

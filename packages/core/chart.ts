@@ -77,7 +77,7 @@ export function toBase64(bytes: Uint8Array): string {
   return out
 }
 
-/** The bytes `toBase64` wrote, without the browser's atob (not among a mod's calls). */
+/** The bytes `toBase64` wrote, decoded here so the charts need no browser global. */
 export function fromBase64(text: string): Uint8Array {
   const clean = text.replace(/=+$/, '')
   const out = new Uint8Array(Math.floor((clean.length * 3) / 4))

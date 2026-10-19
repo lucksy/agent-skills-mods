@@ -1,7 +1,8 @@
 {
   "name": "agent-skills-mods",
+  "displayName": "Spec & Plan Board for agent-skills",
   "version": "0.40.3",
-  "description": "Readable agent-skills workflow in Claude Code: spec pane, task board with run timeline and ETA range, current-task band, stage in the footer, a guard that refuses overwriting an unfinished plan, a project dashboard, teams (owners, reviews, handoffs, approvals by role, every module at a glance), the team across branches: collisions, a task-aware merge driver, \"since you last looked\" and a live local dashboard that writes, and Agile ceremonies: size, a backlog, optional sprints with planning, review and retro, a team standup and a decisions inbox.",
+  "description": "See your agent-skills spec, plan and tasks inside Claude Code: a task board, a progress band above the prompt, an ETA range, sprints and a local dashboard, all read from the markdown you already have.",
   "author": {
     "name": "lucksy"
   },
@@ -10,10 +11,13 @@
   "license": "MIT",
   "keywords": [
     "agent-skills",
-    "mods",
-    "spec",
-    "plan",
-    "progress"
+    "spec-driven-development",
+    "task-board",
+    "kanban",
+    "sprints",
+    "progress",
+    "dashboard",
+    "project-management"
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
