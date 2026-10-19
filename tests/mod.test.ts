@@ -877,6 +877,9 @@ test('the plan pane: tabs switch by their digit or a click, with report and copy
   expect(await pane.find({ type: 'Client' })).toBeUndefined()
   expect((await pane.find({ type: 'Button', key: 'tab-tasks' }))?.props).toMatchObject({ hotkey: '3', plain: true, dimColor: false })
   expect((await pane.find({ type: 'Button', key: 'tab-charts' }))?.props).toMatchObject({ hotkey: '2', dimColor: true })
+  // The active tab in the accent colour and bold, the others dim.
+  expect((await pane.find({ type: 'Text', text: /^Tasks$/ }))?.props).toMatchObject({ color: 'claude', bold: true })
+  expect(await pane.find({ type: 'Text', text: /^Charts$/ })).toBeUndefined()
 
   await pane.press({ key: 'tab-charts' })
   expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()

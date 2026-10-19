@@ -321,7 +321,6 @@ packages/core/since.ts     what changed since the last look (seen.json)
 packages/core/serve.ts     the live server's request handling: token, Origin and rev checks, no sockets
 packages/core/dashboard/   the dashboard page: shell and tabs, one module per view, the generated chart bundle
 packages/charts/           the chart bundle's source (React + Nivo, dev dependencies only) and its build
-hooks/ui/                  surface modules (tabs, bar, task marker), not drawn since 0.40.3: the directory can't read a Client's path; the tab list and the bar's cells are used from here
 scripts/                   agent-skills-progress, its test, and the core purity check
 types/index.d.ts           the session state contract
 statusline/                the status line script and its test

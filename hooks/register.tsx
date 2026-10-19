@@ -20,7 +20,6 @@ import { historyFromLogs, logsDir, mentions } from '../packages/core/logs'
 import { burnup, chartLegends, COLOR, flow, hex, revealCells, throughput } from '../packages/core/chart'
 import { timeline, type Seg } from '../packages/core/timeline'
 import { criticalPath, graphLines } from '../packages/core/graph'
-import { TABS, type Tab } from './ui/tabs'
 import { digestText, headline, nowCounts, reportHtml, sparkline, standupText, taskDays } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { readModules, toState } from '../packages/core/state'
@@ -129,6 +128,10 @@ const WATCHED = /(^|[\\/])(SPEC(-[\w.-]+)?\.md|specs[\\/][\w.-]+\.md|tasks[\\/](
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit'])
 
 type Engine = EngineInterface
+
+/** The plan pane's tabs, in order: each one's digit is its place here. */
+const TABS = ['timeline', 'charts', 'tasks', 'graph'] as const
+type Tab = (typeof TABS)[number]
 
 /** Text cut to a column width with an ellipsis, then padded to it. */
 const fitTo = (text: string, w: number) => (text.length > w ? `${text.slice(0, w - 1)}…` : text.padEnd(w))
@@ -2084,9 +2087,20 @@ async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
-        {TABS.map((t, i) => (
-          <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} hotkey={String(i + 1)} plain dimColor={t !== active} onPress={() => void showTab($, t)} />
-        ))}
+        {TABS.map((t, i) => {
+          const label = t[0]!.toUpperCase() + t.slice(1)
+          return (
+            <Button key={`tab-${t}`} label={label} hotkey={String(i + 1)} plain dimColor={t !== active} onPress={() => void showTab($, t)}>
+              {t === active ? (
+                <Text color="claude" bold>
+                  {label}
+                </Text>
+              ) : (
+                label
+              )}
+            </Button>
+          )
+        })}
         <Text dimColor>·</Text>
         <Button key="report" label="report" hotkey="r" plain dimColor onPress={() => void paneAction($, 'report')} />
         <Text dimColor>·</Text>
@@ -2151,7 +2165,7 @@ async function tightView($: Engine, e: PaneEvent, p: AsmProject | null, active: 
   )
 }
 
-/** The plan pane's tab, from a tab button, the tabs row or a command. The charts sweep in when shown. */
+/** The plan pane's tab, from a tab button or a command. The charts sweep in when shown. */
 async function showTab($: Engine, t: Tab) {
   if (t === 'charts') await sweepCharts($)
   await update($, tab, () => t)
@@ -2364,7 +2378,7 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
     block('burnup', 'Burn-up', `scope vs done${p?.forecast?.kind === 'range' ? ', dotted = forecast' : ''}`, up),
     block('flow', 'Flow', 'tasks by state, per day', fl),
   ]
-  // Phases: one bar each, filling in as the pane opens (mockup 12).
+  // Phases: one bar each (mockup 12).
   const list = p?.list
   const phases: { name: string; done: number; total: number }[] = []
   for (const t of list?.tasks ?? []) {

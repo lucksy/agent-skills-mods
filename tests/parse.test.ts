@@ -35,7 +35,6 @@ import { spinnerWord, stepOf } from '../packages/core/steps'
 import { decisions, digestText, headline, nowCounts, sparkline } from '../packages/core/report'
 import { burnupSvg, flowSvg } from '../packages/core/svg'
 import { burnup, COLOR, daily, flow, fromBase64, revealCells, toBase64 } from '../packages/core/chart'
-import { meterCells } from '../hooks/ui/meter'
 import { tightBoard, boardRows, bandText, blockChain, taskDates, completionToast, forecastText, progressBrief, taskInPrompt, nextText, statusText, timelineRows, specCandidates, specFiles, specOfPath } from '../packages/core/view'
 import {
   CHECKLIST,
@@ -819,14 +818,7 @@ describe('the progress script for other agents (E2)', () => {
   })
 })
 
-describe('motion (bar fill, chart sweep)', () => {
-  test('the bar in eighths: whole blocks, one partial cell, then track', async () => {
-    expect(meterCells(0, 4)).toEqual({ fill: '', track: '░░░░' })
-    expect(meterCells(0.25, 30)).toEqual({ fill: '███████▌', track: '░'.repeat(22) })
-    expect(meterCells(1, 4)).toEqual({ fill: '████', track: '' })
-    expect(meterCells(2, 4).fill).toBe('████')
-  })
-
+describe('motion (chart sweep)', () => {
   test('a sweep frame clears the plot right of the cut and keeps the axes', async () => {
     const history = [
       { day: '2026-10-01', done: 0, total: 4 },
