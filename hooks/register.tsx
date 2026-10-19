@@ -1858,19 +1858,17 @@ export const register: Register = (on, options) => {
     // The running sprint's line (ceremonies T6), after the task's own; alone once every task is done.
     const sprint = await currentSprint($, p)
     if ((!list || !t) && !ask && !sprint) return next(e)
-    const { Box, Button, Text, Client } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
     // The current task under way on another branch too, or with another owner (team-view T4).
     const clash = t ? await collisionText($, t) : null
     if (clash) warnings.unshift(clash)
-    // ▸ between turns; a turning marker while the agent works, where surface modules run.
-    const working = e.props.isWorking === true && (e.surface === 'terminal' || e.surface === 'desktop')
     return (
       <Box flexDirection="column">
         {list && t && (
           <Box flexDirection="row" gap={3}>
             <Box flexDirection="row" gap={1}>
-              {working ? Client({ key: 'pulse', module: './ui/pulse.tsx', props: { isActive: true, color: 'claude' }, width: 1, height: 1 }) : <Text color="claude">▸</Text>}
+              <Text color="claude">▸</Text>
               <Text wrap="truncate-end">
                 <Text color="claude">{t.id}</Text> <Text bold>{t.title}</Text>
                 {t.owner && <Text dimColor> · {t.owner}</Text>}
@@ -2049,13 +2047,6 @@ export const register: Register = (on, options) => {
 
   // ----------------------------------------------------------- the plan pane: timeline, charts, tasks (B1, F1, F2, G3)
 
-  on('ui.message', async ($, e, next) => {
-    const t = (e.data as { tab?: unknown } | null)?.tab
-    if (e.element !== 'tabs' || !TABS.includes(t as Tab)) return next(e)
-    await showTab($, t as Tab)
-    return { props: { active: t } }
-  })
-
   on('ui.render', { component: 'Pane', requestId: BOARD_PANE }, async ($, e) => drawPlan($, e, null))
   // A charts pane opened by 0.14 or earlier: the charts tab on its own.
   on('ui.render', { component: 'Pane', requestId: CHARTS_PANE }, async ($, e) => drawPlan($, e, 'charts'))
@@ -2073,7 +2064,7 @@ type PaneEvent = any
  * pins a tab, for the charts pane earlier versions opened.
  */
 async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
-  const { Box, Button, Text, Client } = $.ui.resolve(e)
+  const { Box, Button, Text } = $.ui.resolve(e)
   const p = await read($, project)
   const active: Tab = forced ?? (await read($, tab))
   // A short terminal seats the pane in a few rows: the tabs on one line, then
@@ -2090,16 +2081,13 @@ async function drawPlan($: Engine, e: PaneEvent, forced: Tab | null) {
           ? await graphView($, e, p)
           : await tasksView($, e, p)
   if (forced) return view
-  const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" gap={1} flexWrap={tight ? 'nowrap' : 'wrap'}>
-        {hasClient ? (
-          Client({ key: 'tabs', module: './ui/tabs.tsx', props: { active } })
-        ) : (
-          TABS.map(t => <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} dimColor={t !== active} onPress={() => void showTab($, t)} />)
-        )}
-        {hasClient && !tight && <Text dimColor>←/→ switch ·</Text>}
+        {TABS.map((t, i) => (
+          <Button key={`tab-${t}`} label={t[0]!.toUpperCase() + t.slice(1)} hotkey={String(i + 1)} plain dimColor={t !== active} onPress={() => void showTab($, t)} />
+        ))}
+        <Text dimColor>·</Text>
         <Button key="report" label="report" hotkey="r" plain dimColor onPress={() => void paneAction($, 'report')} />
         <Text dimColor>·</Text>
         <Button key="digest" label={tight ? 'digest' : 'copy digest'} hotkey="c" plain dimColor onPress={() => void paneAction($, 'digest')} />
@@ -2295,7 +2283,7 @@ async function tasksView($: Engine, e: PaneEvent, p: AsmProject | null) {
 }
 
 async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
-  const { Box, Text, Client } = $.ui.resolve(e)
+  const { Box, Text } = $.ui.resolve(e)
   const snaps = p?.snapshots ?? []
   const body = Math.max(24, Math.min(240, e.props.bodyColumns))
   // Side by side when there is room for two charts of 50 columns, as mockup 12 lays them out.
@@ -2387,7 +2375,6 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
   }
   const labelW = Math.min(28, Math.max(0, ...phases.map(x => phaseLabel(x.name).length)))
   const barW = Math.max(8, Math.min(28, body - labelW - 10))
-  const hasClient = e.surface === 'terminal' || e.surface === 'desktop'
   const pace = throughput(snaps)
   // The desktop mockup's figures, now-bar and days per task, on every surface.
   const figures = p ? headline(p) : []
@@ -2448,11 +2435,7 @@ async function chartsView($: Engine, e: PaneEvent, p: AsmProject | null) {
               <Box width={labelW}>
                 <Text wrap="truncate-end">{phaseLabel(ph.name)}</Text>
               </Box>
-              {hasClient ? (
-                Client({ key: `phase-${i}`, module: './ui/meter.tsx', props: { done: ph.done, total: ph.total }, width: barW, height: 1 })
-              ) : (
-                <Text color="success">{bar(ph.done, ph.total, barW)}</Text>
-              )}
+              <Text color="success">{bar(ph.done, ph.total, barW)}</Text>
               <Text dimColor>
                 {ph.done}/{ph.total}
               </Text>

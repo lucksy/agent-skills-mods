@@ -285,13 +285,13 @@ test('a pane seated in a few rows shows the board first: tabs on one line, the c
     requestId: 'asm-board',
     props: { title: 'x', isFocused: false, bodyColumns: 96, placement: 'inline', scroll: { offset: 0, bodyRows: 4 } } as never,
   })
-  expect(await pane.find({ text: /←\/→ switch/ })).toBeUndefined()
+  expect(await pane.find({ text: /^─+$/ })).toBeUndefined()
   expect(await pane.find({ text: /^tasks 1\/4 · 25% · now T2$/ })).toBeDefined()
   expect(await pane.find({ text: /T2 Prisma schema for keys/ })).toBeDefined()
   expect(await pane.find({ text: /^↑ 1 more · ↓ 2 more · \/progress dashboard shows every task$/ })).toBeDefined()
   // Room enough: the full board, as before.
   await pane.redraw({ title: 'x', isFocused: false, bodyColumns: 96, placement: 'dock', scroll: { offset: 0, bodyRows: 40 } } as never)
-  expect(await pane.find({ text: /←\/→ switch/ })).toBeDefined()
+  expect(await pane.find({ text: /^─+$/ })).toBeDefined()
 })
 
 test('history is rebuilt from git once, so the first day already has an ETA', async ($, on) => {
@@ -843,23 +843,16 @@ test('chartStyle auto on a terminal that draws no pictures keeps the braille and
   expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
 })
 
-test('the band shows ▸ between turns and a turning marker while the agent works', async ($, on) => {
+test('the band shows ▸ before the current task, working or not, with no surface module', async ($, on) => {
   world(on, { [`${CWD}/tasks/todo.md`]: TODO_TEMPLATE })
   await $.command.run(run('refresh'))
   const props = (isWorking: boolean) =>
     ({ hasSurvey: false, isWorking, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} }) as never
   const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: props(false) })
-  expect(await band.find({ type: 'Client', key: 'pulse' })).toBeUndefined()
   expect(await band.find({ text: /^▸$/ })).toBeDefined()
-
   await band.redraw(props(true))
-  expect((await band.find({ type: 'Client', key: 'pulse' }))?.props).toMatchObject({ module: 'hooks/ui/pulse.tsx', props: { isActive: true } })
-  const glyphs = new Set<string>()
-  for (let i = 0; i < 5; i++) {
-    await band.advance(140)
-    for (const g of ['◐', '◓', '◑', '◒']) if (await band.find({ text: new RegExp(`^${g}$`), in: 'pulse' })) glyphs.add(g)
-  }
-  expect(glyphs.size).toBeGreaterThan(2)
+  expect(await band.find({ text: /^▸$/ })).toBeDefined()
+  expect(await band.find({ type: 'Client' })).toBeUndefined()
 })
 
 test('/progress charts sweeps the cell charts in from the left', async ($, on) => {
@@ -876,19 +869,20 @@ test('/progress charts sweeps the cell charts in from the left', async ($, on) =
   expect((await plot()).length).toBeGreaterThan(10)
 })
 
-test('the plan pane: tabs switch by ←/→ or a click, with report and copy digest beside them', async ($, on) => {
+test('the plan pane: tabs switch by their digit or a click, with report and copy digest beside them', async ($, on) => {
   const files: Record<string, string> = { [`${CWD}/tasks/todo.md`]: TODO_T3_DONE }
   const seen = world(on, files, 'no-repo', { [`history:${CWD}`]: CHART_HISTORY })
   await $.command.run(run(''))
   const pane = await mountBoard($)
-  expect((await pane.find({ type: 'Client', key: 'tabs' }))?.props).toMatchObject({ module: 'hooks/ui/tabs.tsx', props: { active: 'tasks' } })
-  expect(await pane.find({ text: /^\[ Tasks \]$/, in: 'tabs' })).toBeDefined()
+  expect(await pane.find({ type: 'Client' })).toBeUndefined()
+  expect((await pane.find({ type: 'Button', key: 'tab-tasks' }))?.props).toMatchObject({ hotkey: '3', plain: true, dimColor: false })
+  expect((await pane.find({ type: 'Button', key: 'tab-charts' }))?.props).toMatchObject({ hotkey: '2', dimColor: true })
 
-  await pane.key({ key: 'left', in: 'tabs' })
+  await pane.press({ key: 'tab-charts' })
   expect(await pane.find({ type: 'Raster', key: 'burnup' })).toBeDefined()
-  await pane.key({ key: 'left', in: 'tabs' })
+  await pane.press({ key: 'tab-timeline' })
   expect(await pane.find({ text: /^\/review → \/ship$|○ \/review → \/ship/ })).toBeDefined()
-  await pane.pointer({ type: 'down', x: 30, y: 0, button: 'left', in: 'tabs' })
+  await pane.press({ key: 'tab-tasks' })
   expect(await pane.find({ text: /^tasks · / })).toBeDefined()
 
   await pane.press({ key: 'digest' })
@@ -1031,13 +1025,14 @@ test('the charts tab: side by side when wide, colour swatch legends, phase bars 
   expect(await pane.find({ text: /^⠒⠒ done 3   ⠒⠒ scope 4   forecast ≈ 12 Oct \(12 Oct–13 Oct\)$/ })).toBeDefined()
   expect(await pane.find({ text: /^Phases$/ })).toBeDefined()
   expect(await pane.find({ text: /^Phase 1 · Foundation$/ })).toBeDefined()
-  expect((await pane.find({ type: 'Client', key: 'phase-0' }))?.props).toMatchObject({ module: 'hooks/ui/meter.tsx', props: { done: 2, total: 2 } })
+  expect(await pane.find({ type: 'Client' })).toBeUndefined()
   expect(await pane.find({ text: /^Phase 2 · Core$/ })).toBeDefined()
   expect(await pane.find({ text: /^1\/2$/ })).toBeDefined()
   expect(await pane.find({ text: /^Tasks done per day [▁-█]+ · 3 in 8 days · 0\.38\/day$/ })).toBeDefined()
-  await pane.resize({ columns: 20, rows: 1, in: 'phase-1' })
-  await pane.advance(2000)
-  expect(await pane.find({ text: /^█{10}░{10}$/, in: 'phase-1' })).toBeDefined()
+  // Phase 2 is 1 of 2 done: a text bar, half filled.
+  let half = false
+  for (let n = 4; n <= 14 && !half; n++) half = (await pane.find({ type: 'Text', text: new RegExp(`^█{${n}}░{${n}}$`) })) !== undefined
+  expect(half).toBe(true)
 })
 
 test('the spec pane as mockup 8: numbered areas, summaries on the right, framed boundaries, key hints', async ($, on) => {
@@ -1257,7 +1252,7 @@ test('/progress graph opens the Graph tab with the tree and the critical path', 
   const out = await $.command.run(run('graph'))
   expect(out.text).toBe('Dependency graph opened: critical path T2 → T3.')
   const pane = await mountBoard($)
-  expect(await pane.find({ text: /^\[ Graph \]$/, in: 'tabs' })).toBeDefined()
+  expect((await pane.find({ type: 'Button', key: 'tab-graph' }))?.props).toMatchObject({ dimColor: false })
   expect(await pane.find({ text: /^✓ T1 Monorepo scaffold$/ })).toBeDefined()
   expect(await pane.find({ text: /^├─▶ ◐ T2 Prisma schema for keys$/ })).toBeDefined()
   expect(await pane.find({ text: /^Critical path T2 → T3 · 2 unfinished tasks in a row bound the finish date$/ })).toBeDefined()
