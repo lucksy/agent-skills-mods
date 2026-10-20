@@ -29,7 +29,14 @@ my-app · build 1/4 · T2 Prisma schema for keys · Opus 5.5
 
 ## Install
 
-At a Claude Code terminal prompt:
+This plugin reads what [agent-skills](https://github.com/addyosmani/agent-skills) writes, so install agent-skills first if you haven't:
+
+```
+/plugin marketplace add addyosmani/agent-skills
+/plugin install agent-skills@addy-agent-skills
+```
+
+Then this plugin, at a Claude Code terminal prompt:
 
 ```
 /plugin marketplace add lucksy/agent-skills-mods
@@ -37,7 +44,9 @@ At a Claude Code terminal prompt:
 /reload-plugins
 ```
 
-Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && claude plugin install agent-skills-mods@agent-skills-mods`. This needs Claude Code with mods (v2.1.287 or later), and was last tested on 2.1.303.
+Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && claude plugin install agent-skills-mods@agent-skills-mods`. This needs Claude Code with mods (v2.1.287 or later), and was last tested on 2.1.303. Once it's loaded, `/progress setup` checks everything: agent-skills, `SPEC.md`, the plan and task list, the progress format and the team file, and names the one next step.
+
+If agent-skills isn't installed, or is installed but turned off, the band above the prompt says so at the start of each session, with **Install** (it fills the prompt with the first command), **Not now** and **Don't show again**. It checks the session's skills and Claude Code's `installed_plugins.json`, both on your machine, and says nothing when it can't tell.
 
 ## What you get
 
@@ -88,13 +97,15 @@ Or from a shell: `claude plugin marketplace add lucksy/agent-skills-mods && clau
 | **Spec gate** | Off by default. Turned on with the `specGate` option, an edit to a source file while the spec still awaits approval raises one toast a turn (`♦ Spec gate · src/keys.ts changed while SPEC.md awaits approval`) and tells the model to pause and ask for approval. Specs, plans, docs and Markdown files don't count. It warns and never blocks. | Toast, and a note to the model after the edit |
 | **Checkpoint gate** | Off by default. With `checkpointGate` on, an edit to a source file while a reached checkpoint still has open review items raises one toast a turn (`♦ Checkpoint gate · src/keys.ts changed before "After Tasks 1-2" was reviewed`) and tells the agent to stop, run the checks and ask you to review. Never blocks. | Toast, and a note to the model after the edit |
 | **Spec drift** | When the agent changes an approved spec, it goes back to `status: draft` in the same edit, keeping its last approval date. A toast says so (`○ SPEC.md changed after approval: back to draft · /spec-view diff shows what changed`) and the agent is told to ask you to approve again. Needs `progressFormat`. | Toast, and a note to the model |
+| **agent-skills check** | At session start, whether agent-skills is installed and on. If not, one line above the prompt with **Install**, **Not now** and **Don't show again**; `/progress setup` lists the steps any time. | Above the prompt |
 | **Notifications** | Through your own notification channel (the one Claude Code uses): `Checkpoint reached` with its review items, `All tasks done`, and `Tests failed on T4` the first time a test run fails on the current task. Turn off with `notifications`. | System notification |
 
 ### Commands
 
 | Command | |
 |---|---|
-| `/progress` | Opens the plan pane on its Tasks tab; `1`–`8` (or a click) switches tabs, `r` writes the report, `c` copies the digest |
+| `/progress` | Opens the plan pane on its Tasks tab; `1`–`8` (or a click) switches tabs, `r` writes the report, `c` copies the digest. With no spec or task list and no agent-skills, it shows the setup steps instead |
+| `/progress setup` | Checks that agent-skills is installed and on, which of `SPEC.md`, `tasks/plan.md`, `tasks/todo.md`, the progress format and `tasks/team.md` are there, and names the next step |
 | `/progress timeline` | Opens the plan pane on the run timeline |
 | `/progress charts` | Opens the plan pane on the charts |
 | `/progress digest` | Copies the four-line digest and shows it |
@@ -262,7 +273,7 @@ Everything stays on your machine. The plugin makes no network requests and sends
 - `tasks/progress-report.html` and `tasks/progress-dashboard.html` when you ask for them, and `tasks/archive/<date>-<plan>/` when you archive a plan.
 - `.gitattributes` and `.git/config`, only for `/progress merge-driver install`, which shows what it will write and asks first. After that, `git merge` runs the plugin's script to merge `tasks/todo.md`, `tasks/backlog.md` and specs' approvals.
 
-**What it reads:** those files, your git history, and the environment variables `HOME`, `CLAUDE_CONFIG_DIR`, `VISUAL`, `EDITOR`, `TERM`, `TERM_PROGRAM`, `KITTY_WINDOW_ID` and `TMUX` (where to find things, which editor to open, whether the terminal draws pictures). They hold no credentials, and none of them leaves your machine. Claude Code's session logs for this project (`~/.claude/projects/…`) are read only after you say yes to the band's question, to date tasks git can't, and only lines that write the task list are used.
+**What it reads:** those files, your git history, and the environment variables `HOME`, `CLAUDE_CONFIG_DIR`, `VISUAL`, `EDITOR`, `TERM`, `TERM_PROGRAM`, `KITTY_WINDOW_ID` and `TMUX` (where to find things, which editor to open, whether the terminal draws pictures). They hold no credentials, and none of them leaves your machine. At session start it reads Claude Code's `~/.claude/plugins/installed_plugins.json` and the session's skill list, only to tell whether agent-skills is installed. Claude Code's session logs for this project (`~/.claude/projects/…`) are read only after you say yes to the band's question, to date tasks git can't, and only lines that write the task list are used.
 
 **Hooks that change what Claude Code does:**
 - `tool.call` on `Write` and `Edit` of a spec or task file: adds or updates its Status lines and front matter (the progress format), puts an approved spec that the edit changed back to `status: draft`, and refuses a Write that would overwrite `tasks/plan.md` or `tasks/todo.md` while they have unfinished tasks (`/progress allow-overwrite` lets the next one through). With the spec gate or checkpoint gate on, an edit of other files gets a warning, never a refusal.

@@ -2157,3 +2157,44 @@ test('/progress names the team-view verbs in its description and argument hint (
   expect(progress!.argumentHint).toContain('merge-driver [install|uninstall|status]')
   expect(progress!.argumentHint).toMatch(/dashboard \[[^\]]*team[^\]]*live\]/)
 })
+
+// ----------------------------------------------------------- agent-skills requirement
+
+const INSTALLED_JSON = '/home/.claude/plugins/installed_plugins.json'
+/** The engine's own band beneath the mod, drawn when the mod has nothing to show. */
+const engineBand = (on: On) => on('ui.render', { component: 'AbovePrompt' }, ($x, e) => $x.ui.resolve(e).Text({ children: 'engine band' }))
+const bandProps = { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 140, scroll: { offset: 0, bodyRows: 6 }, view: {} } as never
+
+test('without agent-skills: the band says so, Install fills the prompt, Not now puts it away', async ($, on) => {
+  world(on, { [INSTALLED_JSON]: JSON.stringify({ version: 2, plugins: { 'agent-skills-mods@agent-skills-mods': [] } }) })
+  engineBand(on)
+  const filled: string[] = []
+  on('prompt.fill', (_$, e) => (filled.push(e.text), { isFilled: true }) as never)
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+  expect(await band.find({ text: /agent-skills isn’t installed/ })).toBeDefined()
+  await band.press({ key: 'as-install' })
+  expect(filled).toEqual(['/plugin marketplace add addyosmani/agent-skills'])
+  await band.press({ key: 'as-later' })
+  expect(await band.find({ text: /agent-skills isn’t installed/ })).toBeUndefined()
+})
+
+test('without agent-skills or plan files, /progress gives the setup steps; /progress setup any time', async ($, on) => {
+  world(on, { [INSTALLED_JSON]: JSON.stringify({ version: 2, plugins: {} }) })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const text = JSON.stringify(await $.command.run(run('setup')))
+  expect(text).toMatch(/agent-skills isn’t installed/)
+  expect(text).toMatch(/\/plugin install agent-skills@addy-agent-skills/)
+  expect(JSON.stringify(await $.command.run(run('')))).toMatch(/Next: install agent-skills/)
+})
+
+test('with agent-skills installed the band stays quiet and setup points at the next file', async ($, on) => {
+  world(on, { [INSTALLED_JSON]: JSON.stringify({ version: 2, plugins: { 'agent-skills@addy-agent-skills': [] } }) })
+  engineBand(on)
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'agent-skills-mods', surface: 'terminal', component: 'AbovePrompt', props: bandProps })
+  expect(await band.find({ text: /agent-skills is/ })).toBeUndefined()
+  const text = JSON.stringify(await $.command.run(run('setup')))
+  expect(text).toMatch(/✓ agent-skills is installed/)
+  expect(text).toMatch(/Next: run \/spec/)
+})

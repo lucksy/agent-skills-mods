@@ -125,6 +125,10 @@ declare module 'claude-code' {
       sinceLook: AsmSince | null
       /** ceremonies T6: tasks/todo.md's committed copies since the running sprint began, parsed, for its scope added. */
       sprintCopies: { start: string; versions: { day: string; list: AsmTaskList }[] } | null
+      /** Whether agent-skills is installed, as checked at session start (packages/core/requires.ts). */
+      agentSkills: 'present' | 'disabled' | 'missing' | 'unknown' | null
+      /** The band's agent-skills notice, put away for this session or for good. */
+      noticeHidden: boolean
     }
   }
 }

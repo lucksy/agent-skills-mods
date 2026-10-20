@@ -80,6 +80,7 @@ import {
   type Stage,
 } from '../packages/core/view'
 import { replyLines, type Inline, type ReplyLine } from '../packages/core/reply'
+import { AGENT_SKILLS_INSTALL, agentSkillsStatus, inInstalled, inListing, noticeLine, setupText, type AgentSkills } from '../packages/core/requires'
 
 const NAME = 'agent-skills-mods'
 const project = atom({ plugin: 'agent-skills-mods', key: 'project' } as const, null as AsmProject | null)
@@ -117,6 +118,10 @@ const branchBoard = atom({ plugin: 'agent-skills-mods', key: 'branchBoard' } as 
 /** What the session's first look found (team-view T9); null until then, so the line shows once a session. */
 const sinceLook = atom({ plugin: 'agent-skills-mods', key: 'sinceLook' } as const, null as Since | null)
 /** tasks/todo.md's committed copies since the running sprint began (ceremonies T6), for its scope added; null without a sprint. */
+/** Whether agent-skills is installed, as checked at session start; null before the check. */
+const agentSkills = atom({ plugin: 'agent-skills-mods', key: 'agentSkills' } as const, null as AgentSkills | null)
+/** The band's agent-skills notice, put away for this session (Not now) or for good (stored). */
+const noticeHidden = atom({ plugin: 'agent-skills-mods', key: 'noticeHidden' } as const, false)
 const sprintCopies = atom({ plugin: 'agent-skills-mods', key: 'sprintCopies' } as const, null as { start: string; versions: TodoVersion[] } | null)
 
 const SPEC_PANE = 'asm-spec'
@@ -171,6 +176,47 @@ async function readLogs($: Engine, cwd: string, file: string): Promise<string[]>
     entries.filter(f => f.kind === 'file' && f.name.endsWith('.jsonl')).map(f => readText($, `${dir}/${f.name}`)),
   )
   return texts.filter((t): t is string => t !== null && mentions(t, `${cwd}/${file}`))
+}
+
+/** Where the band's agent-skills notice is put away for good ("Don't show again"). */
+const NOTICE_KEY = 'notice:agent-skills'
+
+/**
+ * Whether agent-skills is installed: the session's skill listing (what it can
+ * use) and installed_plugins.json (what is installed). Never throws; a source
+ * it can't read counts as unknown, and unknown says nothing to the person.
+ */
+async function checkAgentSkills($: Engine): Promise<AgentSkills> {
+  const listing = await $.session
+    .usage({ breakdown: 'summary' })
+    .then(u => inListing(u.context.breakdown?.skills?.skillFrontmatter ?? null))
+    .catch(() => null)
+  const home = await $.env.get('HOME').catch(() => undefined)
+  const configDir = (await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)) ?? (home ? `${home}/.claude` : null)
+  const installed = configDir ? inInstalled(await readText($, `${configDir}/plugins/installed_plugins.json`)) : null
+  return agentSkillsStatus(listing, installed)
+}
+
+/** Checks agent-skills and keeps the answer for the band and /progress setup. */
+async function refreshAgentSkills($: Engine): Promise<AgentSkills> {
+  const status = await checkAgentSkills($)
+  const never = (await $.store.get(NOTICE_KEY).catch(() => undefined)) === 'never'
+  await update($, agentSkills, () => status)
+  if (never) await update($, noticeHidden, () => true)
+  return status
+}
+
+/** /progress setup: agent-skills, the files the board reads, and the one next step. */
+async function setupReply($: Engine, p: AsmProject): Promise<string> {
+  const status = await refreshAgentSkills($)
+  const todo = await readText($, `${p.cwd}/tasks/todo.md`)
+  return setupText(status, {
+    spec: p.spec !== null,
+    plan: p.plan !== null,
+    todo: todo !== null,
+    format: todo !== null && /\*\*Status:\*\*/.test(todo),
+    team: p.team != null,
+  })
 }
 
 /** The answer to the session-log question (band button or /progress history logs on|off). */
@@ -1557,8 +1603,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'progress',
-      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also next | ready | sprint | backlog | inbox | standup | retro | digest | report | dashboard | team | branches | since | answer | signoff | merge-driver | history | format | allow-overwrite | refresh',
-      argumentHint: '[timeline|charts|graph|next|ready|sprint [plan|start …]|size T4 M|backlog [add "…"]|pull B3|defer T9|inbox|standup [team]|retro|digest|report [sprint]|dashboard [view|sprint|inbox|team|live]|team [init]|branches|since|answer Q2 "…"|signoff|merge-driver [install|uninstall|status]|history|format|allow-overwrite|refresh]',
+      description: 'agent-skills plan pane: tasks, or timeline | charts | graph. Also setup | next | ready | sprint | backlog | inbox | standup | retro | digest | report | dashboard | team | branches | since | answer | signoff | merge-driver | history | format | allow-overwrite | refresh',
+      argumentHint: '[setup|timeline|charts|graph|next|ready|sprint [plan|start …]|size T4 M|backlog [add "…"]|pull B3|defer T9|inbox|standup [team]|retro|digest|report [sprint]|dashboard [view|sprint|inbox|team|live]|team [init]|branches|since|answer Q2 "…"|signoff|merge-driver [install|uninstall|status]|history|format|allow-overwrite|refresh]',
     })
     await $.command.register({
       name: 'spec-view',
@@ -1579,6 +1625,8 @@ export const register: Register = (on, options) => {
       }
     })()
     await update($, pixels, () => (style === 'pixels' ? true : style === 'cells' ? false : canDraw))
+    // Whether agent-skills is there, for the band's notice: a local estimate and one file read.
+    await refreshAgentSkills($).catch(() => undefined)
     const p = await load($, { recheckLogs: true }).catch(() => undefined)
     // The other branches, for collisions in the band (team-view T4); never fetches.
     if (p) await readBoard($, p).catch(() => undefined)
@@ -1690,9 +1738,12 @@ export const register: Register = (on, options) => {
     if (arg === 'dashboard live') return reply(await liveDashboard($, p.cwd))
     if (arg === 'dashboard' || arg.startsWith('dashboard ')) return reply(await writeDashboard($, p, arg.slice('dashboard'.length).trim()))
     if (arg === 'format') return reply(await applyFormat($))
+    if (arg === 'setup') return reply(await setupReply($, p))
     if (arg === 'history') return reply(historyText(p.history, p.listFile))
     if (arg === 'history logs on' || arg === 'history logs off') return reply(await chooseLogs($, arg.endsWith('on')))
-    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [plan 10|start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report [sprint [2026-10-13]]|retro|dashboard [view|live]|team [init]|history|format|archive|doctor|allow-overwrite|refresh]`)
+    if (arg !== '') return reply(`Unknown argument "${arg}". Use: /progress [timeline|charts|graph|next|task T4|start T4|done T4|block T6 "why"|unblock T6|assign T4 @sara|claim T4|unassign T4|size T4 M|backlog [add \"title\" S]|pull B3|defer T9|ready|sprint [plan 10|start 2026-10-24 T4 T5]|review T4 #42 @bob|handoff T4 @bob \"note\"|answer Q2 \"answer\"|signoff|merge-driver [install|uninstall|status]|modules|branches|since|digest|standup|report [sprint [2026-10-13]]|retro|dashboard [view|live]|team [init]|history|format|setup|archive|doctor|allow-overwrite|refresh]`)
+    // Nothing to show and agent-skills not there to write it: the setup steps instead of an empty board.
+    if (!p.spec && !p.list && ((await read($, agentSkills)) === 'missing' || (await read($, agentSkills)) === 'disabled')) return reply(await setupReply($, p))
     await showTab($, 'tasks')
     await $.ui.open({ id: BOARD_PANE, title: 'Plan' })
     return reply(p.list ? `Board opened: ${p.list.done}/${p.list.total} tasks done.` : nextText(null, p.plan))
@@ -1871,7 +1922,10 @@ export const register: Register = (on, options) => {
     const ask = p?.history?.logs === 'ask'
     // The running sprint's line (ceremonies T6), after the task's own; alone once every task is done.
     const sprint = await currentSprint($, p)
-    if ((!list || !t) && !ask && !sprint) return next(e)
+    // agent-skills missing or turned off, until put away.
+    const status = await read($, agentSkills)
+    const notice = status && !(await read($, noticeHidden)) ? noticeLine(status) : null
+    if ((!list || !t) && !ask && !sprint && !notice) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const warnings = list && t ? alerts({ list, snapshots: p?.snapshots ?? [], today: dayOf(await $.clock.now()) }) : []
     // The current task under way on another branch too, or with another owner (team-view T4).
@@ -1909,6 +1963,32 @@ export const register: Register = (on, options) => {
             ! {w}
           </Text>
         ))}
+        {notice && status && (
+          <Box flexDirection="row" gap={1}>
+            <Text color="warning">♦</Text>
+            <Text wrap="truncate-end">{notice}</Text>
+            {status === 'missing' ? (
+              <Button
+                key="as-install"
+                label="Install"
+                onPress={() =>
+                  void $.prompt
+                    .fill({ text: AGENT_SKILLS_INSTALL[0] })
+                    .then(() => $.ui.toast(`Press Enter, then ${AGENT_SKILLS_INSTALL[1]} and ${AGENT_SKILLS_INSTALL[2]}`))
+                    .catch(() => undefined)
+                }
+              />
+            ) : (
+              <Button key="as-open" label="Open /plugin" onPress={() => void $.prompt.fill({ text: '/plugin' }).catch(() => undefined)} />
+            )}
+            <Button key="as-later" label="Not now" onPress={() => void update($, noticeHidden, () => true)} />
+            <Button
+              key="as-never"
+              label="Don't show again"
+              onPress={() => void $.store.set(NOTICE_KEY, 'never').then(() => update($, noticeHidden, () => true))}
+            />
+          </Box>
+        )}
         {ask && (
           <Box flexDirection="row" gap={1}>
             <Text wrap="truncate-end">Too little git history for charts. Also read this project's Claude Code session logs?</Text>
