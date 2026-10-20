@@ -113,6 +113,7 @@ h2{font-size:clamp(34px,4.6vw,54px);font-weight:800;letter-spacing:-.035em;line-
 .step p{color:var(--dim);font-size:16px;margin-top:6px}
 .step .cmd{font-size:13.5px;padding:11px 12px}
 .req{color:var(--mute);font-size:15px;margin-top:22px}
+.mini code,.step p code,.req code,.note code{font-size:.88em;background:var(--bg3);padding:2px 7px;border-radius:6px;color:var(--ink)}
 
 .search{width:100%;max-width:420px;margin-top:32px;font:400 16px Inter;color:var(--ink);background:var(--bg2);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px}
 .search::placeholder{color:var(--mute)}
@@ -163,6 +164,7 @@ footer a{color:var(--dim)}
     <div class="install" aria-label="Install commands">
       <div class="cmd"><span class="p">›</span><code>/plugin marketplace add lucksy/agent-skills-mods</code><button class="copy" type="button">Copy</button></div>
       <div class="cmd"><span class="p">›</span><code>/plugin install agent-skills-mods@agent-skills-mods</code><button class="copy" type="button">Copy</button></div>
+      <p class="note" style="text-align:center">Works on top of <a href="https://github.com/addyosmani/agent-skills">agent-skills</a>. Don’t have it yet? The plugin tells you, and <a href="#install">the steps are below</a>.</p>
     </div>
     <div class="video" id="tour">
       <video controls preload="metadata" playsinline poster="img/og.png">
@@ -199,7 +201,7 @@ footer a{color:var(--dim)}
     <div>
       <div class="feat">
         <div class="txt"><div class="no">01 · THE BAND</div><h3>The task under way, always in view</h3>
-          <p>A band above the prompt shows the current task, what’s left on it and the next checkpoint. Its marker turns while the agent works.</p>
+          <p>A band above the prompt shows the current task, what’s left on it and the next checkpoint.</p>
           <ul><li>Open criteria and verifications counted apart</li><li>Alerts when a task runs long or scope grows</li></ul></div>
         <img class="shot" src="img/band.png" alt="Claude Code with the band above the prompt: T4 Rate limit per key, 2 criteria, 1 verification, checkpoint after this task" loading="lazy" width="1100" height="780">
       </div>
@@ -248,6 +250,7 @@ footer a{color:var(--dim)}
     </div>
 
     <div class="more">
+      <div class="mini"><h4>Guided setup</h4><p><code>/progress setup</code> checks agent-skills, your spec, plan and task list, and says what to do next.</p></div>
       <div class="mini"><h4>Dependency graph</h4><p>The tasks as a tree, loops listed, and the longest chain of unfinished work.</p></div>
       <div class="mini"><h4>Digest &amp; report</h4><p>Four lines for Slack, or a one-page HTML report with no scripts.</p></div>
       <div class="mini"><h4>Across branches</h4><p>Each task’s furthest state on any local branch, without fetching or checking out.</p></div>
@@ -262,17 +265,20 @@ footer a{color:var(--dim)}
   <div class="wrap">
     <div class="kicker">Get started</div>
     <h2>Install in under a minute.</h2>
-    <p class="intro">At a Claude Code prompt, in a project that uses agent-skills.</p>
+    <p class="intro">At a Claude Code prompt. agent-skills first, then this plugin.</p>
     <div class="steps">
-      <div class="step" style="background:var(--bg)"><div class="n">1</div><h3>Add the marketplace</h3><p>Once per machine.</p>
-        <div class="cmd"><span class="p">›</span><code>/plugin marketplace add lucksy/agent-skills-mods</code><button class="copy" type="button">Copy</button></div></div>
-      <div class="step" style="background:var(--bg)"><div class="n">2</div><h3>Install and reload</h3><p>Brings in <code>/progress</code>, <code>/spec-view</code> and the band.</p>
+      <div class="step" style="background:var(--bg)"><div class="n">1</div><h3>Install agent-skills</h3><p>This plugin reads what its skills write. Skip this if you have it.</p>
+        <div class="cmd"><span class="p">›</span><code>/plugin marketplace add addyosmani/agent-skills</code><button class="copy" type="button">Copy</button></div>
+        <div class="cmd"><span class="p">›</span><code>/plugin install agent-skills@addy-agent-skills</code><button class="copy" type="button">Copy</button></div></div>
+      <div class="step" style="background:var(--bg)"><div class="n">2</div><h3>Install this plugin</h3><p>Brings in <code>/progress</code>, <code>/spec-view</code> and the band.</p>
+        <div class="cmd"><span class="p">›</span><code>/plugin marketplace add lucksy/agent-skills-mods</code><button class="copy" type="button">Copy</button></div>
         <div class="cmd"><span class="p">›</span><code>/plugin install agent-skills-mods@agent-skills-mods</code><button class="copy" type="button">Copy</button></div>
         <div class="cmd"><span class="p">›</span><code>/reload-plugins</code><button class="copy" type="button">Copy</button></div></div>
-      <div class="step" style="background:var(--bg)"><div class="n">3</div><h3>Set up your project</h3><p>Adds status lines and dates; optionally drafts your team from git.</p>
-        <div class="cmd"><span class="p">›</span><code>/progress format</code><button class="copy" type="button">Copy</button></div>
-        <div class="cmd"><span class="p">›</span><code>/progress team init</code><button class="copy" type="button">Copy</button></div></div>
+      <div class="step" style="background:var(--bg)"><div class="n">3</div><h3>Check and set up</h3><p><code>/progress setup</code> checks agent-skills and your files, and names the next step.</p>
+        <div class="cmd"><span class="p">›</span><code>/progress setup</code><button class="copy" type="button">Copy</button></div>
+        <div class="cmd"><span class="p">›</span><code>/progress format</code><button class="copy" type="button">Copy</button></div></div>
     </div>
+    <p class="req">If agent-skills is missing or turned off, the band above the prompt says so at the start of a session, with <strong style="color:var(--ink)">Install</strong>, <strong style="color:var(--ink)">Not now</strong> and <strong style="color:var(--ink)">Don’t show again</strong>.</p>
     <p class="req">Needs Claude Code with mods (v2.1.287 or later). The live dashboard needs Node 22.6 or newer. Or from a shell: <code>claude plugin marketplace add lucksy/agent-skills-mods &amp;&amp; claude plugin install agent-skills-mods@agent-skills-mods</code></p>
   </div>
 </section>
@@ -361,7 +367,7 @@ const CMDS = [
     ['/progress dashboard [view]', 'The dashboard as one HTML file'], ['/progress dashboard live', 'The live dashboard on 127.0.0.1'],
   ]],
   ['Maintenance', [
-    ['/progress format', 'Applies the progress format and writes its rules to CLAUDE.md'], ['/progress history', 'Where the history comes from; history logs on|off'], ['/progress doctor · doctor fix', 'Finds and fixes problems in the plan files'],
+    ['/progress setup', 'Checks agent-skills and your files, and names the next step'], ['/progress format', 'Applies the progress format and writes its rules to CLAUDE.md'], ['/progress history', 'Where the history comes from; history logs on|off'], ['/progress doctor · doctor fix', 'Finds and fixes problems in the plan files'],
     ['/progress archive', 'Archives the plan so the next /plan starts clean'], ['/progress merge-driver install', 'The task-aware git merge driver'], ['/progress refresh', 'Re-reads the files and prints the status'],
   ]],
 ];
