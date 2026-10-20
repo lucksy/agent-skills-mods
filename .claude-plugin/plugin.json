@@ -1,7 +1,7 @@
 {
   "name": "agent-skills-mods",
   "displayName": "Spec & Plan Board for agent-skills",
-  "version": "0.40.3",
+  "version": "0.41.0",
   "description": "See your agent-skills spec, plan and tasks inside Claude Code: a task board, a progress band above the prompt, an ETA range, sprints and a local dashboard, all read from the markdown you already have.",
   "author": {
     "name": "lucksy"
