@@ -262,16 +262,37 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 Everything stays on your machine. The plugin makes no network requests and sends nothing anywhere; the live dashboard listens on 127.0.0.1 only.
 
-**Programs it starts**, each as a fixed command with fixed arguments, never through a shell:
-- `git`, read-only, for history, branches and who you are: `rev-parse`, `log`, `rev-list`, `diff`, `cat-file`, `for-each-ref`, `config user.email`. It never fetches, commits, pushes or checks out.
-- `node scripts/agent-skills-progress.mjs --serve`, from the plugin's own folder, only when you run `/progress dashboard live`. Its address and token are printed for you; Ctrl-C or the session's end stops it.
-- `open` (macOS), `xdg-open` (Linux) or `start` (Windows), to open the report or dashboard you asked for in your browser, and your `$VISUAL` / `$EDITOR` to open a spec when you press its edit button.
-- `rm`, only on files it wrote itself: the originals after `/progress archive` copies them into `tasks/archive/`, and `.gitattributes` when `/progress merge-driver uninstall` leaves it empty.
+**Programs it starts.** The hooks module calls `$.process.run` (and `$.process.spawn` for the live dashboard) with an argument list, never through a shell. Some arguments are computed at the call: a file path in your project, a date, a task number or a branch name. This is every command it runs, and why:
+
+| Command | Why |
+|---|---|
+| `git rev-parse --git-dir`, `--git-common-dir`, `HEAD --abbrev-ref HEAD` | Find the repository and the current branch |
+| `git log --format=… -- <task or spec file>`, `git log --diff-filter=A …`, `git log --max-count=1000 --format=…` | Rebuild past progress from the history of `tasks/todo.md` and from commit messages that name a task |
+| `git log --max-count=300 --grep=T<n> --grep="Task <n>" -i` | The commits that name a task, for `/progress task T4` |
+| `git log --since=<date> --no-merges --format=… HEAD <branches>` | The team standup: who committed what since the last working day |
+| `git log --format=%an%x09%ae` | `/progress team init`: the authors, to draft `tasks/team.md` |
+| `git rev-list --count --since=<date> HEAD`, `git rev-list -1 --before=<date> HEAD -- <spec>` | Commit counts for the timeline; the spec as it was when approved |
+| `git diff --no-color <commit> -- <spec>` | `/spec-view diff`: what changed since approval |
+| `git for-each-ref --sort=-committerdate --format=… refs/heads refs/remotes` | The board across branches |
+| `git cat-file --batch-check` / `--batch` | Read `tasks/todo.md` from other branches without checking them out |
+| `git config user.email` | Who you are, to match `tasks/team.md` |
+| `node --version` | Check Node is new enough for the live dashboard |
+| `node --experimental-strip-types <plugin>/scripts/agent-skills-progress.mjs <project> --serve` | `/progress dashboard live` only: the local dashboard on 127.0.0.1 |
+| `open` / `xdg-open` / `cmd /c start "" <path or http://127.0.0.1 URL>` | Open the report or dashboard you asked for in your browser |
+| `$VISUAL` / `$EDITOR <spec file>`, else the default app | The spec pane's edit button |
+| `rm -- <file>` | Only files the plugin wrote: the originals after `/progress archive` copies them into `tasks/archive/`, and an empty `.gitattributes` after `/progress merge-driver uninstall` |
+
+git is only ever asked to read: it never fetches, pulls, pushes, commits or checks out.
+
+**What leaves the plugin: nothing goes off your machine.** The plugin makes no network requests. The only way anything leaves its hooks module is the programs above, and none of them sends data over the network: git reads your local repository, the browser opens a local file or a 127.0.0.1 page, and the live dashboard listens on 127.0.0.1 only, with a new random token each run. Files the plugin reads (the spec, plan and task list, git history, and, only if you say yes, this project's session logs) are passed to those programs only as file paths and dates, and are otherwise only drawn in the panes and written back to your own project files. Your prompts and the conversation are never passed to any program or written anywhere (see `prompt.submit` below).
 
 **Files it writes**, all in your project:
 - `SPEC.md`, `SPEC-<id>.md`, `specs/<id>.md`, `tasks/plan.md`, `tasks/todo.md`, `tasks/backlog.md` and `tasks/team.md`: the progress format's Status lines and front matter, and what you ask for (`/progress start T4`, `size`, `pull`, `answer`, a ticked box in the pane, approve in the spec pane).
 - `tasks/progress-report.html` and `tasks/progress-dashboard.html` when you ask for them, and `tasks/archive/<date>-<plan>/` when you archive a plan.
-- `.gitattributes` and `.git/config`, only for `/progress merge-driver install`, which shows what it will write and asks first. After that, `git merge` runs the plugin's script to merge `tasks/todo.md`, `tasks/backlog.md` and specs' approvals.
+- `AGENTS.md` if the project has one, else `CLAUDE.md` (created if missing), only when you run `/progress format`: one marked block with the progress format's rules, so other agents keep the format too. These are instruction files that agents obey, and this is the plugin's only write to one. Running it again replaces the block; nothing else in the file changes.
+- `.gitattributes` and `.git/config`, only for `/progress merge-driver install`, which shows what it will write and asks first. These are files git obeys: after that, `git merge` runs the plugin's script to merge `tasks/todo.md`, `tasks/backlog.md` and specs' approvals. `/progress merge-driver uninstall` removes both.
+
+Paths in these writes are built from your project folder, so they are not fixed text in the code; the list above is all of them.
 
 **What it reads:** those files, your git history, and the environment variables `HOME`, `CLAUDE_CONFIG_DIR`, `VISUAL`, `EDITOR`, `TERM`, `TERM_PROGRAM`, `KITTY_WINDOW_ID` and `TMUX` (where to find things, which editor to open, whether the terminal draws pictures). They hold no credentials, and none of them leaves your machine. At session start it reads Claude Code's `~/.claude/plugins/installed_plugins.json` and the session's skill list, only to tell whether agent-skills is installed. Claude Code's session logs for this project (`~/.claude/projects/…`) are read only after you say yes to the band's question, to date tasks git can't, and only lines that write the task list are used.
 
@@ -279,7 +300,7 @@ Everything stays on your machine. The plugin makes no network requests and sends
 - `tool.call` on `Write` and `Edit` of a spec or task file: adds or updates its Status lines and front matter (the progress format), puts an approved spec that the edit changed back to `status: draft`, and refuses a Write that would overwrite `tasks/plan.md` or `tasks/todo.md` while they have unfinished tasks (`/progress allow-overwrite` lets the next one through). With the spec gate or checkpoint gate on, an edit of other files gets a warning, never a refusal.
 - `prompt.compose`: adds the plan's current state (spec status, tasks, the next task) and the progress format's rules as the last section of the system prompt, so Claude answers from the files.
 - `skill.prompt`: appends the progress format's rules to the agent-skills spec, plan, build and test skills.
-- `prompt.submit`: reads which task your prompt names, to open the board on it, and once a session prints what changed since you last looked. It never changes or sends your prompt.
+- `prompt.submit`: reads which task your prompt names (`T3`, `task 3`), to open the board on it, and once a session prints what changed since you last looked. It never changes your prompt, stores it, writes it to a file or passes it to any program.
 - `ui.render`: draws the band, the panes, the stage in the footer and the styled `/progress` replies. It copies to the clipboard only when you press copy.
 
 `packages/core/dashboard/charts-bundle.ts` is generated from `packages/charts/` (Nivo, bundled by esbuild; see Development). The dashboard page embeds it, and the plugin itself never loads it as code.
