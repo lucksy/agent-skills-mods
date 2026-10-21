@@ -9,6 +9,7 @@
   "homepage": "https://github.com/lucksy/agent-skills-mods",
   "repository": "https://github.com/lucksy/agent-skills-mods",
   "license": "MIT",
+  "privacyPolicyUrl": "https://github.com/lucksy/agent-skills-mods/blob/main/PRIVACY.md",
   "keywords": [
     "agent-skills",
     "spec-driven-development",

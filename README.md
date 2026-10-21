@@ -260,6 +260,8 @@ It needs Node 22.6 or newer (it runs the plugin's TypeScript through Node's type
 
 ## What it runs, reads, writes and sends
 
+[Privacy](PRIVACY.md): what the plugin reads, what it stores and where, and that nothing leaves your machine.
+
 Everything stays on your machine. The plugin makes no network requests and sends nothing anywhere; the live dashboard listens on 127.0.0.1 only.
 
 **Programs it starts.** The hooks module calls `$.process.run` (and `$.process.spawn` for the live dashboard) with an argument list, never through a shell. Some arguments are computed at the call: a file path in your project, a date, a task number or a branch name. This is every command it runs, and why:
